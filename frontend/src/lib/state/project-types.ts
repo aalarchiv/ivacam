@@ -4,7 +4,7 @@
 // references. Lives outside `project.svelte.ts` so vitest specs and
 // non-Svelte helpers can import the shapes without booting the Svelte
 // rune runtime, and so `project.svelte.ts` stays focused on the
-// reactive `ProjectState` class itself (audit 6cpl).
+// reactive `ProjectState` class itself.
 //
 // Re-exported from `project.svelte.ts` for backwards compatibility —
 // existing call sites that import from `state/project.svelte` continue
@@ -97,7 +97,7 @@ export interface StockConfig {
   /// mode the anchor is (0, 0) so offsets are absolute.
   offsetX?: number;
   offsetY?: number;
-  /// ya00: Z of the stock top plane (mm) in the WCS frame. 0 (default) =
+  /// Z of the stock top plane (mm) in the WCS frame. 0 (default) =
   /// top at the WCS origin (zeroed on the stock top). Positive raises the
   /// stock above z=0 — e.g. set it to the thickness when you zeroed on
   /// the bed. Sent as `top_z_mm`; drives the 3D stock box, the sim
@@ -108,13 +108,13 @@ export interface StockConfig {
 
 export type CoolantMode = 'off' | 'mist' | 'flood';
 
-/// z1y0: per-tool spindle direction. `cw` (M3) is the default for most
+/// Per-tool spindle direction. `cw` (M3) is the default for most
 /// right-hand cutters; `ccw` (M4) is for left-hand / reverse-thread /
 /// mirror-helix tooling. Mirror of `ivac_core::project::SpindleDirection`,
 /// serde-`rename_all = "lowercase"`.
 export type SpindleDirection = 'cw' | 'ccw';
 
-/// 1wit: one cross-section sample of a form / profile cutter outline,
+/// One cross-section sample of a form / profile cutter outline,
 /// measured up from the cutting tip. Mirror of
 /// `ivac_core::project::FormProfileSample`.
 export interface FormProfileSample {
@@ -136,7 +136,7 @@ export interface ToolEntry {
   /// Rust side defaults to 60°.
   tipAngleDeg?: number;
   dragoff?: number;
-  /// 0t9o: drag-knife self-align threshold (°). Corners whose tangent
+  /// Drag-knife self-align threshold (°). Corners whose tangent
   /// change is below this skip the explicit swivel arc — real knives
   /// self-align below ~30° via the trailing offset. Honored only with
   /// dragoff set. Undefined ⇒ 30° default; 0 forces a swivel at every
@@ -147,7 +147,7 @@ export interface ToolEntry {
   plungeRate: number;
   feedRate: number;
   coolant: CoolantMode;
-  /// Per-pass overrides (rt1.27): when set, the finish ring of a
+  /// Per-pass overrides: when set, the finish ring of a
   /// Pocket op consumes these instead of the general values. Drill ops
   /// consume the _drill variants throughout. Undefined = inherit the
   /// general value.
@@ -160,34 +160,34 @@ export interface ToolEntry {
   /// Default peck step (positive, mm) for Peck / ChipBreak drill
   /// cycles whose op leaves `peck_step_mm` at 0.
   defaultPeckStepMm?: number;
-  /// Per-tool Z origin offset (rt1.30): for machines without auto
+  /// Per-tool Z origin offset: for machines without auto
   /// tool-length probing, pre-measure each tool's tip Z relative to a
   /// reference tool and record the delta here. Positive = sticks out
   /// further; negative = shorter. mm.
   zShiftMm?: number;
-  /// Laser pierce dwell (rt1.29): seconds the beam waits at the
+  /// Laser pierce dwell: seconds the beam waits at the
   /// entry point with the laser on before the cut starts so it burns
   /// through stock. Honored only when kind === 'laser_beam'.
   laserPierceSec?: number;
-  /// Laser lead-in distance (rt1.29): mm of approach travel along the
+  /// Laser lead-in distance: mm of approach travel along the
   /// entry tangent to reduce edge entry burn. Honored only when
   /// kind === 'laser_beam'. (Wire field reserved; emit logic ships in
   /// a follow-up.)
   laserLeadInMm?: number;
-  /// sm59: plasma pierce height (mm above stock) where the arc is
+  /// Plasma pierce height (mm above stock) where the arc is
   /// established before dropping to the cut height. Honored when the
   /// machine mode is 'plasma'. Undefined ⇒ the backend default (3.8 mm).
   pierceHeightMm?: number;
-  /// sm59: plasma cut height (mm above stock, < pierce height) the torch
+  /// Plasma cut height (mm above stock, < pierce height) the torch
   /// drops to for the actual cut. Undefined ⇒ backend default (1.5 mm).
   cutHeightMm?: number;
-  /// sm59: plasma pierce delay (s) the torch dwells at pierce height
+  /// Plasma pierce delay (s) the torch dwells at pierce height
   /// before dropping to cut height. Undefined ⇒ backend default (0.5 s).
   pierceDelaySec?: number;
-  /// Bull-nose corner radius (rt1.28): rounded transition at the
+  /// Bull-nose corner radius: rounded transition at the
   /// floor edge. Honored only when kind === 'bull_nose'.
   cornerRadiusMm?: number;
-  /// 1wit: form / profile cutter cross-section, tip → top. Each sample
+  /// Form / profile cutter cross-section, tip → top. Each sample
   /// is { zMm: height above the cutting tip, rMm: radius there }. The
   /// sim carves the interpolated radius per Z slice when ≥2 samples are
   /// present; otherwise it falls back to a tip→diameter taper. Honored
@@ -199,19 +199,19 @@ export interface ToolEntry {
   /// commanded RPM before the cut starts. Critical for hand-controllers
   /// without spindle-at-speed feedback. Default 1.
   pause?: number;
-  /// Whirling (rt1.25 / 3e5): per-tool helical-spiral overlay flag.
+  /// Whirling: per-tool helical-spiral overlay flag.
   /// When enabled with `whirlExtraWidthMm > 0`, every cut move using
   /// this tool is subdivided and the cutter centerline spirals around
   /// the toolpath — engagement bounded at each point. Default false.
   /// (Serialized to the backend as the `whirl` wire field.)
   whirl?: boolean;
-  /// Whirling spiral diameter (3e5): mm. Net cut width becomes
+  /// Whirling spiral diameter (mm). Net cut width becomes
   /// `diameter + whirlExtraWidthMm`. None / 0 ⇒ overlay disabled.
   whirlExtraWidthMm?: number;
   /// Whirling stride along the toolpath per full spiral revolution
-  /// (3e5): mm. None ⇒ half the spiral radius (one-revolution overlap).
+  /// (mm). None ⇒ half the spiral radius (one-revolution overlap).
   whirlStepoverMm?: number;
-  /// Whirling Z-wobble amplitude (3e5): mm. Overlay adds a
+  /// Whirling Z-wobble amplitude (mm). Overlay adds a
   /// `cos(3θ)·osc − osc` Z ripple between revolutions for chip
   /// evacuation. None / 0 ⇒ flat.
   whirlOscMm?: number;
@@ -219,41 +219,41 @@ export interface ToolEntry {
   /// inherit this when their own `step` is unset.
   defaultStep?: number;
   /// Default XY overlap (0..1) for pocket / cascade ops that don't set
-  /// their own `xyOverlap`. Mirrors `defaultStep` (dr5). Undefined =
+  /// their own `xyOverlap`. Mirrors `defaultStep`. Undefined =
   /// fall through to the global 0.5 default.
   defaultXyOverlap?: number;
-  /// Free-text comment / description (rt1.31). Surfaced as the tooltip
+  /// Free-text comment / description. Surfaced as the tooltip
   /// on the tool select in OpPropertiesPanel and as a multi-line text
   /// area in ToolLibraryDialog. Doesn't affect any pipeline output.
   comment?: string;
   /// Length of cutting flutes in mm. Undefined = treat the entire tool
   /// as cutting (legacy behavior — no holder collision check is done).
   fluteLengthMm?: number;
-  /// dhh0: overall / usable tool length (mm), tip → collet (Estlcam
+  /// Overall / usable tool length (mm), tip → collet (
   /// Length). Display + 3D-preview only — does NOT affect gcode. Sets the
   /// preview mesh's total height. Undefined = diameter-derived heuristic.
   lengthMm?: number;
-  /// dhh0: compression cutter flute-transition height (mm above the tip)
+  /// Compression cutter flute-transition height (mm above the tip)
   /// where down-cut flutes flip to up-cut (Estlcam Obenunten). Honored
   /// only when kind === 'compression'. Display + preview marker only —
   /// the carved cross-section is unchanged. Undefined = flute midpoint.
   compressionTransitionMm?: number;
-  /// gm1u: thread pitch (mm) for a thread mill (Estlcam Pitch) — axial
+  /// Thread pitch (mm) for a thread mill — axial
   /// advance per orbit. Honored only when kind === 'thread_mill'.
   threadPitchMm?: number;
   /// Shank diameter in mm. Undefined = same as `diameter`
   /// (parallel-shank bit). Drives the holder/shank collision sweep.
   shankDiameterMm?: number;
-  /// q0kc: free shank length between the top of the cutting flutes and
+  /// Free shank length between the top of the cutting flutes and
   /// the bottom of the holder/collet (mm). Models reach-extension
   /// tooling where the collet doesn't grip right above the flutes.
   /// Undefined / 0 = legacy behavior (collet sits directly on flutes).
   stickoutLengthMm?: number;
-  /// mmu8: laser kerf width (mm) — the heightmap-side spot radius the
+  /// Laser kerf width (mm) — the heightmap-side spot radius the
   /// sim carves at. Honored only when kind === 'laser_beam'. Undefined
   /// = the legacy 0.15 mm default in the Rust sim.
   kerfMm?: number;
-  /// z1y0: spindle direction the post commands when this tool is
+  /// Spindle direction the post commands when this tool is
   /// selected. Default 'cw' (M3); 'ccw' (M4) for left-hand cutters /
   /// reverse-thread / mirror-helix tooling. Skipped on the wire when
   /// at default to keep the payload compact.
@@ -283,11 +283,11 @@ export interface AxisLimits {
   z: number;
 }
 
-/// cb5y: how the post handles a tool change. Mirrors the Rust
+/// How the post handles a tool change. Mirrors the Rust
 /// `ToolChangeStrategy` enum (snake_case serde tags).
 export type ToolchangeStrategy = 'atc' | 'manual_m6_prompt' | 'manual_m0_pause' | 'ignore';
 
-/// cb5y: migrate a possibly-legacy machine payload. Older saves carried a
+/// Migrate a possibly-legacy machine payload. Older saves carried a
 /// `supportsToolchange` boolean instead of `toolchangeStrategy`; map
 /// `true → 'atc'`, `false → 'manual_m0_pause'` when the new field is
 /// absent, then drop the legacy key. Idempotent for already-migrated
@@ -303,11 +303,11 @@ export function migrateMachineSettings(raw: unknown): MachineSettings {
 }
 
 export interface MachineSettings {
-  /// h0tx: free-text identifier for this machine ("Shop CNC",
+  /// Free-text identifier for this machine ("Shop CNC",
   /// "Garage MPCNC"). Surfaces in the MachineDialog header + the
   /// .ivac-machine.json save file. Empty by default.
   name?: string;
-  /// h0tx: which op kinds the machine can run. Drives the
+  /// Which op kinds the machine can run. Drives the
   /// OpKindPicker's filter — a laser-only machine doesn't show
   /// milling ops. Empty array = implicitly `[mode]` (the default when
   /// capabilities is absent).
@@ -316,7 +316,7 @@ export interface MachineSettings {
   mode: 'mill' | 'laser' | 'drag' | 'plasma';
   comments: boolean;
   arcs: boolean;
-  /// cb5y: tool-change strategy (was the `supportsToolchange` bool).
+  /// Tool-change strategy (was the `supportsToolchange` bool).
   /// `atc` — automatic changer (`T<n> M6`, no pause). `manual_m6_prompt`
   /// — grblHAL / FluidNC, `M6` as a controller-driven prompt.
   /// `manual_m0_pause` — portable `M0` pause for stock GRBL / Marlin
@@ -346,35 +346,35 @@ export interface MachineSettings {
   /// standard RS-274; `grbl` = hobby-CNC subset; `hpgl` = plotter /
   /// drag-knife. Undefined ⇒ fall back to the last-used / linuxcnc.
   gcodeDialect?: 'linuxcnc' | 'grbl' | 'hpgl';
-  /// Decimal separator for emitted numbers (rt1.36). Default '.';
+  /// Decimal separator for emitted numbers. Default '.';
   /// switch to ',' for European Siemens / Heidenhain controllers.
   decimalSeparator?: '.' | ',';
-  /// Starting line number for `N<n>` prefixes (rt1.36). Undefined
+  /// Starting line number for `N<n>` prefixes. Undefined
   /// disables numbering. `10` produces `N10`, `N20`, … on every line.
   lineNumberStart?: number;
-  /// Plot-mode Z (rt1.35): when true, the pipeline collapses every
+  /// Plot-mode Z: when true, the pipeline collapses every
   /// cut to ONE pass at the op's cut depth and skips multi-step
   /// descent / ramp / helix. Z values written into gcode are
   /// restricted to fast_move_z (pen up) and cut depth (pen down).
   /// Right setting for laser / plasma / pen plotter / 3D-printer
   /// extrusion / drag-knife controllers.
   plotModeZ?: boolean;
-  /// User-configurable post-processor profile (rt1.15). When set,
+  /// User-configurable post-processor profile. When set,
   /// the built-in posts (linuxcnc / grbl) use its template strings
   /// instead of their hard-coded program_start / program_end /
   /// tool_change / coolant lines. Undefined ⇒ defaults.
   postProfile?: PostProfile;
-  /// 3nnj: lower bound on the spindle RPM the controller will accept.
+  /// Lower bound on the spindle RPM the controller will accept.
   /// Tool / op RPMs below this clamp UP to the min and emit a
   /// `spindle_speed_clamped_below_min` warning. Undefined disables
   /// the floor (default).
   spindleRpmMin?: number;
-  /// 3nnj: upper bound on the spindle RPM the controller will accept.
+  /// Upper bound on the spindle RPM the controller will accept.
   /// Tool / op RPMs above this clamp DOWN to the max and emit a
   /// `spindle_speed_clamped_above_max` warning. Undefined disables
   /// the ceiling (default).
   spindleRpmMax?: number;
-  /// jcmx: upper bound on the cutting / plunge feed (mm/min) the machine
+  /// Upper bound on the cutting / plunge feed (mm/min) the machine
   /// can drive. Feeds above this clamp DOWN to the max and emit a
   /// `feed_clamped_above_max` warning. Undefined disables the ceiling
   /// (default).
@@ -388,19 +388,19 @@ export interface MachineSettings {
   /// spindle time to spin down before the chuck is touched.
   /// Undefined ⇒ 0.5 s default.
   spindleStopDwellSec?: number;
-  /// syol: when true, the program_end footer adds a `G53 G0 X0 Y0`
+  /// When true, the program_end footer adds a `G53 G0 X0 Y0`
   /// retract-to-machine-home before the spindle-off + M30 sequence.
   /// When false, falls back to a `G0 X0 Y0` in the current WCS
   /// (work zero). Both modes lift to `fast_move_z` first. Default
   /// false.
   parkAtHome?: boolean;
-  /// syol: optional explicit park XY (mm, in WCS coordinates). When
+  /// Optional explicit park XY (mm, in WCS coordinates). When
   /// set, the program_end footer routes the head to this point after
   /// the safe-Z lift, overriding the machine-home / work-zero
   /// fallback. Only meaningful when `parkAtHome` is false (the WCS
   /// fallback path). Emitted as `[x, y]` on the wire.
   parkXy?: [number, number];
-  /// 4lq5: emit `M1` (optional stop) instead of `M0` at every program
+  /// Emit `M1` (optional stop) instead of `M0` at every program
   /// pause — the Pause op and the manual tool-change halt. `M1` is
   /// honored only when the controller's optional-stop switch is on, so a
   /// vetted program can run unattended. Default/undefined ⇒ `M0`.
@@ -412,7 +412,7 @@ export interface MachineSettings {
   laserDynamicPower?: boolean;
 }
 
-/// Mirror of `ivac_core::gcode::post_profile::PostProfile` (rt1.15).
+/// Mirror of `ivac_core::gcode::post_profile::PostProfile`.
 /// Every template field is optional — `None` keeps the built-in
 /// emitter's hard-coded behavior. Templates accept token markers
 /// substituted at emit time: `<version>`, `<unit>`, `<t>` (tool
@@ -429,7 +429,7 @@ export interface PostProfile {
   coolant_flood_off?: string;
   coolant_mist_on?: string;
   coolant_mist_off?: string;
-  /// Per-axis output formatting (hev). When set, replaces the
+  /// Per-axis output formatting. When set, replaces the
   /// hard-coded `X{val} Y{val} Z{val}` / `F{rate}` / `S{rpm}`
   /// emission with the user's axis names + printf-ish format +
   /// scale. Disabled axes drop out of the output entirely.
@@ -490,7 +490,7 @@ export function defaultAxesConfig(): AxesConfig {
 
 export type PocketStrategy = 'cascade' | 'zigzag' | 'spiral' | 'trochoidal' | 'halfpipe';
 
-/// Halfpipe cross-section profile (rt1.19). `circular_arc` for a
+/// Halfpipe cross-section profile. `circular_arc` for a
 /// ball-bottom slot with the given radius; `v_bottom` for a V-bottom
 /// slot with the given included angle (equivalent to V-Carve).
 export type HalfpipeProfile =
@@ -516,7 +516,7 @@ export type PatternConfig =
       startAngleDeg?: number;
     };
 
-/// Per-op tab placement mode (rt1.10). Maps to
+/// Per-op tab placement mode. Maps to
 /// `ivac_core::project::TabPlacementMode`.
 export type TabPlacementMode =
   | { kind: 'off' }
@@ -524,7 +524,7 @@ export type TabPlacementMode =
   | { kind: 'manual' }
   | { kind: 'mixed'; autoCount: number };
 
-/// A user-placed tab anchored geometry-relative (rt1.10). The
+/// A user-placed tab anchored geometry-relative. The
 /// `objectId` is 1-based to match `sourceObjects`; `t ∈ [0, 1)` is
 /// the arc-length parameter along the chained object.
 export interface TabPlacement {
@@ -570,7 +570,7 @@ export type DrillCycle =
 /// what the UI needs to show + edit; the wire format expands to the
 /// full Operation when Generate ships.
 
-/// Non-destructive file-level transform (bww). Applied to the entire
+/// Non-destructive file-level transform. Applied to the entire
 /// imported drawing as a layout convenience — translates, rotates, scales,
 /// and / or mirrors every segment so the user can position the part on
 /// stock for good material use without re-exporting from CAD.
@@ -613,10 +613,10 @@ export function isIdentityFileTransform(t: FileTransform): boolean {
   );
 }
 
-/// One slot in `project.data.imports[]` (wrsu Phase 1). Each entry holds the
-/// imported drawing, its own non-destructive layout transform (bww),
+/// One slot in `project.data.imports[]`. Each entry holds the
+/// imported drawing, its own non-destructive layout transform,
 /// and the absolute path on disk for the source-file watcher.
-/// Multi-file workflows (wrsu Phase 2+) just push more entries onto
+/// Multi-file workflows just push more entries onto
 /// the array; today the typical project has 0 or 1.
 export interface ImportEntry {
   /// 1-based id assigned at import time; stable across save/load. Future
@@ -631,11 +631,11 @@ export interface ImportEntry {
   lastImportPath?: string | null;
 }
 
-/// i5g4: gcode work-coordinate system identifier. Mirror of
+/// Gcode work-coordinate system identifier. Mirror of
 /// `ivac_core::project::Wcs` (serde `rename_all = "UPPERCASE"`).
 export type Wcs = 'G54' | 'G55' | 'G56' | 'G57' | 'G58' | 'G59';
 
-/// i5g4: program-level work-coordinate offset between the geometry
+/// Program-level work-coordinate offset between the geometry
 /// frame (where the DXF / SVG was drawn) and the gcode WCS origin
 /// (where the user zeros the spindle on the real machine). All-zeros
 /// + G54 = "geometry origin = WCS origin", the legacy default.
@@ -657,7 +657,7 @@ export function isDefaultWorkOffset(w: WorkOffset): boolean {
 
 /// Pick a `WorkOffset` for a freshly-imported drawing such that the
 /// gcode WCS origin sits at the geometry's bottom-left corner — the
-/// canonical CNC zeroing convention (audit gldc). Without this auto-
+/// canonical CNC zeroing convention. Without this auto-
 /// default, drawings drawn off-origin in CAD (e.g. a part bbox of
 /// (5.76, 5.79) → (24.22, 24.24)) fire the
 /// `stock_origin_outside_geometry_bbox` pipeline warning, because the
@@ -696,7 +696,7 @@ export function inferDefaultWorkOffset(
   return { ...current, x_mm: min_x, y_mm: min_y };
 }
 
-/// xeio: import-time placement. Returns the initial [`FileTransform`] that
+/// Import-time placement. Returns the initial [`FileTransform`] that
 /// drops the drawing's bottom-left corner onto the work-area origin so the
 /// emitted g-code is reachable. The translate flows through the normal
 /// FileTransform path (applied before the pipeline), so the g-code matches.
@@ -741,18 +741,18 @@ export interface ProjectFile {
   operations?: OpEntry[];
   fixtures?: Fixture[];
   textLayers?: TextLayer[];
-  /// f60x: relief / 3-axis surfacing sources (target Z(x,y) surfaces that
+  /// Relief / 3-axis surfacing sources (target Z(x,y) surfaces that
   /// `relief_mill` ops finish). Referenced by op `sourceId`.
   reliefSources?: ReliefSource[];
-  /// i5g4: program-level WCS offset. Undefined / all-zero @ G54 means
+  /// Program-level WCS offset. Undefined / all-zero @ G54 means
   /// "geometry origin = WCS origin" (the legacy default; round-trips
   /// for legacy files lacking the field).
   workOffset?: WorkOffset;
-  /// l8lk: opt-in tool-change-order optimization. Omitted when false.
+  /// Opt-in tool-change-order optimization. Omitted when false.
   groupOpsByTool?: boolean;
 }
 
-/// f60x: a target surface source for relief / ball-nose surfacing. Mirror
+/// A target surface source for relief / ball-nose surfacing. Mirror
 /// of `ivac_core::project::ReliefSource`. Holds a row-major
 /// normalized-brightness grid (each value in [0, 1]) plus its world
 /// placement; the depth mapping (brightness → Z) lives on the `relief_mill`
@@ -805,7 +805,7 @@ export interface TextLayer {
   /// (~1.2 * sizeMm — the renderer picks the value).
   lineSpacingMm: number;
   alignment: TextAlignment;
-  /// Horizontal stretch factor (969h). 1.0 = font natural width; UI
+  /// Horizontal stretch factor. 1.0 = font natural width; UI
   /// exposes 0.5–2.0 (50–200 %). Backend clamps so legacy files without
   /// the field (deserialised as default 1.0) render unchanged.
   widthScale: number;

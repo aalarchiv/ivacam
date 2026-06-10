@@ -59,7 +59,7 @@ pub struct Op {
 impl Op {
     /// [`ContourParams`] embedded in this op's variant for closed-contour
     /// kinds (Profile / Pocket / Engrave / `DragKnife`). `None` for kinds
-    /// that don't carry contour params. (kbx5 step 2.)
+    /// that don't carry contour params.
     #[must_use]
     pub fn contour_params(&self) -> Option<&ContourParams> {
         match &self.kind {
@@ -73,7 +73,7 @@ impl Op {
         }
     }
 
-    /// Mutable view of the same [`ContourParams`]. (kbx5 step 3.)
+    /// Mutable view of the same [`ContourParams`].
     pub fn contour_params_mut(&mut self) -> Option<&mut ContourParams> {
         match &mut self.kind {
             OpKind::Profile { contour, .. }
@@ -111,7 +111,7 @@ impl Op {
     }
 
     /// [`PocketParams`] embedded in [`OpKind::Pocket`]. `None` for every
-    /// other kind. (kbx5 step 2.)
+    /// other kind.
     #[must_use]
     pub fn pocket_params(&self) -> Option<&PocketParams> {
         match &self.kind {
@@ -121,7 +121,6 @@ impl Op {
     }
 
     /// [`ProfileParams`] embedded in [`OpKind::Profile`]. `None` elsewhere.
-    /// (kbx5 step 2.)
     #[must_use]
     pub fn profile_params(&self) -> Option<&ProfileParams> {
         match &self.kind {
@@ -131,7 +130,6 @@ impl Op {
     }
 
     /// [`VCarveParams`] embedded in [`OpKind::VCarve`]. `None` elsewhere.
-    /// (kbx5 step 2.)
     #[must_use]
     pub fn vcarve_params(&self) -> Option<&VCarveParams> {
         match &self.kind {
@@ -140,7 +138,7 @@ impl Op {
         }
     }
 
-    /// Post-drill chamfer width (Stufenfase, rt1.20) on [`OpKind::Drill`].
+    /// Post-drill chamfer width on [`OpKind::Drill`].
     /// `None` for every other kind, or when the drill op doesn't have a
     /// chamfer-after configured.
     #[must_use]
@@ -157,7 +155,7 @@ impl Op {
     /// Pattern repetition. Today only [`OpKind::Drill`] carries one;
     /// other kinds always return `None`. The pipeline's pattern
     /// expansion runs unchanged — there just are no non-Drill patterned
-    /// ops to expand. (kbx5 step 3.)
+    /// ops to expand.
     #[must_use]
     pub fn pattern(&self) -> Option<PatternConfig> {
         match &self.kind {
@@ -166,7 +164,7 @@ impl Op {
         }
     }
 
-    /// 8n4k: program-only ops carry no tool, no source, and no Z
+    /// Program-only ops carry no tool, no source, and no Z
     /// schedule — they emit raw program scaffolding (toolchange
     /// pauses, machine homing, touch probes, navigation markers)
     /// and are skipped by every machinery that reads tool / source
@@ -180,7 +178,7 @@ impl Op {
 }
 
 impl OpKind {
-    /// 8n4k: see [`Op::is_program_only`].
+    /// See [`Op::is_program_only`].
     #[must_use]
     pub fn is_program_only(&self) -> bool {
         matches!(
@@ -653,12 +651,12 @@ fn default_thread_radial_passes() -> u32 {
     1
 }
 
-/// 8n4k: serde default for `OpKind::Homing::retract_to_safe_z`.
+/// Serde default for `OpKind::Homing::retract_to_safe_z`.
 fn default_true() -> bool {
     true
 }
 
-/// 8n4k: serde default for `OpKind::Probe::axis`. Z is the overwhelmingly
+/// Serde default for `OpKind::Probe::axis`. Z is the overwhelmingly
 /// common case (zero the WCS Z against the stock top).
 fn default_probe_axis() -> ProbeAxis {
     ProbeAxis::Z
@@ -756,12 +754,12 @@ pub struct SpotConfig {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PocketStrategy {
     Cascade,
-    /// Raster fill. rt1.9: `angle_deg` rotates the sweep direction —
+    /// Raster fill. `angle_deg` rotates the sweep direction —
     /// `0` (default) = horizontal sweeps (original behaviour), 90 =
     /// vertical, 45 = diagonal. Wire-compatible: serialises as the
     /// bare string `"zigzag"` when `angle_deg == 0`, otherwise as
-    /// `{ "kind": "zigzag", "angle_deg": <n> }`. Pre-rt1.9 projects
-    /// that wrote `"zigzag"` load with `angle_deg = 0`.
+    /// `{ "kind": "zigzag", "angle_deg": <n> }`. Projects that
+    /// wrote `"zigzag"` load with `angle_deg = 0`.
     Zigzag {
         angle_deg: f64,
     },
@@ -770,7 +768,7 @@ pub enum PocketStrategy {
         engagement_angle_deg: f64,
         loop_radius_factor: f64,
     },
-    /// Halfpipe (rt1.19 / Estlcam _`PK::Halfpipe)`: slot machining where
+    /// Halfpipe: slot machining where
     /// the toolpath walks the region's MEDIAL AXIS at varying Z so the
     /// cut floor matches the configured profile. The slot's width at
     /// each medial-axis point (= 2*inscribed-circle radius) drives the
@@ -782,7 +780,7 @@ pub enum PocketStrategy {
     },
 }
 
-/// Half-pipe slot cross-section (rt1.19).
+/// Half-pipe slot cross-section.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HalfpipeProfile {
     /// Circular arc cross-section of `radius_mm`. At a medial-axis
@@ -809,10 +807,10 @@ impl Serialize for PocketStrategy {
         use serde::ser::SerializeStruct;
         match *self {
             Self::Cascade => ser.serialize_str("cascade"),
-            // rt1.9: bare-string serialisation when the angle is the
+            // Bare-string serialisation when the angle is the
             // default 0; tagged-object form when the user picked an
             // angle. Keeps wire size minimal for the common case AND
-            // pre-rt1.9 projects re-serialise to the original `"zigzag"`
+            // older projects re-serialise to the original `"zigzag"`
             // string, so workspace files don't churn on load.
             Self::Zigzag { angle_deg } if angle_deg.abs() < 1e-9 => ser.serialize_str("zigzag"),
             Self::Zigzag { angle_deg } => {
@@ -1075,7 +1073,7 @@ pub(crate) fn is_false(v: &bool) -> bool {
 mod tests {
     use super::*;
 
-    /// kbx5 step 3: an Op with the per-kind variant structs populated
+    /// An Op with the per-kind variant structs populated
     /// deserializes losslessly. The old legacy-flat migration paths are
     /// gone (no users carried saved files into this revision), so
     /// `OpParams` is universal-only and the variant data lives entirely
@@ -1136,7 +1134,7 @@ mod tests {
         ));
     }
 
-    /// kbx5 step 3: a Drill op with an embedded pattern round-trips.
+    /// A Drill op with an embedded pattern round-trips.
     /// `Op.pattern` is gone — only `OpKind::Drill.pattern` carries
     /// pattern repetitions now.
     #[test]
@@ -1222,10 +1220,10 @@ mod tests {
         assert_eq!(back.kind, op.kind);
     }
 
-    /// rt1.12: omitting the optional fields lands on the documented
+    /// Omitting the optional fields lands on the documented
     /// defaults (Linear 0..1000, AlongX, LiftBetween, no overscan).
     #[test]
-    // iynx: exact 0.0 comparison is intentional — round-tripping a serde
+    // Exact 0.0 comparison is intentional — round-tripping a serde
     // default; the value is written verbatim, not computed.
     #[allow(clippy::float_cmp)]
     fn raster_engrave_defaults_fill_in() {

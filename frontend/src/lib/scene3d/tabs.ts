@@ -1,10 +1,10 @@
 /// Tab markers — small spheres at each op's holding-tab placements.
-/// rt1.10 + hr5: tabs are per-op. Manual placements resolve directly via
+/// Tabs are per-op. Manual placements resolve directly via
 /// (objectId, t); Auto / Mixed modes additionally walk every object the op
 /// covers and emit auto-spaced t values. Same arc-length math as the 2D
 /// canvas + backend.
 ///
-/// Extracted from Scene3D.svelte (4w2f). Owns its THREE.Group.
+/// Extracted from Scene3D.svelte. Owns its THREE.Group.
 
 import * as THREE from 'three';
 import type { ImportResponse } from '../api/types';
@@ -31,7 +31,7 @@ export class TabsBuilder implements Builder {
   }
 
   build(input: TabsInput) {
-    // 7iej.4: dispose the previous run's geometry/material (the shared
+    // Dispose the previous run's geometry/material (the shared
     // sphere geom+mat from the last call) — `.clear()` only detaches
     // children and would leak a geom+mat pair on every op/transform edit.
     disposeGroup(this.group);
@@ -41,7 +41,7 @@ export class TabsBuilder implements Builder {
     const radius = Math.max(0.5, (imp.bbox.max_x - imp.bbox.min_x || 100) * 0.008);
     const geom = new THREE.SphereGeometry(radius, 12, 8);
     const mat = new THREE.MeshBasicMaterial({ color });
-    // Performance (90j): build the object-polyline cache ONCE and resolve
+    // Build the object-polyline cache ONCE and resolve
     // placements inline against this local cache. The prior code called
     // resolveTabPlacementToWorld(imp, tp) per manual placement, which
     // internally re-ran buildObjectPolylines — O(N_placements × N_segments)

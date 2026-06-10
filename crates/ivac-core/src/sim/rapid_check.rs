@@ -8,7 +8,7 @@
 //! makes "rapid Z exactly equals stock Z" Clear — matches the typical
 //! machinist intent of "rapid to surface, then plunge".
 //!
-//! 50eq: when a `HolderProfile` is wired in, we additionally walk the
+//! When a `HolderProfile` is wired in, we additionally walk the
 //! wider shank/holder footprint and emit a `ShankRapid` subkind so
 //! "the rapid clears the cutter tip but drags the shank through tall
 //! uncut walls" gets flagged — the canonical broken-collet scenario.
@@ -43,7 +43,7 @@ pub enum RapidCheck {
         worst_y: f64,
         worst_cell_z: f32,
         rapid_pz: f64,
-        /// 50eq: which envelope was struck — the cutting flutes (Tip)
+        /// Which envelope was struck — the cutting flutes (Tip)
         /// or the shank/holder above them (Shank). Surface this so the
         /// user knows whether the fix is "lower the cut" vs "raise the
         /// retract / use a longer tool".
@@ -57,12 +57,11 @@ pub enum RapidCollisionSubkind {
     Shank,
 }
 
-// WHY: 50eq — only walking the cutting-flute footprint left rapids
-// that drag the shank/holder through uncut walls invisible. With a
-// `HolderProfile` we now also walk the wider holder envelope and
-// compare `cell_z` against `rapid_pz + holder_lower_z(r)` where
-// `holder_lower_z(r)` is the Z above the tip at which the envelope
-// first reaches radius `r`.
+// Only walking the cutting-flute footprint left rapids that drag the
+// shank/holder through uncut walls invisible. With a `HolderProfile`
+// we now also walk the wider holder envelope and compare `cell_z`
+// against `rapid_pz + holder_lower_z(r)` where `holder_lower_z(r)`
+// is the Z above the tip at which the envelope first reaches radius `r`.
 #[must_use]
 pub fn check_rapid_against_stock(
     heightmap: &Heightmap,
@@ -460,7 +459,7 @@ mod tests {
 
     #[test]
     fn rapid_shank_through_stock_emits_warning() {
-        // 50eq: the cutter tip clears the deep pocket but the shank
+        // The cutter tip clears the deep pocket but the shank
         // and holder above it slam into the surrounding tall walls.
         // 50×50×1 mm heightmap, top_z = 50. Carve a channel along
         // Y=25 with half-width 4 (cells at iy 21..28) down to z=0.
@@ -518,7 +517,7 @@ mod tests {
         );
     }
 
-    /// ityc: a `LaserBeam` tool has no physical shank to drag through
+    /// A `LaserBeam` tool has no physical shank to drag through
     /// walls. Even when the user wires a shank diameter on the laser
     /// tool entry (because they share a project-wide tool table with
     /// mill tools), `HolderProfile::from_tool` must return `None` so
@@ -583,11 +582,11 @@ mod tests {
         // No HolderProfile for laser tools.
         assert!(
             HolderProfile::from_tool(&t).is_none(),
-            "ityc: laser tools must not produce a HolderProfile (skips shank/holder pass)"
+            "Laser tools must not produce a HolderProfile (skips shank/holder pass)"
         );
     }
 
-    /// ityc: a drill with NO `flute_length_mm` set used to leave the
+    /// A drill with NO `flute_length_mm` set used to leave the
     /// shank starting at z=0 above the tip. Any wall above the tip
     /// plane within the shank radius alarmed as a shank collision —
     /// silly false-positive on every drill program. The fix synthesizes
@@ -655,12 +654,12 @@ mod tests {
             .expect("z=15 still inside synthetic flute span (18mm)");
         assert!(
             (r_mid - 1.5).abs() < 1e-9,
-            "ityc: at z=15mm above tip the drill's synthetic flute region must \
+            "at z=15mm above tip the drill's synthetic flute region must \
              still report cutting_r=1.5, got r={r_mid}"
         );
     }
 
-    /// ityc: a rapid over walls that previously slammed the shank-pass
+    /// A rapid over walls that previously slammed the shank-pass
     /// (laser tool with shank-on-tip pre-fix) now clears.
     #[test]
     fn laser_rapid_over_walls_does_not_alarm() {

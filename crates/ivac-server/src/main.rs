@@ -337,10 +337,10 @@ async fn generate_stream(
             ),
             Err(err) => {
                 // Stream the full structured `ivac_core::Error` so the frontend
-                // sees the same shape on SSE that it sees on /generate (luf1).
-                // The HTTP status of the SSE response itself is already 200
-                // (sent at stream open); the per-event payload carries the
-                // error semantics.
+                // sees the same shape on SSE that it sees on /generate. The
+                // HTTP status of the SSE response itself is already 200 (sent
+                // at stream open); the per-event payload carries the error
+                // semantics.
                 let app_err = AppError::from(err);
                 send(
                     SseEvent::default()
@@ -378,9 +378,8 @@ async fn generate_cancel(
 ///
 /// The full structured form (`kind` / `message` / `recovery_hint` / `auto_fix`
 /// / `span`) is serialized as the JSON response body so HTTP clients see the
-/// same shape the Tauri and WASM transports surface (luf1). The HTTP status
-/// code is derived from `ivac_core::ErrorKind` so the response also remains
-/// REST-ful.
+/// same shape the Tauri and WASM transports surface. The HTTP status code is
+/// derived from `ivac_core::ErrorKind` so the response also remains REST-ful.
 #[derive(Debug)]
 struct AppError {
     status: StatusCode,
@@ -492,9 +491,9 @@ mod tests {
 
     #[tokio::test]
     async fn http_error_response_carries_full_structured_shape() {
-        // The whole point of luf1: a `ivac_core::Error` with recovery hint
-        // + auto-fix + source span must survive the HTTP round-trip with
-        // every field intact, not collapse to `{error: "msg"}`.
+        // A `ivac_core::Error` with recovery hint + auto-fix + source span
+        // must survive the HTTP round-trip with every field intact, not
+        // collapse to `{error: "msg"}`.
         let inner = WiacError::misconfigured("op 2 references missing tool 9")
             .with_hint("Pick a tool from the library.")
             .with_auto_fix(AutoFix::AssignTool {

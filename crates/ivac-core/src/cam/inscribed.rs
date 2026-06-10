@@ -20,7 +20,7 @@ const MIN_HELIX_RADIUS_FACTOR: f64 = 1.2;
 /// Tie-break for multiple equal-radius vertices (long pill shapes etc.):
 /// first hit wins by medial-axis traversal order.
 ///
-/// 3fvj: the candidate medial-axis vertex is additionally validated
+/// The candidate medial-axis vertex is additionally validated
 /// against EVERY island boundary — `best.r` is the distance to the
 /// nearest densified-boundary SAMPLE (so islands contribute), but the
 /// 0.1 mm sampling can miss long flat island walls whose nearest sample
@@ -67,7 +67,7 @@ pub fn inscribed_circle(region: &VcRegion, tool_radius: f64) -> Option<(f64, f64
 /// Minimum line-segment distance from `p` to the closed polyline
 /// `verts`. Used by the island-clearance check above; segment distance
 /// (not vertex distance) is essential for long flat island walls.
-// juvx: math convention — `p`/`a`/`b` are point bindings, `n` /
+// Math convention — `p`/`a`/`b` are point bindings, `n` /
 // `t` are scalar accumulators in the standard projection identity.
 // Renaming would obscure the formula vs the textbook.
 #[allow(clippy::many_single_char_names)]
@@ -162,7 +162,7 @@ mod tests {
         assert!(inscribed_circle(&region, tool_radius).is_none());
     }
 
-    /// 3fvj regression: the inscribed-circle picker's island-clearance
+    /// Regression: the inscribed-circle picker's island-clearance
     /// check rejects a candidate whose true line-segment distance to
     /// any island edge is less than the helix circle + tool radius. The
     /// medial-axis vertex's `r` value reflects nearest-sample distance,

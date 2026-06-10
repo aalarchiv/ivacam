@@ -1,4 +1,4 @@
-/// Per-op tool-kind constraint helper (k94n). Pure data — vitest
+/// Per-op tool-kind constraint helper. Pure data — vitest
 /// drives it without booting the Svelte rune runtime.
 
 import { describe, expect, it } from 'vitest';

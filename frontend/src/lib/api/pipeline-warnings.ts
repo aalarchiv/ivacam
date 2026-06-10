@@ -1,4 +1,4 @@
-/// 94sf: pipeline-warning severity classifier. The Rust-side
+/// Pipeline-warning severity classifier. The Rust-side
 /// PipelineWarning struct carries `kind`/`message`/`op_id` but no
 /// severity field — the frontend maps `kind` to a severity here so
 /// the GenerateBar safety gate can refuse to ship gcode that the
@@ -24,9 +24,9 @@ export type PipelineSeverity = 'critical' | 'warning' | 'info';
 ///   or missing the pocket fill the user expects.
 /// * `frame_padding_below_tool_radius` — the frame outline got clamped
 ///   to a degenerate width; cuts probably overlap the part wall.
-/// * `op_order_suspect` (tnxu) — a profile cuts the part free
+/// * `op_order_suspect` — a profile cuts the part free
 ///   BEFORE a downstream op; the loose part doesn't get cut right.
-/// * `spindle_speed_clamped_above_max` (3nnj) — the requested RPM
+/// * `spindle_speed_clamped_above_max` — the requested RPM
 ///   exceeded machine spindle_rpm_max; the controller may refuse, and
 ///   the new chipload doesn't match the user's intent.
 /// * `chamfer_width_clamped_to_reach` — width clamped by V-bit reach;
@@ -36,7 +36,7 @@ export type PipelineSeverity = 'critical' | 'warning' | 'info';
 /// * `helix_radius_unfittable` — auto-helix bailed; cutter falls
 ///   through to a different (possibly unsafe) entry strategy.
 ///
-/// Round-2 audit additions (fj88) — these kinds emit silently when
+/// Round-2 audit additions — these kinds emit silently when
 /// the pipeline can't produce a valid toolpath but still returns a
 /// "successful" generate response:
 ///
@@ -68,7 +68,7 @@ export type PipelineSeverity = 'critical' | 'warning' | 'info';
 ///   runs with the first tool still loaded.
 /// * `stufenfase_no_toolchange` — same hazard for a drill → hole-rim
 ///   chamfer: the internal swap to the finish tool can't happen, so
-///   the chamfer cuts with the drill still loaded (l7ze).
+///   the chamfer cuts with the drill still loaded.
 const CRITICAL_KINDS: ReadonlySet<string> = new Set([
   'tool_too_large',
   'frame_padding_below_tool_radius',
@@ -87,7 +87,7 @@ const CRITICAL_KINDS: ReadonlySet<string> = new Set([
   // (a visible warning) without *blocking* Generate — the operator
   // decides whether their machine can reach the path. It still renders
   // in the warnings panel via the default 'warning' severity.
-  // fj88 round-2 additions
+  // Round-2 additions
   'zero_rate_emitted',
   'op_source_empty',
   'op_source_missing_object',
@@ -103,15 +103,15 @@ const CRITICAL_KINDS: ReadonlySet<string> = new Set([
   'halfpipe_radius_mismatch',
   'parallel_offset_panicked',
   'dual_tool_no_toolchange',
-  // l7ze: a drill → hole-rim chamfer (stufenfase) with a distinct
+  // A drill → hole-rim chamfer (stufenfase) with a distinct
   // finish tool is the same hazard class as dual_tool_no_toolchange —
   // an internal swap on a machine that can't do it. Must block shipping.
   'stufenfase_no_toolchange',
-  // i185: GRBL set to ATC with no tool-change macro template emits no
+  // GRBL set to ATC with no tool-change macro template emits no
   // swap at all — the next op cuts with the wrong tool. Silent
   // corruption; must block shipping.
   'grbl_atc_no_toolchange_template',
-  // 7iej.1: GRBL with a fixed tool-length sensor emits a G38.2 probe but
+  // GRBL with a fixed tool-length sensor emits a G38.2 probe but
   // can't apply the measured offset (no numbered-parameter system), so the
   // post-change cut runs uncompensated — off by the full tool-length
   // delta. Likely crash; must block shipping.

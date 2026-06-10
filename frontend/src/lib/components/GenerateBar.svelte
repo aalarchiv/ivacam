@@ -102,12 +102,12 @@
   let warningPanelOpen = $state(false);
   let abortController: AbortController | null = null;
 
-  /// 4kzy: react to a per-op warning-focus request (set by the op
-  /// status badge in OperationsList). Open the warnings panel, then —
-  /// after the rows render — expand every <details> for that op and
-  /// scroll the first into view. Reads `seq` so repeat clicks on the
-  /// same op re-fire. Clearing `opId` re-runs this once more, no-op'd
-  /// by the early return.
+  /// React to a per-op warning-focus request (set by the op status
+  /// badge in OperationsList). Open the warnings panel, then — after
+  /// the rows render — expand every <details> for that op and scroll
+  /// the first into view. Reads `seq` so repeat clicks on the same op
+  /// re-fire. Clearing `opId` re-runs this once more, no-op'd by the
+  /// early return.
   $effect(() => {
     const opId = warningFocus.opId;
     void warningFocus.seq;
@@ -131,7 +131,7 @@
     abortController?.abort();
   }
 
-  // 75op: auto-regenerate on edit. Watch project.data.dirty + the setting;
+  // Auto-regenerate on edit. Watch project.data.dirty + the setting;
   // when both are true and we're not already running, debounce ~1.5s
   // and fire run(). Cancel prior pending debounce on each new edit.
   let autoTimer: ReturnType<typeof setTimeout> | null = null;
@@ -178,8 +178,8 @@
   });
 
   let warnings = $derived(project.gen.simDiagnostics?.warnings ?? []);
-  // dvs4: surface pipeline-level warnings in the same panel that
-  // showed sim warnings before. Previously the panel was hard-coded to
+  // Surface pipeline-level warnings in the same panel that showed sim
+  // warnings before. Previously the panel was hard-coded to
   // `project.gen.simDiagnostics?.warnings` and the panel gate required a
   // non-null simDiagnostics, so a Generate that raised, say,
   // `op_source_empty` or `tool_too_large` flagged the chip but
@@ -188,23 +188,21 @@
   let pipelineWarnings = $derived<PipelineWarning[]>(
     (project.gen.generated as { warnings?: PipelineWarning[] } | null)?.warnings ?? [],
   );
-  // 94sf: critical-count now spans BOTH sim warnings AND pipeline-level
+  // Critical-count now spans BOTH sim warnings AND pipeline-level
   // warnings (tool_too_large, op_order_suspect, frame_padding_below_tool_radius,
   // spindle_speed_clamped_above_max, stock_origin_outside_geometry_bbox, …).
-  // Before, the safety gate ignored everything the pipeline emitted at
+  // Previously the safety gate ignored everything the pipeline emitted at
   // planning time — only sim post-mortem warnings could block the
-  // Generate button. The audit caught that pattern (a Pocket whose tool
-  // didn't fit emitted zero toolpath, raised `tool_too_large`, and the
-  // user's "block on critical" setting did NOT prevent the broken gcode
-  // from shipping).
-  // vrrr: both envelope checks are now pipeline-side. v0ez moved the
-  // work-area half (`out_of_work_area`); vrrr moves the STOCK half
-  // (`out_of_stock`, warnings.rs::push_stock_warning) now that the core
-  // `Project` carries a resolved stock box (sent by `buildProject` via
-  // `computeFootprint`). Both ride in on `project.gen.generated.warnings` →
-  // `pipelineWarnings`, so the frontend no longer synthesizes either —
-  // doing so would double-count. `allPipelineWarnings` is now just the
-  // pipeline's own findings.
+  // Generate button (a Pocket whose tool didn't fit emitted zero
+  // toolpath, raised `tool_too_large`, and the user's "block on
+  // critical" setting did NOT prevent the broken gcode from shipping).
+  // Both envelope checks are now pipeline-side: the work-area half
+  // (`out_of_work_area`) and the STOCK half (`out_of_stock`,
+  // warnings.rs::push_stock_warning) now that the core `Project` carries
+  // a resolved stock box. Both ride in on
+  // `project.gen.generated.warnings` → `pipelineWarnings`, so the
+  // frontend no longer synthesizes either — doing so would double-count.
+  // `allPipelineWarnings` is now just the pipeline's own findings.
   let allPipelineWarnings = $derived<PipelineWarning[]>(pipelineWarnings);
   let pipelineCriticalCount = $derived(countCriticalPipelineWarnings(allPipelineWarnings));
   // Tier-4 safety: count out-of-work-area moves from the last Generate.
@@ -303,16 +301,16 @@
   }
 
   async function downloadGcode() {
-    // 94sf: if the program we'd ship has critical warnings and the user
-    // hasn't disabled the safety gate, refuse to write the file — a broken
-    // / unsafe .ngc on a machine is the failure we're guarding against.
+    // If the program we'd ship has critical warnings and the user hasn't
+    // disabled the safety gate, refuse to write the file — a broken /
+    // unsafe .ngc on a machine is the failure we're guarding against.
     // This is the ONLY place the critical-warning safety check blocks
-    // (Generate stays open so the operator can iterate to a fix); it covers
-    // BOTH the pipeline's findings (tool_too_large, pocket_fill_incomplete,
-    // out_of_stock, …) AND the heightfield sim's collisions / rapid-through-
-    // material. `criticalCount` aggregates both, and simDiagnostics is
-    // cleared on every Generate (see setGenerated) so it always reflects
-    // the toolpath actually being exported.
+    // (Generate stays open so the operator can iterate to a fix); it
+    // covers BOTH the pipeline's findings (tool_too_large,
+    // pocket_fill_incomplete, out_of_stock, …) AND the heightfield sim's
+    // collisions / rapid-through-material. `criticalCount` aggregates
+    // both, and simDiagnostics is cleared on every Generate (see
+    // setGenerated) so it always reflects the toolpath being exported.
     if (project.data.settings.blockOnCriticalSimWarnings && criticalCount > 0) {
       project.setError(
         `${criticalCount} critical warning${criticalCount === 1 ? '' : 's'} (collisions / unsafe cuts) — fix or disable the safety check in Settings before downloading`,
@@ -345,11 +343,10 @@
   }
 
   /// Apply-Fix handler for the `stock_origin_outside_geometry_bbox`
-  /// pipeline warning (audit abdk). Snaps the WCS origin to the geometry
-  /// bbox's bottom-left corner — the same inference the import-time
-  /// auto-default uses (audit gldc), but applied to the CURRENT state
-  /// rather than fresh-import-only. Routes through `setWorkOffset` so
-  /// the change is undoable.
+  /// pipeline warning. Snaps the WCS origin to the geometry bbox's
+  /// bottom-left corner — the same inference the import-time auto-default
+  /// uses, but applied to the CURRENT state rather than fresh-import-only.
+  /// Routes through `setWorkOffset` so the change is undoable.
   function applyWcsBboxSnapFix() {
     const imp = project.transformedImport;
     if (!imp) return;
@@ -372,7 +369,7 @@
   let simStale = $derived(project.gen.simDiagnostics != null && project.data.dirty);
 
   function chipClass(): string {
-    // dvs4: chip color reflects WORST of sim + pipeline warnings.
+    // Chip color reflects WORST of sim + pipeline warnings.
     // "idle" only when there's no generate-side state AND no sim run
     // yet (chip is hidden anyway in that case).
     if (project.gen.simDiagnostics == null && pipelineWarnings.length === 0) return 'sim-chip idle';
@@ -383,11 +380,11 @@
   }
 
   function chipLabel(): string {
-    // qvsa: chip wording is neutral — sim AND pipeline both feed the
-    // count, so labelling the chip "Sim" misled users into hunting in
-    // the sim diagnostic UI for a warning that was actually emitted
-    // by the CAM pipeline. The panel that opens still tags each row
-    // with its source (sim / pipeline) so attribution stays visible.
+    // Chip wording is neutral — sim AND pipeline both feed the count,
+    // so labelling the chip "Sim" misled users into hunting in the sim
+    // diagnostic UI for a warning that was actually emitted by the CAM
+    // pipeline. The panel that opens still tags each row with its source
+    // (sim / pipeline) so attribution stays visible.
     if (project.gen.simDiagnostics == null && pipelineWarnings.length === 0) {
       return 'Warnings: not run yet — Generate first';
     }
@@ -472,8 +469,8 @@
     {/if}
   {/if}
   {#if project.sourceFileStaleNotice}
-    <!-- opqb: source-file-changed chip lives in the toolbar where the
-         user looks for actionable state, instead of the standalone
+    <!-- Source-file-changed chip lives in the toolbar where the user
+         looks for actionable state, instead of the standalone
          bottom-right toast that competed with other floating UI. -->
     <span
       class="stale-chip"
@@ -521,20 +518,20 @@
       {chipLabel()}
     </button>
   {/if}
-  <!-- 2ird: the separate 'bounds' chip was removed — its out-of-stock /
+  <!-- The separate 'bounds' chip was removed — its out-of-stock /
        out-of-work-area findings are already folded into
        `allPipelineWarnings` (synthesized as PipelineWarning rows), so
        they're counted in `totalWarningCount`, listed in the panel, and
        drive the single warnings chip's critical color. One button now. -->
 </div>
 
-<!-- aw8j: floating, drag-movable + resizable panel (mechanics live in
+<!-- Floating, drag-movable + resizable panel (mechanics live in
      FloatingPanel; it stays mounted so the in-session position/size
      survive close + reopen). Each row is a browser-dev-tools-style
      <details> — summary collapses to a one-line header (dot · source ·
      kind · ellipsed msg + Go-to for sim rows), expanded body shows the
      full message with user-select: text so the user can drag-select and
-     copy. dvs4: lists both sim + pipeline warnings, tagged by source. -->
+     copy. Lists both sim + pipeline warnings, tagged by source. -->
 <FloatingPanel
   open={warningPanelOpen}
   onClose={() => (warningPanelOpen = false)}
@@ -761,8 +758,8 @@
     border: 1px solid transparent;
     color: var(--text-strong);
   }
-  /* opqb: source-file-changed chip. Warning palette, inline Reload /
-     dismiss buttons so the user can act without leaving the toolbar. */
+  /* Source-file-changed chip. Warning palette, inline Reload / dismiss
+     buttons so the user can act without leaving the toolbar. */
   .stale-chip {
     display: inline-flex;
     align-items: center;
@@ -856,9 +853,9 @@
     margin-right: 0.25rem;
     font-weight: bold;
   }
-  /* aw8j: warnings content inside the FloatingPanel body — `flex: 1`
-     fills the panel's column layout; user-select: text on the body so
-     users can copy. */
+  /* Warnings content inside the FloatingPanel body — `flex: 1` fills
+     the panel's column layout; user-select: text on the body so users
+     can copy. */
   .list {
     flex: 1;
     overflow: auto;

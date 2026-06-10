@@ -4,7 +4,7 @@
 /// playhead-collision "flash" can flip a fixture red in place (one
 /// `.color.set` per material) without a rebuild.
 ///
-/// Extracted from Scene3D.svelte (4w2f). Owns its THREE.Group.
+/// Extracted from Scene3D.svelte. Owns its THREE.Group.
 
 import * as THREE from 'three';
 import type { Fixture } from '../state/project.svelte';
@@ -41,7 +41,7 @@ export class FixturesBuilder implements Builder {
     this.baseColors = new Map();
     const accent = this.cssColor('--accent', 0x4a8df0);
     for (const f of input.fixtures) {
-      // 7iej.12: shared unpack with the 2D canvas. Default alpha ~0.5 when
+      // Shared unpack with the 2D canvas. Default alpha ~0.5 when
       // the wire color omits it; the 3D opacity treatment stays here.
       const { a, hex } = unpackFixtureColor(f.color);
       const opacity = Math.max(0.2, Math.min(1.0, a > 0 ? a / 255 : 0.5));

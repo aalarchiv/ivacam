@@ -171,14 +171,14 @@
     void project.gen.generated;
     // Repaints on origin too (drag): cheap now that an origin change no
     // longer triggers a backend render — drawTextPreview just re-strokes
-    // the cached glyphs at the live origin via a draw-time translation (k9cz).
+    // the cached glyphs at the live origin via a draw-time translation.
     void project.data.textLayers;
     void project.sel.selectedTextLayerId;
     void previewVersion.v;
     void project.data.machine.workArea;
     void project.data.stock;
     void project.data.settings.previewLineWidth;
-    // rt1.12 (fvb0): a raster-engrave-only project (no imported geometry)
+    // A raster-engrave-only project (no imported geometry)
     // draws its grid / axes fit to the placement bbox, so the bg must
     // react to sources / ops appearing / moving. Same per-frame cost as
     // a pan (which already repaints this layer), so no new regression.
@@ -199,7 +199,7 @@
     void project.data.fixtures;
     void project.sel.selectedFixtureId;
     void project.sel.selectedTextLayerId;
-    // rt1.12 (j7b4): raster-engrave placement images live on the overlay
+    // Raster-engrave placement images live on the overlay
     // (faint, under the interaction chrome) so the heavy bg layer stays
     // pure. Repaint when a source moves / resizes.
     void project.data.reliefSources;
@@ -222,7 +222,7 @@
     }
   });
 
-  /// Selected-op-driven tab placement mode (rt1.10). When the user
+  /// Selected-op-driven tab placement mode. When the user
   /// has a profile / pocket op selected with `tabMode` === manual or
   /// mixed, the canvas behaves as a tab-placement surface: hover
   /// shows a ghost tab; click toggles a placement.
@@ -246,17 +246,17 @@
     t: number;
     snap: 'contour' | 'vertex' | 'midpoint' | 'existing';
   } | null>(null);
-  /// Track Alt-held state across the gesture (1q3) — when true, snap
+  /// Track Alt-held state across the gesture — when true, snap
   /// to anything except the bare contour projection is disabled,
   /// matching the CAD-convention escape hatch.
   let altDown = $state(false);
 
-  /// Track Shift-held state for the approach-point picker (n79). When
+  /// Track Shift-held state for the approach-point picker. When
   /// true, snap-to-vertex is disabled — the user is asking for a
   /// free-form pick anywhere in the canvas.
   let shiftDown = $state(false);
 
-  /// Approach-point picker (n79). Active when project.sel.pickMode is
+  /// Approach-point picker. Active when project.sel.pickMode is
   /// `{ kind: 'approach-point', opId: <selected op id> }`. Cursor
   /// becomes a crosshair, a preview marker tracks the mouse (snapped
   /// to source-object vertices unless Shift is held), and a click
@@ -280,7 +280,7 @@
   /// inside the marker's hit circle; released on pointerup.
   let approachDrag = $state<{ opId: number; pointerId: number } | null>(null);
 
-  /// rt1.12 (j7b4): drag state for repositioning a raster-engrave
+  /// Drag state for repositioning a raster-engrave
   /// placement image. `grabDX/DY` is the data-space offset between the
   /// pointer and the source origin at grab time, so the origin tracks
   /// the cursor without jumping. Committed live (coalesced into one undo
@@ -292,7 +292,7 @@
     grabDY: number;
   } | null>(null);
 
-  /// rt1.12 (ywf9): drag state for repositioning a text layer's origin.
+  /// Drag state for repositioning a text layer's origin.
   /// `grabDX/DY` is the pointer→origin offset at grab time so the origin
   /// tracks the cursor. Committed live (coalesced — see
   /// coalesceKeyForTextPatch) on every move, mirroring the raster drag.
@@ -308,14 +308,14 @@
   const rasterImageCache = new RasterImageCache();
 
   /// Precomputed OSnap target collection. Rebuilt only when the
-  /// imported geometry changes — never per pointermove. (64p.)
+  /// imported geometry changes — never per pointermove.
   const osnapTargets = $derived<OSnapTargets>(
     approachPickActive || approachDrag != null
       ? precomputeOSnapTargets(project.geometryView)
       : { endpoints: [], midpoints: [], intersections: [], centers: [] },
   );
 
-  /// OSnap settings come from `project.data.settings.osnap` (li0m). Falls
+  /// OSnap settings come from `project.data.settings.osnap`. Falls
   /// back to the hardcoded defaults for the brief window between
   /// component mount and the settings hydration completing.
   const osnapSettings = $derived(project.data.settings.osnap ?? DEFAULT_OSNAP_SETTINGS);
@@ -324,11 +324,11 @@
   // and pick the nearest one within `HIT_PIXEL_TOL`.
   const HIT_PIXEL_TOL = 8;
   let hoverIdx = $state<number | null>(null);
-  /// fx06: id of the text layer whose stroke the cursor is hovering (for
+  /// Id of the text layer whose stroke the cursor is hovering (for
   /// the hover highlight + grab cursor), or null. Text-layer analogue of
   /// `hoverIdx`.
   let hoverTextId = $state<number | null>(null);
-  /// 7tp5: cursor world coordinates for the on-canvas HUD. Updated on
+  /// Cursor world coordinates for the on-canvas HUD. Updated on
   /// every pointermove (regardless of modal mode); cleared on
   /// pointerleave. null until the first import + first move.
   let cursorXY = $state<{ x: number; y: number } | null>(null);
@@ -349,7 +349,7 @@
   /// Active pan drag — started on middle-button down, ended on pointer up.
   let panDrag = $state<{ startX: number; startY: number; pointerId: number } | null>(null);
 
-  /// bwt7 — touch gesture bookkeeping. These are plain (non-reactive)
+  /// Touch gesture bookkeeping. These are plain (non-reactive)
   /// fields: they drive the reactive `userZoom/Pan*` fields, but nothing
   /// renders them directly, so they don't need `$state`.
   ///
@@ -362,7 +362,7 @@
   let longPressTimer: ReturnType<typeof setTimeout> | null = null;
   let longPressStart: PointerPos | null = null;
 
-  /// bwt7: keyboardless multi-select. On a touchscreen with no hardware
+  /// Keyboardless multi-select. On a touchscreen with no hardware
   /// keyboard, shift/ctrl-tap are unreachable, so this toggle makes a
   /// plain tap behave like ctrl-click (toggle into the selection).
   /// Surfaced as an overlay button on touch-capable devices only.
@@ -434,7 +434,7 @@
   /// cursor + tolerance and bails early past that.
   // Spatial index (HitIndex type + buildHitIndex + the cell-walk
   // query loop) extracted to lib/canvas/spatial-index.ts so vitest
-  // can exercise them without mounting the canvas (y0ez).
+  // can exercise them without mounting the canvas.
   let hitIndex: HitIndex | null = null;
 
   $effect(() => {
@@ -456,7 +456,7 @@
       dataY,
       tolData,
       (l) =>
-        // 8jce/vm3c: the synthetic stock-outline layer isn't in the
+        // The synthetic stock-outline layer isn't in the
         // user's visibleLayers set, but it must always be hittable.
         l === STOCK_OUTLINE_LAYER || project.data.visibleLayers.has(l),
     );
@@ -491,12 +491,12 @@
     const rect = canvas.getBoundingClientRect();
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
-    // 7tp5: cursor coordinate HUD. Track the world (data) position on
+    // Cursor coordinate HUD. Track the world (data) position on
     // every move regardless of modal mode — users want to read X/Y
     // while pan/zoom/select/picking. pxToData returns null if the
     // transform isn't staged yet (no imported drawing).
     cursorXY = pxToData(cx, cy);
-    // bwt7: feed the live touch position into the gesture tracker and,
+    // Feed the live touch position into the gesture tracker and,
     // while a pinch is active, recompute zoom + pan from the two
     // fingers' movement (consuming the event before any hover / select).
     if (activePointers.has(e.pointerId)) {
@@ -525,7 +525,7 @@
     if (longPressStart && !withinTapTolerance(longPressStart, { x: cx, y: cy })) {
       cancelLongPress();
     }
-    // n79: in approach-pick mode, the cursor IS the picker — update
+    // In approach-pick mode, the cursor IS the picker — update
     // the preview marker on every move and short-circuit the
     // hover-hit / box-select paths below.
     if (approachPickActive) {
@@ -545,7 +545,7 @@
       approachPreview = null;
     }
 
-    // Live drag of an already-placed approach marker (n79 hybrid).
+    // Live drag of an already-placed approach marker.
     if (approachDrag && e.pointerId === approachDrag.pointerId) {
       const data = pxToData(cx, cy);
       if (data) {
@@ -560,7 +560,7 @@
       return;
     }
 
-    // rt1.12 (j7b4): live drag of a raster-engrave placement image.
+    // Live drag of a raster-engrave placement image.
     // Commits straight to the source origin (coalesced ⇒ one undo
     // entry); the overlay repaint tracks the new origin reactively.
     if (rasterDrag && e.pointerId === rasterDrag.pointerId) {
@@ -574,7 +574,7 @@
       return;
     }
 
-    // rt1.12 (ywf9): live drag of a text layer's origin (coalesced ⇒ one
+    // Live drag of a text layer's origin (coalesced ⇒ one
     // undo entry); the bg repaint tracks the new origin reactively.
     if (textDrag && e.pointerId === textDrag.pointerId) {
       const data = pxToData(cx, cy);
@@ -587,7 +587,7 @@
       return;
     }
 
-    // Audit kj8i: hover-near-marker preview. Mirror the hit-test that
+    // Hover-near-marker preview. Mirror the hit-test that
     // onPointerDown does for click-to-drag so the cursor flips to
     // `grab` BEFORE the user mousedowns — without this the marker is
     // draggable but invisibly so.
@@ -640,7 +640,7 @@
         return;
       }
     }
-    // fx06: text-stroke hover takes precedence (text is drawn on top);
+    // Text-stroke hover takes precedence (text is drawn on top);
     // when over a glyph stroke we suppress the geometry hover and flip
     // the cursor to a grab affordance so the drag is discoverable.
     const tdata = pxToData(cx, cy);
@@ -649,7 +649,7 @@
     if (idx !== hoverIdx) hoverIdx = idx;
     const newHoverText = textHover ? textHover.id : null;
     if (newHoverText !== hoverTextId) hoverTextId = newHoverText;
-    // rt1.10: tab-placement mode — project cursor to the op's
+    // Tab-placement mode — project cursor to the op's
     // closest source contour and stage a ghost tab. The ghost only
     // renders when the projection is within ~6 px of the cursor
     // (screen-space) so we don't spam ghosts the user wasn't aiming at.
@@ -677,7 +677,7 @@
   }
 
   function onPointerUp(e: PointerEvent) {
-    // bwt7: release touch tracking + end any active gesture. A quick
+    // Release touch tracking + end any active gesture. A quick
     // down→up cancels the long-press (it was a tap, not a hold); a
     // finger leaving a pinch ends the gesture and drops any armed
     // box-select so the remaining finger's lift is a no-op.
@@ -693,7 +693,7 @@
       } catch {}
       return;
     }
-    // n79: end an active approach-marker drag.
+    // End an active approach-marker drag.
     if (approachDrag && e.pointerId === approachDrag.pointerId) {
       approachDrag = null;
       canvas.style.cursor = 'default';
@@ -703,7 +703,7 @@
       } catch {}
       return;
     }
-    // rt1.12 (j7b4): end an active raster placement drag.
+    // End an active raster placement drag.
     if (rasterDrag && e.pointerId === rasterDrag.pointerId) {
       rasterDrag = null;
       canvas.style.cursor = 'default';
@@ -712,13 +712,13 @@
       } catch {}
       return;
     }
-    // rt1.12 (ywf9): end an active text-layer drag.
+    // End an active text-layer drag.
     if (textDrag && e.pointerId === textDrag.pointerId) {
       textDrag = null;
       canvas.style.cursor = 'default';
       // The 3D scene doesn't track text origin per-frame (it would mean a
       // GPU rebuild on every move); nudge it once so it picks up the final
-      // dragged position via the draw-time translation (k9cz).
+      // dragged position via the draw-time translation.
       forceTextPreviewRefresh();
       try {
         canvas.releasePointerCapture(e.pointerId);
@@ -802,7 +802,7 @@
   /// Inkscape style containment select, so dragging the rubber-band
   /// across part of an object does NOT pick it. Works in DATA
   /// coordinates: we transform the rectangle once into data space and
-  /// containment-test each object's bbox (audit-1dqh).
+  /// containment-test each object's bbox.
   function objectsInBox(x0: number, y0: number, x1: number, y1: number): number[] {
     const data = project.geometryView;
     if (!data || !lastTransform) return [];
@@ -822,7 +822,7 @@
     hoverTextId = null;
     ghostTab = null;
     cursorXY = null;
-    // bwt7: a finger dragged off the canvas can't complete a hold.
+    // A finger dragged off the canvas can't complete a hold.
     cancelLongPress();
     canvas.style.cursor = tabPlacementActive ? 'crosshair' : 'default';
   }
@@ -865,7 +865,7 @@
   /// wrapped in one undoable transaction.
   let ctxMenu = $state<{ x: number; y: number; dataX: number; dataY: number } | null>(null);
 
-  /// Per-tab popover (8rd). Opens on right-click over an existing
+  /// Per-tab popover. Opens on right-click over an existing
   /// tab; carries the canvas-space position to anchor the popover
   /// + the (opId, placementIdx) it edits. Clamped to canvas bounds
   /// at render time so a tab near the edge doesn't open off-screen.
@@ -889,10 +889,10 @@
 
   /// Open the canvas context menu at a canvas-relative pixel position.
   /// Shared by mouse right-click (`onContextMenu`) and the touch
-  /// long-press (bwt7) so both reach the same tab-popover / op-picker /
+  /// long-press so both reach the same tab-popover / op-picker /
   /// "set text origin here" actions.
   function openContextMenuAt(cx: number, cy: number) {
-    // 8rd: right-click over an existing tab opens the per-tab
+    // Right-click over an existing tab opens the per-tab
     // popover BEFORE falling through to the op-picker context menu.
     const hit = findTabAtPixel(cx, cy);
     if (hit) {
@@ -1021,7 +1021,7 @@
       ctxMenu = null;
       e.preventDefault();
     }
-    // Audit kj8i: F / Home reset the 2D view to its auto-fit baseline.
+    // F / Home reset the 2D view to its auto-fit baseline.
     // Mirrors the new `.fit-btn` overlay button and the 3D pane's
     // equivalent. Bail when the user is typing — we don't want F to
     // wipe an unrelated input.
@@ -1039,7 +1039,7 @@
       fitView();
       e.preventDefault();
     }
-    // n79: ESC finalizes the approach-point picker (sticky mode exit).
+    // ESC finalizes the approach-point picker (sticky mode exit).
     if (e.key === 'Escape' && approachPickActive) {
       project.sel.pickMode = null;
       approachPreview = null;
@@ -1059,7 +1059,7 @@
     // Cheap bail when neither the context menu nor the tab popover
     // is open — the global onclick from <svelte:window> fires on
     // every document click and we don't want to walk the DOM with
-    // `closest` per click when there's nothing to dismiss (audit-pgxb).
+    // `closest` per click when there's nothing to dismiss.
     if (!ctxMenu && !tabPopover) return;
     const target = e.target as HTMLElement | null;
     if (tabPopover) {
@@ -1120,7 +1120,7 @@
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
 
-    // bwt7: touch gesture tracking. A second finger promotes the
+    // Touch gesture tracking. A second finger promotes the
     // gesture to a pinch-zoom / two-finger pan; the first finger held
     // still becomes a long-press → context menu. Mouse / pen fall
     // straight through to the button-based paths below.
@@ -1284,20 +1284,20 @@
         return;
       case 'fixture-select':
         project.selectFixture(intent.id);
-        project.sel.selectedTextLayerId = null; // fx06: keep selection single-domain
+        project.sel.selectedTextLayerId = null; // keep selection single-domain
         return;
       case 'entity-click':
         break;
     }
 
-    // fx06: a left-click on geometry / empty space (not consumed by a
+    // A left-click on geometry / empty space (not consumed by a
     // text-stroke hit above) deselects any active text layer, so text
     // and object selection stay mutually exclusive.
     project.sel.selectedTextLayerId = null;
 
     const idx = pixelHit(cx, cy);
     // Map segment index → its 1-based object id (or null for empty
-    // space). The pure reducer in lib/canvas/entity-selection.ts (774f)
+    // space). The pure reducer in lib/canvas/entity-selection.ts
     // resolves modifiers and emits the action list; we dispatch and
     // arm the box-select store.
     const hitObjectId = idx == null ? null : (project.geometryView?.objects?.[idx] ?? 0);
@@ -1305,7 +1305,7 @@
       {
         hitObjectId,
         shiftKey: e.shiftKey,
-        // bwt7: the "add to selection" toggle stands in for ctrl on a
+        // The "add to selection" toggle stands in for ctrl on a
         // keyboardless touch device — a plain tap then toggles.
         ctrlKey: e.ctrlKey || addToSelection,
         metaKey: e.metaKey,
@@ -1355,7 +1355,7 @@
   /// runs in data coordinates: a click is "inside" a Box / Cylinder if
   /// the point is inside their AABB / disc, and inside a Polygon by
   /// Hit-test fixtures in canvas pixel space. Pure shape-inclusion
-  /// logic delegated to `lib/canvas/fixture-hit.ts` (audit y0ez);
+  /// logic delegated to `lib/canvas/fixture-hit.ts`;
   /// the component just converts canvas-pixel to data-space and
   /// passes the current fixture list.
   function fixtureHit(canvasX: number, canvasY: number): number | null {
@@ -1435,7 +1435,7 @@
 
     const data = project.geometryView;
     const hasGeom = !!data && data.segments.length > 0;
-    // rt1.12 (fvb0 / ywf9): a placement-only project (raster images
+    // A placement-only project (raster images
     // and/or text, no imported DXF) has no geometry — fall back to a
     // bbox over the placements / bed so the grid + axes + draggable
     // entities still render.
@@ -1498,7 +1498,7 @@
       // overlays (selection / hover / op-assignment halos) go on the
       // overlay canvas, so editing those does NOT invalidate this layer.
       const visibleLayersSnap = new Set(project.data.visibleLayers);
-      visibleLayersSnap.add(STOCK_OUTLINE_LAYER); // vm3c: synthetic layer always drawn
+      visibleLayersSnap.add(STOCK_OUTLINE_LAYER); // synthetic layer always drawn
       drawImportedWireframe(
         ctx,
         project2,
@@ -1519,7 +1519,7 @@
         project2,
         project.data.textLayers.map((layer) => ({
           // Segments come back translated to the layer's current origin, so
-          // a drag repositions the glyphs with no re-render (k9cz).
+          // a drag repositions the glyphs with no re-render.
           segments: previewSegmentsFor(layer.id, layer.origin) ?? [],
           isActive: project.sel.selectedTextLayerId === layer.id,
         })),
@@ -1546,7 +1546,7 @@
 
     const data = project.geometryView;
     const hasGeom = !!data && data.segments.length > 0;
-    // rt1.12 (fvb0 / ywf9): mirror drawBackground — fall back to the
+    // Mirror drawBackground — fall back to the
     // placement / bed bbox so a geometry-less project is draggable.
     const fallbackBBox = hasGeom ? null : placementFallbackBBox();
     if (!hasGeom && !fallbackBBox) return;
@@ -1554,7 +1554,7 @@
 
     const accent = themeVar('--accent', '#2d6cdf');
 
-    // rt1.12 (j7b4): faint raster-engrave placement images, painted
+    // Faint raster-engrave placement images, painted
     // first so selection halos / chrome layer over them.
     drawRasterPlacements(
       ctx,
@@ -1568,7 +1568,7 @@
       { accent, border: themeVar('--border', '#555') },
     );
 
-    // fx06: hover highlight for the text layer under the cursor (the
+    // Hover highlight for the text layer under the cursor (the
     // selected-layer highlight stays on the bg in drawTextPreview). Drawn
     // on the overlay so frequent hover repaints don't touch the bg layer.
     if (hoverTextId != null && hoverTextId !== project.sel.selectedTextLayerId) {
@@ -1584,7 +1584,7 @@
 
     if (hasGeom && data) {
       const visibleLayersSnap = new Set(project.data.visibleLayers);
-      visibleLayersSnap.add(STOCK_OUTLINE_LAYER); // vm3c: synthetic layer always drawn
+      visibleLayersSnap.add(STOCK_OUTLINE_LAYER); // synthetic layer always drawn
       drawEntityHalos(ctx, project2, {
         segments: data.segments,
         objects: data.objects,
@@ -1684,7 +1684,7 @@
     return null;
   }
 
-  /// rt1.12 (fvb0 / ywf9): a viewport bbox for a project with no imported
+  /// A viewport bbox for a project with no imported
   /// geometry + no visible stock, so placement-only entities (raster
   /// images, text layers) still render + drag. Prefers the machine work
   /// area — a STABLE reference, so the view doesn't jiggle while an
@@ -1713,7 +1713,7 @@
     return placementsBBox(rects);
   }
 
-  /// fx06: the text layer whose glyph STROKE is under a data-space point
+  /// The text layer whose glyph STROKE is under a data-space point
   /// (within the screen-constant pixel tolerance), or null. Uses the
   /// rendered preview segments so the mostly-whitespace bbox doesn't
   /// steal clicks; topmost layer wins a tie. Drives both hover and
@@ -1775,7 +1775,7 @@
     <div class="cursor-hud" aria-hidden="true">
       x: {cursorXY.x.toFixed(2)} &nbsp; y: {cursorXY.y.toFixed(2)} mm
       {#if shiftDown && (approachPickActive || tabPlacementActive)}
-        <!-- Audit kj8i: visible cue that Shift is suppressing snap.
+        <!-- Visible cue that Shift is suppressing snap.
              Without this the snap glyph just silently disappears and
              the user can't tell why their click no longer locks. -->
         <span class="snap-off">snap off</span>
@@ -1888,7 +1888,7 @@
       </div>
     {/if}
   {/if}
-  <!-- Fit-to-view affordance mirroring Scene3D's .fit-btn (audit kj8i).
+  <!-- Fit-to-view affordance mirroring Scene3D's .fit-btn.
        Doubleclick on empty space already resets, but that's undocumented
        — adding the button gives an obvious affordance and matches the 3D
        pane. F / Home shortcuts also call fitView when canvas has focus. -->
@@ -1902,7 +1902,7 @@
     ⌖
   </button>
   {#if isTouchDevice}
-    <!-- bwt7: keyboardless multi-select toggle. On touch there's no
+    <!-- Keyboardless multi-select toggle. On touch there's no
          shift/ctrl-tap, so this latches "tap = add/remove from
          selection". Touch devices only — mouse users have modifiers. -->
     <button
@@ -1965,7 +1965,7 @@
     font-size: 0.72rem;
     pointer-events: none;
   }
-  /* a4ab: first-run hint when imported && no ops. Center bottom so it
+  /* First-run hint when imported && no ops. Center bottom so it
      hangs below the geometry without covering it. Auto-dismisses the
      instant the user adds an op. */
   .firstrun-hint {
@@ -2003,7 +2003,7 @@
     color: var(--text-muted);
     font-size: 0.85rem;
   }
-  /* 7tp5: cursor world-coordinate HUD. Top-right corner so it doesn't
+  /* Cursor world-coordinate HUD. Top-right corner so it doesn't
      fight the selection-hud (top-left). Monospace tabular-nums so the
      numbers don't dance as the cursor moves. */
   .cursor-hud {
@@ -2185,7 +2185,7 @@
     opacity: 1;
     color: var(--text-strong);
   }
-  /* bwt7: keyboardless multi-select toggle — visual twin of .fit-btn,
+  /* Keyboardless multi-select toggle — visual twin of .fit-btn,
      sits one slot further left. Latches an accent fill while active. */
   .multiselect-btn {
     position: absolute;

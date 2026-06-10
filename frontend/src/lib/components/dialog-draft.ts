@@ -1,11 +1,11 @@
-/// Pure logic for the canonical dialog draft/commit/discard helper
-/// (kdfh). The rune-bearing DialogDraft class lives in
+/// Pure logic for the canonical dialog draft/commit/discard helper.
+/// The rune-bearing DialogDraft class lives in
 /// dialog-draft.svelte.ts; the comparison + close-protocol rules live
 /// here so vitest exercises them without the rune runtime.
 
 /// Order-invariant structural equality over plain JSON-ish data
 /// (objects / arrays / primitives — the shape dialog drafts have).
-/// 1xgj: stringify-compare flagged reordered-but-equal drafts dirty.
+/// Stringify-compare flagged reordered-but-equal drafts dirty.
 export function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (typeof a !== typeof b) return false;

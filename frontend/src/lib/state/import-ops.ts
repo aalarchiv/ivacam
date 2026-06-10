@@ -1,5 +1,5 @@
 // Import/geometry domain operations extracted from the ProjectState god
-// root (361x). Each function takes the live `ProjectState` and mutates
+// root. Each function takes the live `ProjectState` and mutates
 // through its slices + the command bus; ProjectState keeps one-line
 // delegators so the component-facing `project.*` API is unchanged.
 // Splitting by domain (not by mechanism) gives the import lifecycle —
@@ -28,7 +28,7 @@ function isAbsolutePath(path: string): boolean {
 }
 
 /// Append another drawing to the project as its own ImportEntry
-/// (wrsu Phase 2). Each entry keeps its own fileTransform so the user
+/// (Phase 2). Each entry keeps its own fileTransform so the user
 /// can position drawings independently on stock. Layer visibility
 /// opens for newly-arrived names so the user sees the new drawing.
 ///
@@ -72,7 +72,7 @@ export function addImported(p: ProjectState, r: ImportResponse, sourcePath?: str
   void refreshSourceWatch(p);
 }
 
-/// Remove an import by its ImportEntry.id (wrsu Phase 2). Layer
+/// Remove an import by its ImportEntry.id (Phase 2). Layer
 /// visibility entries that no longer have any backing import are
 /// pruned (visibility lives outside history). Undoable via the
 /// `setImportsCommand` shape.
@@ -102,7 +102,7 @@ export function setImported(p: ProjectState, r: ImportResponse, sourcePath?: str
   // from `sourcePath` when the caller provided one.
   const prev = p.data.imports[0];
   const nextPath = sourcePath !== undefined ? sourcePath : (prev?.lastImportPath ?? null);
-  // xeio: auto-place the drawing's bottom-left at the work-area origin
+  // Auto-place the drawing's bottom-left at the work-area origin
   // (unless it already sits fully inside the bed) so the emitted g-code
   // is reachable. Translate-only; flows through the normal FileTransform
   // path so the pipeline / g-code see the placed coordinates.
@@ -130,7 +130,7 @@ export function setImported(p: ProjectState, r: ImportResponse, sourcePath?: str
   p.sel.selectedObjects = new Set();
   p.sel.hoverSegment = null;
   p.sourceFileStaleNotice = null;
-  // gldc: auto-default work_offset to the geometry bbox's bottom-left
+  // Auto-default work_offset to the geometry bbox's bottom-left
   // when the drawing was authored off-origin in CAD and the user
   // hasn't explicitly set an offset. Suppresses the
   // `stock_origin_outside_geometry_bbox` pipeline warning at its
@@ -139,7 +139,7 @@ export function setImported(p: ProjectState, r: ImportResponse, sourcePath?: str
   // (operator zeros at the bottom-left corner of the drawing).
   // No-op when the user has already moved away from default.
   // Snap the WCS to the PLACED bottom-left, not the raw (pre-placement)
-  // coords — xeio's translate may have moved the geometry to origin.
+  // coords — the auto-place translate may have moved the geometry to origin.
   const placedBbox = {
     min_x: r.bbox.min_x + placement.translate.x,
     min_y: r.bbox.min_y + placement.translate.y,
@@ -165,7 +165,7 @@ export async function refreshSourceWatch(p: ProjectState): Promise<void> {
   if (typeof window === 'undefined') return;
   if (!isTauriEnv()) return;
   const paths = new Set<string>();
-  // wrsu Phase 2: watch every import's source path, not just imports[0].
+  // Watch every import's source path, not just imports[0].
   for (const entry of p.data.imports) {
     if (entry.lastImportPath && isAbsolutePath(entry.lastImportPath)) {
       paths.add(entry.lastImportPath);
@@ -202,7 +202,7 @@ export async function stopSourceWatch(): Promise<void> {
 /// After the swap, ops whose `sourceObjects` reference object ids no
 /// longer present in the new geometry are flagged via console.warn —
 /// richer recovery is a follow-up. Returns true on success.
-/// Source-file watcher callback (eb8.4 + wrsu Phase 2). The watcher
+/// Source-file watcher callback. The watcher
 /// fires per-path; we look up the matching ImportEntry and replace
 /// its source in place, preserving its fileTransform + id. If no
 /// entry matches the path (stale watch), bail rather than overwrite
@@ -230,10 +230,10 @@ export async function reimportFromPath(p: ProjectState, path: string): Promise<b
   p.sourceFileStaleNotice = null;
   // Orphan-source detection runs against the merged view (post-reload)
   // so ops keyed by ids from OTHER imports still see their objects.
-  // eb8.7's inline Re-pick chip on OperationsList rows surfaces the
+  // The inline Re-pick chip on OperationsList rows surfaces the
   // affected ops; this warn keeps the dev console signal too.
   // Use the augmented view so an op targeting the synthetic stock
-  // outline (STOCK_OUTLINE_ID) isn't mistaken for an orphan (8jce).
+  // outline (STOCK_OUTLINE_ID) isn't mistaken for an orphan.
   const presentIds = new Set(p.geometryView?.objects ?? []);
   for (const op of p.data.operations) {
     if (!Array.isArray(op.sourceObjects) || op.sourceObjects.length === 0) continue;
@@ -444,11 +444,11 @@ export function appendImportedSegments(
   return distinct;
 }
 
-/// Per-import variant of patchFileTransform (wrsu Phase 2). Undoable;
+/// Per-import variant of patchFileTransform (Phase 2). Undoable;
 /// the optional coalesceKey is per-import-per-field so two consecutive
 /// nudges of the X spinner on entry #3 collapse to one history step.
 ///
-/// 43l2: after swapping the transform, project every op's
+/// After swapping the transform, projects every op's
 /// approachPoint and (mirror-sensitive) tabPlacements through the
 /// delta so they stay attached to the same geometry the user sees.
 /// Approach points round-trip via raw-import space; tab `t` values
@@ -505,7 +505,7 @@ export function patchFileTransformForImport(
   }
 }
 
-/// 43l2 helper: compute the per-op `approachPoint` + `tabPlacements`
+/// Compute the per-op `approachPoint` + `tabPlacements`
 /// patches needed to keep the user's authored markers stuck to the
 /// geometry when the import at `idx`'s fileTransform changes. Returns
 /// only ops that actually need an update; ops whose source touches

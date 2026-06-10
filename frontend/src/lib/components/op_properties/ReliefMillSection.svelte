@@ -1,5 +1,5 @@
 <script lang="ts">
-  /// f60x: ReliefMill op-properties fieldset. Shown when op.kind ===
+  /// ReliefMill op-properties fieldset. Shown when op.kind ===
   /// 'relief_mill'. Owns the relief-source picker + image loader, the depth
   /// range, scallop/stepover, scan direction, and the physical width (which
   /// sets the source cell size). Styles inherited from OpPropertiesPanel's

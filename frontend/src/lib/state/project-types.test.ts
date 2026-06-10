@@ -1,5 +1,5 @@
 /// Pure-helper coverage for project-types.ts. Currently exercises the
-/// `inferDefaultWorkOffset` rule that audit gldc added — fresh DXF/SVG
+/// `inferDefaultWorkOffset` rule — fresh DXF/SVG
 /// imports whose bbox doesn't contain the geometry origin (0, 0) get
 /// the WCS shifted to the bbox bottom-left so the user's machine-zero
 /// at the stock corner lands inside the geometry footprint.

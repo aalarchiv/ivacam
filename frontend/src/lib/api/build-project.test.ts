@@ -1,5 +1,5 @@
-/// mqap / j4tv: round-trip tests for the wire-side coverage of the
-/// audit-added Project / ToolEntry fields. Prior to mqap + j4tv the
+/// Round-trip tests for the wire-side coverage of the
+/// audit-added Project / ToolEntry fields. Prior to these tests the
 /// frontend silently dropped `spindle_direction`, `stickout_length_mm`,
 /// `kerf_mm` (ToolEntry) and `work_offset` (Project) on the FE→Rust
 /// boundary — these tests fail loudly if anyone re-introduces that
@@ -194,7 +194,7 @@ describe('buildTool — German wire contract (8njb)', () => {
     });
     const tool = project!.tools[0] as unknown as Record<string, unknown>;
     // The camelCase app fields must not leak onto the wire, and the old
-    // German keys must be gone (ob3e renamed them English).
+    // German keys must be gone (renamed to English).
     expect(tool).not.toHaveProperty('whirlStepoverMm');
     expect(tool).not.toHaveProperty('wirbeln');
   });

@@ -1,4 +1,4 @@
-/// EntityCanvas2D selection-reducer tests (774f). Pinned matrix:
+/// EntityCanvas2D selection-reducer tests. Pinned matrix:
 ///
 ///   modifier × hit-vs-empty → action list
 ///

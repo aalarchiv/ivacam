@@ -2,7 +2,7 @@
 /// truth shared by the 2D canvas (`EntityCanvas2D`) and the 3D scene
 /// (`Scene3D`), which previously kept divergent copies — the 3D copy was
 /// missing ACI 9, so grey entities rendered as the faint fallback there
-/// but grey in 2D (7iej.12).
+/// but grey in 2D.
 ///
 /// The classification (which codes map to a fixed RGB vs a theme token) is
 /// shared here; each renderer resolves the theme token its own way (the 2D

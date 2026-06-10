@@ -32,7 +32,7 @@ import * as fileOps from './project-file-ops';
 
 // Pure-TypeScript data shapes live in project-types.ts so vitest specs
 // and non-Svelte helpers can import them without booting the rune
-// runtime (audit 6cpl). They're re-exported below for backwards-compat
+// runtime. They're re-exported below for backwards-compat
 // with the 40+ call sites that already import from this module.
 import {
   DEFAULT_FIXTURE_COLOR,
@@ -162,7 +162,7 @@ export type {
 export { isContourOp, isPathOp } from './op_types';
 
 // Pure 2D geometry primitives extracted to `lib/canvas/selection-geometry.ts`
-// so vitest specs can exercise them without mounting the canvas (audit y0ez).
+// so vitest specs can exercise them without mounting the canvas.
 import { lineCrossesBBox } from '../canvas/selection-geometry';
 import { computeFootprint } from '../sim/driver';
 import { augmentWithStockOutline } from './stock-outline';
@@ -223,16 +223,16 @@ import {
 import { computeSelectionUpdate, selectionsEqual } from './selection.svelte';
 
 export class ProjectState {
-  /// Project-data slice (audit 6cpl step 4 / n5v5). Owns `imported`,
+  /// Project-data slice. Owns `imported`,
   /// `operations`, `tools`, `machine`, `stock`, `fixtures`,
   /// `textLayers`, `dirty`, `visibleLayers`, `regionsVisible`, and
   /// `settings` — i.e. every field the undo/redo command bus mutates.
-  /// Consumers read `project.data.<field>` directly (361x: the hand
-  /// proxies are gone); writes go through the command bus (mukh).
+  /// Consumers read `project.data.<field>` directly; writes go through
+  /// the command bus.
   data = new ProjectDataState();
 
   /// All imports merged into one ImportResponse with each entry's
-  /// fileTransform applied (wrsu Phase 2). Every visual consumer (canvas
+  /// fileTransform applied. Every visual consumer (canvas
   /// / 3D scene / OSnap / sim / build-project payload / footprint) reads
   /// this rather than `imported`, so the user sees N drawings on stock
   /// with independent layout transforms.
@@ -245,7 +245,7 @@ export class ProjectState {
     return combineImports(this.data.imports);
   });
 
-  /// 8jce: geometry the canvas selects + the wire payload sends —
+  /// Geometry the canvas selects + the wire payload sends —
   /// `transformedImport` plus a synthetic, selectable stock-outline
   /// object when the stock is shown, so an op (chamfer/profile/…) can
   /// target the workpiece edge. Returns the SAME object as
@@ -268,18 +268,17 @@ export class ProjectState {
   /// import errors so the toast can render recovery hints + auto-fix.
   error = $state<string | WiacError | null>(null);
 
-  /// Generate-pipeline slice (audit 6cpl step 2). Holds `generated`,
+  /// Generate-pipeline slice. Holds `generated`,
   /// `generating`, `pipelineState`/`pipelineProgress`, the cached-count
   /// stats, `toolpathCumLen` / `toolpathTotalLen`, `simDiagnostics`,
   /// plus the lifecycle methods. Consumers read/write
-  /// `project.gen.<field>` directly (361x: the hand proxies are gone).
+  /// `project.gen.<field>` directly.
   gen = new GeneratedState();
 
-  /// UI-selection slice (audit 6cpl). Holds hoverSegment, the
+  /// UI-selection slice. Holds hoverSegment, the
   /// selectedObjects / anchor / entities sets, plus the selectedOpId /
   /// selectedFixtureId / selectedTextLayerId / toolsDialogFocusId
-  /// pointers. Consumers read/write `project.sel.<field>` directly
-  /// (361x: the hand proxies are gone).
+  /// pointers. Consumers read/write `project.sel.<field>` directly.
   sel = new SelectionState();
 
   /// Toolpath scrub position in [0, 1]. Read by Scene3D for the tool-tip
@@ -289,10 +288,10 @@ export class ProjectState {
   /// playhead → segment mapping uses `toolpathCumLen` below.
   playhead = $state(1.0);
 
-  /// Undoable UI entry point for the tool-grouping toggle (7iej.8 —
-  /// the plain write lives on the data slice for command apply/revert
-  /// and load/clear paths, which manage dirty + generated + history
-  /// themselves). Routes through
+  /// Undoable UI entry point for the tool-grouping toggle. The plain
+  /// write lives on the data slice for command apply/revert and
+  /// load/clear paths, which manage dirty + generated + history
+  /// themselves. Routes through
   /// the command bus (so Ctrl+Z reverses it) and invalidates the cached
   /// toolpath — the reorder changes emitted-program order, so a toolpath
   /// generated against the prior setting isn't safe to draw/download.
@@ -333,14 +332,14 @@ export class ProjectState {
   /// `.svelte.ts` module today: vitest's test config
   /// (frontend/vitest.config.ts) skips the Svelte plugin to avoid the
   /// vite 5 / vite 8 plugin mismatch, and every History test would
-  /// fail with "$state is not defined". jbz1 tracks dropping this
-  /// mirror once the test runner can handle the runes (it's a vitest
+  /// fail with "$state is not defined". This mirror can be dropped
+  /// once the test runner can handle the runes (it's a vitest
   /// + plugin-svelte upgrade, not a code-level change).
   historyVersion = $state(0);
 
   /// Absolute path of the currently-open project, or null if the user
   /// hasn't loaded one yet. Drives both the per-project workspace state
-  /// look-up (eb8.6) and the watch set for source-change events (eb8.4).
+  /// look-up and the watch set for source-change events.
   /// Set explicitly via `setActiveProjectPath` from the open-project
   /// flows. Not part of `snapshot()` — workspace state follows the
   /// path, the path is per-machine.
@@ -400,7 +399,7 @@ export class ProjectState {
   }
   /// Public façade for `history.cancelTransaction` that hides the
   /// `CommandTarget` cast — call sites in the UI can stay free of
-  /// `as unknown as never` workarounds (audit-jbz1).
+  /// `as unknown as never` workarounds.
   cancelTransaction(): void {
     this.history.cancelTransaction(this.target());
   }
@@ -441,7 +440,7 @@ export class ProjectState {
     this.saveSettings();
   }
 
-  /// rt1.10: click-toggle a tab placement on an op. `toleranceT` is
+  /// Click-toggle a tab placement on an op. `toleranceT` is
   /// the parameter-space distance under which a click on an existing
   /// nearby tab removes it (Estlcam-style toggle). Single undoable
   /// history entry per click.
@@ -489,7 +488,7 @@ export class ProjectState {
     this.sel.selectFixture(id);
   }
 
-  /// Append another drawing as its own ImportEntry (wrsu Phase 2) —
+  /// Append another drawing as its own ImportEntry —
   /// see state/import-ops.ts.
   addImported(r: ImportResponse, sourcePath?: string | null) {
     importOps.addImported(this, r, sourcePath);
@@ -523,14 +522,14 @@ export class ProjectState {
   toggleObject(id: number, additive = false) {
     if (id <= 0) return;
     // Route through the same command path as `selectObjects` so the
-    // canvas-click toggle ends up in the undo/redo stack (80gv).
+    // canvas-click toggle ends up in the undo/redo stack.
     this.selectObjects([id], additive ? 'toggle' : 'replace');
   }
 
   /// Bulk selection update — used by box-select and any other path
   /// that needs to commit a set of object ids with FreeCAD-style
   /// modifier semantics in one go. Pushes the change through the
-  /// History so Ctrl+Z reverts the selection (80gv).
+  /// History so Ctrl+Z reverts the selection.
   selectObjects(ids: Iterable<number>, mode: SelectionMode) {
     const prevSelected = new Set(this.sel.selectedObjects);
     const prevAnchor = this.sel.selectionAnchorObjectId;
@@ -568,7 +567,7 @@ export class ProjectState {
   /// to `targetId`, picking every visible object whose bbox is crossed
   /// by the straight line between the two bbox centroids. Falls back to
   /// a plain replace when no anchor exists. Honors visibleLayers so
-  /// hidden chains can't be accidentally swept in. (audit-eqxd)
+  /// hidden chains can't be accidentally swept in.
   seriesSelectTo(targetId: number) {
     if (targetId <= 0) return;
     const anchorId = this.sel.selectionAnchorObjectId;
@@ -597,7 +596,7 @@ export class ProjectState {
     // Compute the post-add selection + override the anchor to `targetId`
     // so consecutive Shift+clicks chain (anchor → click → click → click).
     // Single command so Ctrl+Z restores both selection and anchor in
-    // one undo step (80gv).
+    // one undo step.
     const prevSelected = new Set(this.sel.selectedObjects);
     const prevAnchor = this.sel.selectionAnchorObjectId;
     const { selected: nextSelected } = computeSelectionUpdate(
@@ -658,7 +657,7 @@ export class ProjectState {
     this.error = null;
   }
 
-  /// Pipeline-state lifecycle helpers (audit-pgxb). Most delegate to
+  /// Pipeline-state lifecycle helpers. Most delegate to
   /// the generated-state slice; `failGenerate` lives here because it
   /// crosses slices (error + pipelineState reset).
   beginGenerate() {
@@ -700,8 +699,8 @@ export class ProjectState {
     importOps.removeImportedLayer(this, layerName);
   }
 
-  /// Snapshot for project save (view state intentionally omitted —
-  /// audit vep) — see state/project-file-ops.ts.
+  /// Snapshot for project save (view state intentionally omitted) —
+  /// see state/project-file-ops.ts.
   snapshot(): ProjectFile {
     return fileOps.snapshotProject(this);
   }
@@ -721,7 +720,7 @@ export class ProjectState {
   // ── operation helpers ────────────────────────────────────────────────
 
   addOperation(kind: OpKind): OpEntry {
-    // zt1p: the per-kind default field set lives in the pure `buildOpEntry`
+    // The per-kind default field set lives in the pure `buildOpEntry`
     // registry (op_defaults.ts) so it's one source of truth, unit-tested
     // without the rune runtime. This method only gathers the live context
     // and runs the result through the command bus. When the user has
@@ -761,7 +760,7 @@ export class ProjectState {
     return layer;
   }
 
-  /// f60x: insert a relief surface source (e.g. a decoded grayscale
+  /// Insert a relief surface source (e.g. a decoded grayscale
   /// image). `id` is assigned if absent. Returns the inserted source.
   /// Undoable.
   addReliefSource(
@@ -943,14 +942,14 @@ export class ProjectState {
   /// Undoable WorkOffset edit. Routes through the command bus so the
   /// X/Y/Z spinners + WCS picker in StockPanel + the warnings-panel
   /// Apply-Fix button all coalesce into history entries identical to
-  /// the stock-dim flow (audit abdk).
+  /// the stock-dim flow.
   setWorkOffset(patch: Partial<WorkOffset>) {
     if (Object.keys(patch).length === 0) return;
     this.history.exec(setWorkOffsetCommand(patch), this.target());
   }
 
-  /// Per-import file-transform patch (wrsu Phase 2). Undoable, spinner
-  /// nudges coalesce; 43l2 marker re-projection — see state/import-ops.ts.
+  /// Per-import file-transform patch. Undoable, spinner
+  /// nudges coalesce; marker re-projection — see state/import-ops.ts.
   patchFileTransformForImport(
     importId: number,
     patch: Partial<Omit<FileTransform, 'translate'>> & {

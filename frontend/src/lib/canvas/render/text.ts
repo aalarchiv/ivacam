@@ -4,7 +4,7 @@ import { drawSegment } from './segment';
 
 export interface TextPreviewLayer {
   /// Cached preview segments, already translated to the layer's current
-  /// origin (k9cz) — a drag repositions the glyphs with no re-render.
+  /// origin — a drag repositions the glyphs with no re-render.
   segments: readonly Segment[];
   isActive: boolean;
 }

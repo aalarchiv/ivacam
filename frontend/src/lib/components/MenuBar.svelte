@@ -1,6 +1,6 @@
 <script lang="ts">
   /// Top menubar (File / Edit / View / Tools / Help) extracted from
-  /// App.svelte (oytm pt 2). Owns the open/close/hover state machine and
+  /// App.svelte. Owns the open/close/hover state machine and
   /// the dropdown markup + CSS; the pure decision logic (arrow-key index
   /// math, shortcut table) stays in `lib/state/app-menu.ts` where it is
   /// unit-tested. File actions call straight into `lib/services/file_ops`
@@ -142,7 +142,7 @@
     // Read the last-used post processor from the workspace store so the
     // File-menu export matches the toolbar's Download button without
     // having to reach across the DOM (was querySelector('button.download')
-    // .click() — a 'a40m' audit item).
+    // .click()).
     const raw = workspace.get().last_post_processor;
     const post: 'linuxcnc' | 'grbl' | 'hpgl' = raw === 'grbl' || raw === 'hpgl' ? raw : 'linuxcnc';
     await exportGeneratedGcode(post);

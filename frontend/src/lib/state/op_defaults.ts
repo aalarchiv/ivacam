@@ -1,4 +1,4 @@
-// zt1p: single source of truth for the default field set of a newly-added
+// Single source of truth for the default field set of a newly-added
 // operation, keyed by `OpKind`. Extracted out of `ProjectState.addOperation`
 // (which was a ~200-line copy-pasted if-chain) so the defaults are a PURE,
 // rune-free function the unit tests can exercise for every kind. The rune
@@ -43,8 +43,8 @@ export function buildOpEntry(kind: OpKind, ctx: OpDefaultsCtx): OpEntry {
   };
 
   switch (kind) {
-    // rt1.34 / 8n4k: program-only building blocks — no tool, no source,
-    // no geometry — each carries its own kind-specific fields.
+    // Program-only building blocks — no tool, no source, no geometry —
+    // each carries its own kind-specific fields.
     case 'pause':
       return { ...base, kind: 'pause', message: '' } as OpEntry;
     case 'homing':
@@ -53,7 +53,7 @@ export function buildOpEntry(kind: OpKind, ctx: OpDefaultsCtx): OpEntry {
       return { ...base, kind: 'probe', axis: 'z', distanceMm: -10, feedMmMin: 100 } as OpEntry;
     case 'cycle_marker':
       return { ...base, kind: 'cycle_marker', label: '' } as OpEntry;
-    // rxm9: external G-code include — path/content default empty; the
+    // External G-code include — path/content default empty; the
     // OpPropertiesPanel file picker fills them.
     case 'gcode_include':
       return {
@@ -61,11 +61,11 @@ export function buildOpEntry(kind: OpKind, ctx: OpDefaultsCtx): OpEntry {
         kind: 'gcode_include',
         path: '',
         content: '',
-        // xi2g: per-line unsim fan-out is opt-in; the counted summary fires
+        // Per-line unsim fan-out is opt-in; the counted summary fires
         // regardless.
         verboseUnsimWarnings: false,
       } as OpEntry;
-    // f60x: relief surfacing follows a target Z-surface, not source geometry.
+    // Relief surfacing follows a target Z-surface, not source geometry.
     // Prefer a ball-/bull-nose tool; bind to the first loaded relief source.
     case 'relief_mill': {
       const ball = tools.find((t) => t.kind === 'ball_nose' || t.kind === 'bull_nose') ?? tools[0];
@@ -86,7 +86,7 @@ export function buildOpEntry(kind: OpKind, ctx: OpDefaultsCtx): OpEntry {
         alongStepMm: 0.5,
       } as OpEntry;
     }
-    // rt1.12: laser raster engrave follows an image-derived power field.
+    // Laser raster engrave follows an image-derived power field.
     // Prefer a laser tool; linear S0..S1000 ramp is the GRBL-agnostic default.
     case 'raster_engrave': {
       const laser = tools.find((t) => t.kind === 'laser_beam') ?? tools[0];

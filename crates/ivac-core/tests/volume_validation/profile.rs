@@ -1,4 +1,4 @@
-//! End-to-end Profile-Outside validation harness (me1m).
+//! End-to-end Profile-Outside validation harness.
 //!
 //! Runs a real outside-profile CAM job — 6 mm Ø endmill, single-pass
 //! 3 mm cut around a closed circle of radius 20 mm on 10 mm stock —

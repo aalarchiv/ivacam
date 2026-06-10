@@ -358,14 +358,14 @@
 </fieldset>
 
 <style>
-  /* dr5: italic styling for the XY overlap input when it's empty and
+  /* Italic styling for the XY overlap input when it's empty and
      inheriting from the tool's defaultXyOverlap. Reads as "this is a
      computed default, not a user-typed value". */
   input.inherit-italic::placeholder {
     font-style: italic;
     opacity: 0.75;
   }
-  /* rt1.9: quick-pick angle buttons for the zigzag direction. Match
+  /* Quick-pick angle buttons for the zigzag direction. Match
      the existing chip styles so they sit naturally below the slider. */
   .quick-row {
     display: inline-flex;

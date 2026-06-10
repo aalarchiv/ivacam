@@ -9,7 +9,7 @@
 /// toolpath exists). Selection clicks take the applySelection() fast path
 /// instead of a full rebuild.
 ///
-/// Extracted from Scene3D.svelte (4w2f). Owns its THREE.Group.
+/// Extracted from Scene3D.svelte. Owns its THREE.Group.
 
 import * as THREE from 'three';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
@@ -77,7 +77,7 @@ export class ImportedGeometryBuilder implements PickableLineBuilder {
   }
 
   private aciColor(c: number): THREE.Color {
-    // 7iej.12: shared palette + classification with the 2D canvas.
+    // Shared palette + classification with the 2D canvas.
     const r = resolveAci(c);
     return r.kind === 'fixed' ? new THREE.Color(r.hex) : this.cssColor(r.token, r.fallback);
   }
@@ -226,7 +226,7 @@ export class ImportedGeometryBuilder implements PickableLineBuilder {
       const previewC = this.cssColor('--accent', 0x4a8df0);
       for (const layer of input.textLayers) {
         // Segments come back translated to the layer's current origin, so
-        // the 3D position is correct without a re-render (k9cz).
+        // the 3D position is correct without a re-render.
         const segs = previewSegmentsFor(layer.id, layer.origin);
         if (!segs || segs.length === 0) continue;
         for (const seg of segs) {

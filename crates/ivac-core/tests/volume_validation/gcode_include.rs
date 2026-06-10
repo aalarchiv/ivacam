@@ -1,10 +1,10 @@
-//! dpah (4re9-d): closed-form volume-validation for a `GcodeInclude`
+//! Closed-form volume-validation for a `GcodeInclude`
 //! op. Proves end-to-end that the heightmap-side sim DOES model the
 //! included block when its content is all supported G-codes — i.e.
-//! the yhen claim "the unified `preview::interpret_with_index` pass
+//! the unified `preview::interpret_with_index` pass
 //! already tessellates G0/G1/G2/G3 + canned cycles into
-//! `ToolpathSegments` that the sim already sweeps" is testable, not
-//! just plausible.
+//! `ToolpathSegments` that the sim already sweeps, making this
+//! testable rather than just plausible.
 //!
 //! Fixture: a project with a single `GcodeInclude` op whose body
 //! is a hand-rolled rapid-plunge-cut-retract sequence carving a
@@ -61,7 +61,7 @@ fn gcode_include_g1_slot_volume_matches_closed_form() {
 
     // Authored G-code: rapid above, traverse to start, plunge, cut,
     // retract. Every line is in the supported set (G0/G1) so the
-    // yhen classifier returns 100 % Simulated and no skipped-summary
+    // classifier returns 100 % Simulated and no skipped-summary
     // warning fires.
     let body =
         format!("G0 Z5\nG0 X{x0} Y{cut_y}\nG1 Z{cut_z} F200\nG1 X{x1} Y{cut_y} F1200\nG0 Z5\n");
@@ -101,17 +101,16 @@ fn gcode_include_g1_slot_volume_matches_closed_form() {
 
     let resp = run(project, PostProcessorKind::Grbl);
 
-    // yhen contract: a 100 %-simulated body emits NO skipped-summary
+    // A 100 %-simulated body emits NO skipped-summary
     // and NO legacy gcode_include_not_simulated warning. If THIS
-    // assertion ever flips false, the classifier has regressed and
-    // we're back to the pre-yhen lie.
+    // assertion ever flips false, the classifier has regressed.
     assert!(
         !resp
             .warnings
             .iter()
             .any(|w| w.kind == "gcode_include_lines_skipped"
                 || w.kind == "gcode_include_not_simulated"),
-        "yhen: 100% G0/G1 body must produce no skipped-summary or legacy warning; got {:?}",
+        "100% G0/G1 body must produce no skipped-summary or legacy warning; got {:?}",
         resp.warnings,
     );
 

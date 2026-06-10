@@ -52,7 +52,7 @@ mod setup_resolver;
 mod tabs;
 mod warnings;
 
-// 56a: re-export the op-source selection helpers so child modules can
+// Re-export the op-source selection helpers so child modules can
 // keep doing `use super::ordered_selection;` etc. without caring that
 // they moved out of pipeline.rs. Visibility matches the underlying
 // pub(in crate::pipeline) declarations in selection.rs.
@@ -379,8 +379,7 @@ pub fn generate_streaming(
 }
 
 // The orchestrator threads through import → chaining → per-op → sim → time
-// estimate; splitting it loses the linear top-down read. The 55o4 bd issue
-// tracks the per-op-driver extraction that will reduce this naturally.
+// estimate; splitting it loses the linear top-down read.
 #[allow(clippy::too_many_lines)]
 fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     req: PipelineRequest,
@@ -439,39 +438,39 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
         .count()
         .max(1);
     let mut warnings: Vec<PipelineWarning> = Vec::new();
-    // tnxu: scan the op sequence for obviously wrong orderings (Profile
+    // Scan the op sequence for obviously wrong orderings (Profile
     // that cuts the part free preceding drill / finish on the same
     // source). Warnings only — no auto-reorder, because the user may
     // have a real reason for the declared order (jig, manual reset). The
-    // 94sf safety gate downgrades the program when an `op_order_suspect`
+    // safety gate downgrades the program when an `op_order_suspect`
     // surfaces, so the user has to acknowledge before the gcode ships.
-    // l8lk: check the EFFECTIVE order (post tool-grouping) so the
+    // Check the EFFECTIVE order (post tool-grouping) so the
     // drill-after-profile / finish-before-rough warnings reflect what
     // actually ships — grouping can itself reorder these.
     let enabled_for_order: Vec<&Op> = project.operations.iter().filter(|o| o.enabled).collect();
     let effective_order = order_ops_by_tool(&enabled_for_order, project.group_ops_by_tool);
     warnings::push_op_order_warnings(&effective_order, &project, &mut warnings);
-    // f60x-E: nudge users to rough the bulk before a ball-nose relief finish.
+    // Nudge users to rough the bulk before a ball-nose relief finish.
     warnings::push_relief_roughing_warnings(&project, &mut warnings);
-    // i5g4 MVP: warn when geometry bbox doesn't contain (0,0). Full
+    // Warn when geometry bbox doesn't contain (0,0). Full
     // WCS / G54..G59 support is a feature on the roadmap; this loud
-    // warning closes the silent-misalignment case the audit caught
-    // (part-center DXF + corner-zero G54 → sim shows cuts in the
-    // wrong place, user trusts the sim, runs the program).
+    // warning closes the silent-misalignment case (part-center DXF +
+    // corner-zero G54 → sim shows cuts in the wrong place, user trusts
+    // the sim, runs the program).
     warnings::push_wcs_origin_warning(&project, &mut warnings);
-    // 1gty: flag the manual-intervention requirement when a multi-tool
+    // Flag the manual-intervention requirement when a multi-tool
     // program runs on a machine without an automatic tool changer.
     warnings::push_manual_toolchange_warning(&project, &mut warnings);
-    // i185: block the GRBL + ATC + no-template footgun where post.tool()
+    // Block the GRBL + ATC + no-template footgun where post.tool()
     // would silently emit no swap and the next op cuts with the wrong tool.
     warnings::push_grbl_atc_footgun_warning(&project, post_kind, &mut warnings);
-    // 7iej.1: block the GRBL + FixedSensor footgun where the emitted G38.2
+    // Block the GRBL + FixedSensor footgun where the emitted G38.2
     // probe is never followed by an applied tool-length offset (GRBL has no
     // numbered-parameter system), so the post-change cut runs uncompensated.
     warnings::push_grbl_fixed_sensor_warning(&project, post_kind, &mut warnings);
 
     let post_tag: u8 = post_kind.cache_tag();
-    // jzpl Phase 1: run_per_op + every downstream driver now take
+    // run_per_op + every downstream driver now take
     // `&[VcObject]`. No working copy needed — pass the imported chain
     // by reference; pattern / frame expansion is owned inside
     // build_op_offsets.
@@ -511,24 +510,23 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
         return Err(PipelineError::Cancelled);
     }
     let (toolpath, gcode_index) = preview::interpret_with_index(&gcode);
-    // v0ez: scan the emitted toolpath against the machine work-area
+    // Scan the emitted toolpath against the machine work-area
     // envelope here (core-side) so every transport — not just the
     // frontend — surfaces soft-limit / gantry-crash risk as a critical
     // `out_of_work_area` warning.
     warnings::push_work_area_warning(&toolpath, &project.machine, &mut warnings);
-    // vrrr: stock envelope scan — the other half of v0ez. Runs on the
-    // same assembled toolpath; emits a critical `out_of_stock` warning so
-    // CLI / server / wasm consumers get the same guard the frontend used
-    // to synthesize. No-op when `project.stock` is unset.
+    // Stock envelope scan. Runs on the same assembled toolpath; emits a
+    // critical `out_of_stock` warning so CLI / server / wasm consumers
+    // get the same guard the frontend used to synthesize. No-op when
+    // `project.stock` is unset.
     warnings::push_stock_warning(&toolpath, project.stock.as_ref(), &mut warnings);
     let regions = build_region_previews(&project, &objects);
     let tool_changes = count_tool_changes(&project);
     let spindle_warmup_s = spindle_warmup_seconds(&project);
-    // v7f5: build per-op tool-rate lookup so the estimator clamps
+    // Build per-op tool-rate lookup so the estimator clamps
     // Plunge segments to the tool's plunge_rate even when the post
     // emitted a single F<feed> line.
-    //
-    // rnw6: route through the per-pipeline `tool_index` HashMap so the
+    // Route through the per-pipeline `tool_index` HashMap so the
     // per-op tool fetch is O(1) — was O(tools) per op via the prior
     // `iter().find(...)` chain.
     let tool_index = build_tool_index(&project.tools);
@@ -573,7 +571,7 @@ pub(super) fn cancelled(cancel: Option<&CancelToken>) -> bool {
     cancel.is_some_and(CancelToken::is_cancelled)
 }
 
-/// rnw6: per-pipeline tool-id index built once at pipeline entry. The
+/// Per-pipeline tool-id index built once at pipeline entry. The
 /// hot-path lookups (every op's primary tool, every op's finish tool
 /// for the cache key, per-op feed rate seeding for the time estimator)
 /// previously did `project.tools.iter().find(...)` — O(tools) per
@@ -584,7 +582,7 @@ fn build_tool_index(tools: &[ToolEntry]) -> HashMap<u32, &ToolEntry> {
     tools.iter().map(|t| (t.id, t)).collect()
 }
 
-/// l8lk: optional tool-change-order optimization. When `group` is true,
+/// Optional tool-change-order optimization. When `group` is true,
 /// reorder `ops` so consecutive same-tool work is grouped — a
 /// `T1 / T2 / T1` program becomes `T1, T1, T2`, cutting two tool changes
 /// to one. This matters far more on manual machines, where each swap is
@@ -633,7 +631,7 @@ fn order_ops_by_tool<'a>(ops: &[&'a Op], group: bool) -> Vec<&'a Op> {
     out
 }
 
-/// ye4b: count tool changes by walking the project's enabled op list
+/// Count tool changes by walking the project's enabled op list
 /// in pipeline state, mirroring `run_per_op`'s `prev_tool_id` boundary
 /// logic. The previous implementation grepped the emitted gcode for
 /// literal "M6", which broke under custom post profiles whose
@@ -651,7 +649,7 @@ fn order_ops_by_tool<'a>(ops: &[&'a Op], group: bool) -> Vec<&'a Op> {
 ///     bias the end-of-op tool to the finish id, matching the
 ///     `run_per_op` invariant — back-to-back same-finish-tool ops
 ///     emit at most one extra change.
-// rxm9: Expand `{name}` tokens in an `OpKind::GcodeInclude` payload
+// Expand `{name}` tokens in an `OpKind::GcodeInclude` payload
 // against the post's live state. Returns the expanded body plus the
 // list of distinct unknown variable names encountered (so the caller
 // can fan them into per-variable warnings).
@@ -725,7 +723,7 @@ fn expand_gcode_include_vars(
     (out, unknown)
 }
 
-// yhen: Outcome of classifying one line of an expanded GcodeInclude
+// Outcome of classifying one line of an expanded GcodeInclude
 // body. Mirrors the supported set of `gcode::preview::interpret`:
 // anything that interpreter tessellates into ToolpathSegments lands
 // in Simulated; anything heightmap-neutral (M-codes, units, modal
@@ -760,7 +758,7 @@ pub(crate) struct GcodeIncludeClassification {
 }
 
 /// Classify each line of an expanded `GcodeInclude` body. The blanket
-/// `gcode_include_not_simulated` warning (pre-yhen) lied to the user
+/// The blanket `gcode_include_not_simulated` warning lied to the user
 /// for the common case of a hand-rolled return-home block that's
 /// 100 % G0/G1/G2/G3 — the sim DOES already carve those, because the
 /// unified `preview::interpret_with_index` at `run_pipeline`'s tail
@@ -902,7 +900,7 @@ fn count_tool_changes(project: &Project) -> u32 {
     let mut n = 0u32;
     let mut prev_tool_id: Option<u32> = None;
     for op in project.operations.iter().filter(|o| o.enabled) {
-        // 8n4k: program-only ops (Pause, Homing, Probe, CycleMarker)
+        // Program-only ops (Pause, Homing, Probe, CycleMarker)
         // don't carry a tool — they neither cause nor break a
         // toolchange envelope.
         if op.is_program_only() {
@@ -914,7 +912,7 @@ fn count_tool_changes(project: &Project) -> u32 {
         }
         if let Some(finish_id) = op.finish_tool_id {
             if finish_id != op.tool_id && op_can_emit_internal_swap(op) {
-                // vmm0: only count an internal dual-tool swap when the
+                // Only count an internal dual-tool swap when the
                 // op kind actually exercises the dual-tool / chamfer
                 // path. Previously the +1 fired for ANY op carrying a
                 // distinct finish_tool_id, but `synthesize_finish_setup`
@@ -938,8 +936,8 @@ fn count_tool_changes(project: &Project) -> u32 {
     n
 }
 
-/// vmm0: structural mirror of `synthesize_finish_setup`'s op-kind
-/// guard at L1037 (non-Pocket / non-drill-chamfer return None).
+/// Structural mirror of `synthesize_finish_setup`'s op-kind
+/// guard (non-Pocket / non-drill-chamfer return None).
 /// Used by `count_tool_changes` to skip the internal +1 for ops that
 /// would fall through to single-emit with no envelope. Keep in sync
 /// when new op kinds gain dual-tool support.
@@ -950,7 +948,7 @@ fn op_can_emit_internal_swap(op: &Op) -> bool {
     op.drill_chamfer_after_width_mm().is_some_and(|w| w > 0.0)
 }
 
-/// keyl: spindle-warmup time accrues PER tool-change envelope, not per
+/// Spindle-warmup time accrues PER tool-change envelope, not per
 /// unique tool. The old implementation summed `tool.pause` once per
 /// distinct `tool_id`, which under-reports the duration for sequences
 /// like `A(tool1) -> B(tool2) -> C(tool1)`: that program physically
@@ -970,7 +968,7 @@ fn spindle_warmup_seconds(project: &Project) -> f64 {
     let mut total = 0.0;
     let mut prev_tool_id: Option<u32> = None;
     for op in project.operations.iter().filter(|o| o.enabled) {
-        // 8n4k: program-only ops never load a tool, so they don't
+        // Program-only ops never load a tool, so they don't
         // contribute to spindle warmup time.
         if op.is_program_only() {
             continue;
@@ -995,12 +993,11 @@ fn spindle_warmup_seconds(project: &Project) -> f64 {
 /// so we don't need to type-erase `PostProcessor` (its methods take Sized
 /// `&mut self` so the trait object dance was painful).
 // Per-op dispatch + dual-tool finish coordination is a long state machine
-// that doesn't usefully split — see 55o4 for the planned per-op-driver
-// extraction.
+// that doesn't usefully split.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 /// Compute the op's toolpath cache key, or `None` when caching is off or
 /// the op's primary tool is unknown. Folds the dual-tool finish entry
-/// (rt1.33) into the key so changing the finish tool's diameter / feeds /
+/// into the key so changing the finish tool's diameter / feeds /
 /// RPMs invalidates cached output.
 fn compute_op_cache_key(
     op: &Op,
@@ -1033,7 +1030,7 @@ fn compute_op_cache_key(
 }
 
 /// Apply a cache HIT: replay the cached gcode body + the op's planning
-/// warnings (my03 — build_op_offsets / the driver / synthesize_op_setup
+/// warnings (build_op_offsets / the driver / synthesize_op_setup
 /// don't re-run on a hit, so without this a critical warning could slip
 /// past the safety gate on the 2nd+ identical Generate), restore post
 /// state, advance the cutter position, and fold the op's stats. Returns
@@ -1133,7 +1130,7 @@ fn emit_program_only_op<P: PostProcessor>(
     state_before_reset: &crate::gcode::CapturedPostState,
 ) {
     match &op.kind {
-        // rt1.34 / yc2a: Pause — M5 → optional comment → optional-stop,
+        // Pause — M5 → optional comment → optional-stop,
         // then forget spindle state so the next op re-emits M3/M4 S<rpm>
         // explicitly (a true mid-program restart honoring the next tool's
         // direction), rather than hard-coding a raw M3.
@@ -1143,11 +1140,11 @@ fn emit_program_only_op<P: PostProcessor>(
             if !message.is_empty() {
                 post.comment(message);
             }
-            // 4lq5: M1 (optional stop) instead of M0 when the machine opts in.
+            // M1 (optional stop) instead of M0 when the machine opts in.
             post.raw(project.machine.program_pause_code());
             post.reset_state();
         }
-        // 8n4k: Homing — comment + G28, optional rapid retract to the op's
+        // Homing — comment + G28, optional rapid retract to the op's
         // safe Z so the next op starts from a known clearance. Reset state
         // because some controllers reset modal state at G28 too.
         OpKind::Homing { retract_to_safe_z } => {
@@ -1158,7 +1155,7 @@ fn emit_program_only_op<P: PostProcessor>(
             }
             post.reset_state();
         }
-        // 8n4k: Probe — comment + `G38.2 <axis><dist> F<feed>`. Reset state
+        // Probe — comment + `G38.2 <axis><dist> F<feed>`. Reset state
         // so the delta-encoder doesn't assume the tool stayed at the probe
         // XYZ; the next move re-emits its targets explicitly.
         OpKind::Probe {
@@ -1175,7 +1172,7 @@ fn emit_program_only_op<P: PostProcessor>(
             ));
             post.reset_state();
         }
-        // 8n4k: CycleMarker — a single operator-readable comment, no motion
+        // CycleMarker — a single operator-readable comment, no motion
         // or state change. Wrap the label with `--- … ---` so it stands out.
         OpKind::CycleMarker { label } => {
             post.raw(&format!("; OP {} (cycle marker)", op.id));
@@ -1185,11 +1182,11 @@ fn emit_program_only_op<P: PostProcessor>(
                 post.raw(&format!("; --- {label} ---"));
             }
         }
-        // rxm9: GcodeInclude — substitute `{x}`/`{y}`/`{z}`/`{f}`/`{s}`/
+        // GcodeInclude — substitute `{x}`/`{y}`/`{z}`/`{f}`/`{s}`/
         // `{safe_z}` against the post's live state, then emit each line.
         // Unknown variables pass through verbatim + warn; the sim classifies
         // the expanded body and warns only about genuinely unsimulatable
-        // lines (yhen). Reset state afterward — we don't know where the
+        // lines. Reset state afterward — we don't know where the
         // included block left the spindle.
         OpKind::GcodeInclude {
             path,
@@ -1246,7 +1243,7 @@ fn emit_program_only_op<P: PostProcessor>(
                         head_reason = head.reason,
                     ),
                 });
-                // xi2g: verbose mode fans out a per-line warning for each
+                // Verbose mode fans out a per-line warning for each
                 // skipped line. Off by default so the panel stays readable.
                 if *verbose_unsim_warnings {
                     for skipped in &classification.skipped {
@@ -1310,16 +1307,16 @@ where
     };
     let mut last_pos = Point2::new(0.0, 0.0);
     let mut emitted_ops = 0usize;
-    // l8lk: optional tool-change-order optimization. With the toggle off
+    // Optional tool-change-order optimization. With the toggle off
     // this is the declared order, unchanged.
     let enabled_ops_declared: Vec<&Op> = project.operations.iter().filter(|o| o.enabled).collect();
     let enabled_ops = order_ops_by_tool(&enabled_ops_declared, project.group_ops_by_tool);
     let total_ops = enabled_ops.len();
-    // rnw6: per-pipeline tool-id index used by the per-op loop below so
+    // Per-pipeline tool-id index used by the per-op loop below so
     // the M6 envelope decision (`op.tool_id`), the cache-key tool lookup,
     // and the finish-tool lookup all run in O(1) instead of O(tools).
     let tool_index = build_tool_index(&project.tools);
-    // k2ew: track the tool number last asserted via post.tool() so we
+    // Track the tool number last asserted via post.tool() so we
     // can emit T<n> M6 + Z-shift at every op boundary where the
     // primary tool changes — and at the FIRST op so the program never
     // silently uses whatever was in the spindle. Pause ops don't have
@@ -1327,7 +1324,7 @@ where
     // (the project-level tool key), not by tool.number (which can be
     // shared across entries on some configs).
     let mut prev_tool_id: Option<u32> = None;
-    // dp6b: track the previous op's `group` so we can emit a single
+    // Track the previous op's `group` so we can emit a single
     // boundary marker (`; === GROUP: <name> ===`) when the value
     // changes. None / empty string means "no group" and never
     // generates a boundary line on its own. An op sequence that never
@@ -1344,7 +1341,7 @@ where
             name: op.name.clone(),
         });
 
-        // dp6b: group boundary marker. Fire ONCE when the live group
+        // Group boundary marker. Fire ONCE when the live group
         // changes from the previous op's (treating None and `Some("")`
         // as the same "no group" state). Lands BEFORE the per-op
         // reset / toolchange envelope / `; OP N` marker so the user
@@ -1366,7 +1363,7 @@ where
             prev_group = cur_group;
         }
 
-        // rxm9: snapshot the live state BEFORE the per-op reset so
+        // Snapshot the live state BEFORE the per-op reset so
         // the GcodeInclude variable-expansion path can read
         // `{x}`/`{y}`/`{z}`/`{f}`/`{s}` against the previous op's
         // exit position. The reset below clears these to None for
@@ -1381,18 +1378,18 @@ where
         // from the cache. Exit state is captured/restored separately.
         post.reset_state();
 
-        // o3od: specialty drivers have structural "no output" cases (open
+        // Specialty drivers have structural "no output" cases (open
         // source polylines, no closed circles, missing relief source) that
         // emit ZERO cut moves. Gate the M6 envelope on emit-ability so we
         // don't warm up the spindle and burn a hand-swap on a no-output op.
         // The driver still runs, so any "no output" warning still surfaces.
         let will_emit = specialty_will_emit(op, project, objects);
 
-        // k2ew: emit the M6 toolchange envelope BEFORE body_marker so it is
+        // Emit the M6 toolchange envelope BEFORE body_marker so it is
         // NOT captured into the per-op cache body — the decision depends on
         // prev_tool_id, which is runtime state, not op state. Pause ops have
         // no tool and don't reset prev_tool_id; no-emit ops skip the swap.
-        // 8n4k: program-only ops bypass the M6 toolchange envelope.
+        // Program-only ops bypass the M6 toolchange envelope.
         if !op.is_program_only() && will_emit {
             prev_tool_id = emit_boundary_toolchange(
                 op,
@@ -1405,12 +1402,12 @@ where
         }
         let body_marker = post.out_lines_count();
 
-        // 8n4k / rxm9: program-only ops (Pause / Homing / Probe /
-        // CycleMarker / GcodeInclude) emit raw program scaffolding and skip
-        // the tool / source / setup / cache machinery below. Their emit
-        // bodies live in `emit_program_only_op`; the shared per-op
-        // bookkeeping (progress + completion event) stays here, so adding a
-        // program-only kind is one arm there — never new logic in this loop.
+        // Program-only ops (Pause / Homing / Probe / CycleMarker /
+        // GcodeInclude) emit raw program scaffolding and skip the tool /
+        // source / setup / cache machinery below. Their emit bodies live in
+        // `emit_program_only_op`; the shared per-op bookkeeping (progress +
+        // completion event) stays here, so adding a program-only kind is one
+        // arm there — never new logic in this loop.
         if op.is_program_only() {
             emit_program_only_op(op, project, post, warnings, &state_before_reset);
             emitted_ops += 1;
@@ -1426,12 +1423,12 @@ where
             continue;
         }
 
-        // 7l0a: validate OpSource::Objects references against the
+        // Validate OpSource::Objects references against the
         // current chained-object set BEFORE the cache lookup so the
         // warnings ride along even when the gcode body is served from
         // cache.
         validate_op_source_objects(op, objects, warnings);
-        // dcna: same treatment for OpSource::Layers — a typoed layer
+        // Same treatment for OpSource::Layers — a typoed layer
         // name (or one whose import was removed) used to silently
         // produce zero segments. Now we surface op_source_missing_layer
         // (+ op_source_empty when every requested layer is missing).
@@ -1447,7 +1444,7 @@ where
         if let (Some(c), Some(key)) = (cache, cache_key) {
             if let Some(cached) = c.get(key) {
                 let internal_swap = apply_cached_op(post, &cached, warnings, &mut last_pos, stats);
-                // k2ew + nguf: end-of-op tool bookkeeping, shared with the
+                // End-of-op tool bookkeeping, shared with the
                 // fresh-emit path via next_prev_tool_id.
                 prev_tool_id = Some(next_prev_tool_id(op, internal_swap));
                 emitted_ops += 1;
@@ -1464,7 +1461,7 @@ where
             }
         }
 
-        // my03: snapshot the warning count so everything this op pushes
+        // Snapshot the warning count so everything this op pushes
         // during its fresh emit (setup synthesis + the driver) can be
         // captured into the cache value and replayed on a future hit. The
         // pre-cache-lookup `validate_op_source_*` warnings sit below this
@@ -1476,7 +1473,7 @@ where
         // Thread / Halfpipe / ReliefMill) emit XYZ blocks directly and
         // report no offset stats; the standard cascade reports closed /
         // offset counts and whether it emitted an internal dual-tool
-        // (rough→finish) swap (nguf).
+        // (rough→finish) swap.
         let (closed_count_emitted, offset_count_emitted, internal_swap_emitted) = run_op_driver(
             op,
             project,
@@ -1507,7 +1504,7 @@ where
                 warn_start,
             );
         }
-        // k2ew + nguf: end-of-op tool bookkeeping (see next_prev_tool_id).
+        // End-of-op tool bookkeeping (see next_prev_tool_id).
         prev_tool_id = Some(next_prev_tool_id(op, internal_swap_emitted));
         emitted_ops += 1;
         progress(
@@ -1558,7 +1555,7 @@ fn classify_specialty(op: &Op) -> Option<SpecialtyKind> {
 }
 
 impl SpecialtyKind {
-    /// o3od: whether this specialty driver will emit any cut moves — it has
+    /// Whether this specialty driver will emit any cut moves — it has
     /// structural "no output" cases (open source, no closed circles, missing
     /// relief source). The M6 envelope is gated on this so a no-output op
     /// doesn't warm the spindle / burn a hand-swap.
@@ -1567,9 +1564,9 @@ impl SpecialtyKind {
             SpecialtyKind::VCarve => vcarve_would_emit(op, objects),
             SpecialtyKind::Thread => thread_would_emit(op, objects),
             SpecialtyKind::Halfpipe => halfpipe_would_emit(op, objects),
-            // f60x: relief emits only when its referenced source exists.
+            // Relief emits only when its referenced source exists.
             SpecialtyKind::ReliefMill => relief_would_emit(op, project),
-            // rt1.12: raster emits only with a real source on a laser.
+            // Raster emits only with a real source on a laser.
             SpecialtyKind::RasterEngrave => raster_would_emit(op, project),
         }
     }
@@ -1598,7 +1595,7 @@ impl SpecialtyKind {
             SpecialtyKind::Halfpipe => run_halfpipe_op(
                 op, project, objects, setup, post, last_pos, warnings, cancel,
             ),
-            // f60x / rt1.12: relief + raster take no `objects` (they read
+            // Relief + raster take no `objects` (they read
             // their source from the project, not the chained geometry).
             SpecialtyKind::ReliefMill => {
                 run_relief_op(op, project, setup, post, last_pos, warnings, cancel)
@@ -1625,7 +1622,7 @@ fn specialty_will_emit(op: &Op, project: &Project, objects: &[VcObject]) -> bool
 /// return the updated `prev_tool_id`. When the tool is unknown we still
 /// advance `prev_tool_id` (matching the historical behaviour) but skip the
 /// envelope. Setup synthesis maps `ToolEntry.id` → `ToolConfig.number` 1:1,
-/// so `tool.id` is the spindle tool number. See eaeq / m8sq / rwv8 / rfow.
+/// so `tool.id` is the spindle tool number.
 fn emit_boundary_toolchange<P: PostProcessor>(
     op: &Op,
     project: &Project,
@@ -1654,7 +1651,7 @@ fn emit_boundary_toolchange<P: PostProcessor>(
             is_first_tool,
             // Inter-op boundary: the next op's resolved cut speed isn't
             // synthesized at this site, so fall back to the tool's library
-            // speed (liyy).
+            // speed.
             None,
         );
     }
@@ -1664,8 +1661,8 @@ fn emit_boundary_toolchange<P: PostProcessor>(
 /// Dispatch one op to its kind-specific driver. Specialty drivers emit XYZ
 /// blocks directly (prefixed with the `; OP <id>` marker) and report no
 /// offset stats; the standard cascade returns `(closed_count, offset_count,
-/// internal_swap_emitted)`. `internal_swap_emitted` (nguf) is only ever set
-/// by the standard path — the specialty drivers don't dual-tool.
+/// internal_swap_emitted)`. `internal_swap_emitted` is only ever set by the
+/// standard path — the specialty drivers don't dual-tool.
 #[allow(clippy::too_many_arguments)]
 fn run_op_driver<P: PostProcessor>(
     op: &Op,
@@ -1694,8 +1691,8 @@ fn run_op_driver<P: PostProcessor>(
 /// End-of-op tool bookkeeping: the tool id the spindle holds after this op,
 /// shared by the cache-hit and fresh-emit paths. Bias to the finish tool
 /// ONLY when the driver actually emitted the internal rough→finish (or
-/// drill→chamfer) envelope (nguf); otherwise keep the rough tool so the next
-/// same-tool op correctly elides its M6 (k2ew). The previous "pessimistic"
+/// drill→chamfer) envelope; otherwise keep the rough tool so the next
+/// same-tool op correctly elides its M6. The previous "pessimistic"
 /// bias to `finish_id` whenever `finish_tool_id` was set caused a real bug: a
 /// `dual_tool` op that skipped the swap left the held tool == `finish_id`, so
 /// the next op asking for the rough tool saw "tool changes — skip" and cut
@@ -1711,7 +1708,7 @@ fn next_prev_tool_id(op: &Op, internal_swap_emitted: bool) -> u32 {
     op.tool_id
 }
 
-// 56a: resolve_op_segments / ordered_selection / source_combine_mode /
+// resolve_op_segments / ordered_selection / source_combine_mode /
 // op_includes_object live in pipeline/selection.rs. Re-exported via the
 // `mod selection;` + `pub(super) use selection::*` block near the
 // other `mod` declarations so child modules keep doing
@@ -1734,7 +1731,7 @@ pub(crate) fn effective_step(op: &Op, tool: &ToolEntry) -> Result<f64, PipelineW
 }
 
 /// Build a Setup whose `ToolConfig` comes from `op.finish_tool_id` —
-/// used for the dual-tool finish block (rt1.33). Returns `Ok(None)`
+/// used for the dual-tool finish block. Returns `Ok(None)`
 /// when the op is single-tool or its `finish_tool_id` is missing /
 /// equal to `tool_id`; `Ok(Some(setup))` when a distinct finish tool
 /// exists. Falls through `Err(PipelineError::UnknownTool)` if the
@@ -1750,7 +1747,7 @@ pub(super) fn synthesize_finish_setup(
     if ft_id == op.tool_id {
         return Ok(None);
     }
-    // Pocket dual-tool (rt1.33) AND Drill+chamfer (rt1.20) both
+    // Pocket dual-tool AND Drill+chamfer both
     // funnel through here; other op kinds shouldn't reach this path
     // (no offset would be tagged finish), but be defensive — return
     // None for anything else.
@@ -1779,7 +1776,7 @@ pub(super) fn synthesize_finish_setup(
 /// safe-Z retract → spindle stop + dwell → toolchange → tool Z-shift →
 /// spindle start (at the NEW tool's RPM) + dwell.
 ///
-/// Fixes bd issues `eaeq` / `m8sq` / `rwv8` / `rfow`: every M6 ivac emits
+/// Every M6 ivac emits
 /// now lifts the cutter clear, stops the spindle, performs the change,
 /// and spins back up at the new tool's commanded speed BEFORE the next
 /// cut move. Without this envelope the previous behavior emitted a bare
@@ -1787,11 +1784,12 @@ pub(super) fn synthesize_finish_setup(
 /// still engaged — a real safety hazard on every multi-tool program.
 ///
 /// Routed through from three sites:
-/// * `run_per_op` — inter-op tool boundary (k2ew + this fix together).
+/// Routed through from three sites:
+/// * `run_per_op` — inter-op tool boundary.
 /// * `op_drivers/dual_tool.rs` — within-op rough → finish split.
 /// * `op_drivers/drill.rs::emit_stufenfase` — drill → chamfer split.
 ///
-/// cb5y: the `machine.tool_change` strategy selects the body. `Atc` and
+/// The `machine.tool_change` strategy selects the body. `Atc` and
 /// `ManualM6Prompt` take the `T<n> M6` path (`emits_m6()`); the latter adds
 /// an operator-prompt comment since the controller parks/prompts on M6.
 /// `ManualM0Pause` emits the manual-swap pause envelope: M5 + dwell + a
@@ -1803,7 +1801,7 @@ pub(super) fn synthesize_finish_setup(
 /// [`PostProcessor::spindle_cw`]) so the next cut starts with the
 /// spindle already at commanded speed — we can't trust the
 /// delta-encoder's `last_speed` after a hand-swap.
-/// liyy: `target_speed` is the RPM the envelope spins the spindle back
+/// `target_speed` is the RPM the envelope spins the spindle back
 /// up to. Pass `Some(rpm)` when the caller knows the first cut after the
 /// change runs at a non-default speed — notably the dual-tool and
 /// stufenfase finish passes, whose blocks emit at `speed_finish`. Passing
@@ -1828,7 +1826,7 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
     let fast_z = header_setup.mill.fast_move_z;
     post.move_to(None, None, Some(fast_z));
 
-    // ad0v: once clear in Z, rapid to the configured tool-change station
+    // Once clear in Z, rapid to the configured tool-change station
     // (machine coords, G53) BEFORE the M0 / M6 pause so a manual bit-swap
     // doesn't happen directly over the workpiece / clamps. Skip on the
     // first tool: it's already loaded by the operator before Cycle Start
@@ -1843,7 +1841,7 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
         }
     }
 
-    // lx1u: the toolchange envelope only manages a SPINDLE — laser /
+    // The toolchange envelope only manages a SPINDLE — laser /
     // drag-knife / pen-plotter modes don't have one. The per-cut
     // `cut_tool_on` (gcode.rs::emit_*) is mode-aware and fires the
     // laser / no-ops drag on its own; emitting M3/M4 S<rpm> here would
@@ -1856,7 +1854,7 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
     // is meaningless. Gate the entire spindle envelope on Mill mode.
     let is_mill = machine.mode == crate::project::MachineMode::Mill;
 
-    // 3lf0: turn off active coolant BEFORE stopping the spindle / opening
+    // Turn off active coolant BEFORE stopping the spindle / opening
     // the tool holder. With flood (M8) still running through M5 + M6,
     // water sprays into the open spindle taper / collet — operator
     // safety hazard AND contamination that ruins the chuck's grip. Many
@@ -1895,7 +1893,7 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
 
     match machine.tool_change {
         ToolChangeStrategy::Atc | ToolChangeStrategy::ManualM6Prompt => {
-            // cb5y: grblHAL / FluidNC accept M6 as a prompt — the controller
+            // grblHAL / FluidNC accept M6 as a prompt — the controller
             // parks, prompts, and can semi-auto probe. Annotate so the swap is
             // obvious in CAM-review; the M6 emission itself is shared with ATC.
             if matches!(machine.tool_change, ToolChangeStrategy::ManualM6Prompt) {
@@ -1903,7 +1901,7 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
                     "manual tool change: the controller will park and prompt for the swap",
                 );
             }
-            // hat3: a manual touch-off / reference-tool prompt (if the
+            // A manual touch-off / reference-tool prompt (if the
             // strategy calls for one) goes before the M6 so it's visible in
             // CAM-review; ATC machines don't actually pause on it.
             if let Some(prompt) = post_change_z_prompt(machine, new_tool_id, is_first_tool) {
@@ -1913,14 +1911,14 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
             // tool() emits T<n> M6 (or the user's profile template).
             post.tool(new_tool_id);
             if machine.use_tool_length_offsets {
-                // llkf: trust the controller's tool table — emit G43 H<n>
+                // Trust the controller's tool table — emit G43 H<n>
                 // and SKIP the static z_shift / probe flow (mutually
                 // exclusive; G43 supersedes both). Applies to every tool
                 // including the first (its offset must be active before the
                 // first cut). program_end cancels with G49.
                 post.tool_length_offset(new_tool_id);
             } else {
-                // hat3: re-establish the new tool's Z (probe / fixed sensor /
+                // Re-establish the new tool's Z (probe / fixed sensor /
                 // static shift) right after the change.
                 emit_post_change_z(post, machine, new_tool, new_tool_id, is_first_tool);
             }
@@ -1928,7 +1926,7 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
             // emits M3/M4 S<rpm> without an integer-second dwell tail; we
             // follow with an explicit `dwell(...)` so the machine-wide
             // spin-up (sub-second supported) AND the per-tool warm-up both
-            // fire in the right order. zjgt: route through the central
+            // fire in the right order. Route through the central
             // `spindle_on` dispatcher so a CCW tool emits M4 here — the
             // previous unconditional `spindle_cw` baked M3 into the
             // post's `last_speed` snapshot, so the next op's lazy
@@ -1964,7 +1962,7 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
             } else {
                 post.comment(&format!("pause: swap to tool {new_tool_id}"));
             }
-            // hat3: emit any manual touch-off / reference-tool instruction
+            // Emit any manual touch-off / reference-tool instruction
             // BEFORE the M0 so the operator reads it while the program is
             // halted (a post-pause comment lands after Cycle Start — too
             // late to act on).
@@ -1976,11 +1974,11 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
                 // Cycle Start. Skip on first-tool because the spindle isn't
                 // running yet — the program-start state is already
                 // tool-swap-equivalent (operator loaded a bit before
-                // hitting Cycle Start). 4lq5: M1 (optional stop) instead of
+                // hitting Cycle Start). M1 (optional stop) instead of
                 // M0 when the machine opts in.
                 post.raw(machine.program_pause_code());
             }
-            // hat3: re-establish the new tool's Z AFTER the pause — the
+            // Re-establish the new tool's Z AFTER the pause — the
             // probe / fixed-sensor cycle runs automatically once the
             // operator confirms the swap with Cycle Start. `None` keeps the
             // legacy static z_shift here.
@@ -1989,13 +1987,13 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
                 // Force the next M3/M4 to actually emit (the operator may
                 // have hand-spun the spindle off during the pause; we
                 // can't trust the delta-encoder's last_speed snapshot
-                // anymore). lx1u: only meaningful for Mill mode — laser /
+                // anymore). Only meaningful for Mill mode — laser /
                 // drag-knife envelopes don't drive the spindle from here.
                 if is_mill {
                     post.reset_state();
                     // Explicit spindle-up so the next cut starts with the
                     // spindle at commanded RPM — don't rely on lazy emit.
-                    // zjgt: route through `spindle_on` so a CCW tool emits M4.
+                    // Route through `spindle_on` so a CCW tool emits M4.
                     crate::gcode::spindle_on(
                         post,
                         t.spindle_direction,
@@ -2013,7 +2011,7 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
             }
         }
         ToolChangeStrategy::Ignore => {
-            // cb5y: emit no swap signal. The safe-Z lift / coolant-off /
+            // Emit no swap signal. The safe-Z lift / coolant-off /
             // spindle-stop above still ran (they're unconditional safety), but
             // we leave the actual tool change to the operator or sender. A
             // multi-tool program in this mode is intentional — the user owns
@@ -2023,7 +2021,7 @@ pub(in crate::pipeline) fn emit_toolchange_envelope<P: PostProcessor>(
     }
 }
 
-/// hat3: the operator-facing prompt (if any) that must appear BEFORE
+/// The operator-facing prompt (if any) that must appear BEFORE
 /// the tool-change pause — manual touch-off instructions the operator
 /// acts on while the program is halted. Returns `None` for the
 /// fully-automatic strategies (None / Probe / FixedSensor non-reference),
@@ -2054,7 +2052,7 @@ fn post_change_z_prompt(
     }
 }
 
-/// hat3: emit the post-tool-change Z re-establish flow AFTER the pause
+/// Emit the post-tool-change Z re-establish flow AFTER the pause
 /// / M6. `PostChangeZStrategy::None`, any strategy on the first tool
 /// (operator-loaded at program start), and any non-Mill mode (no
 /// spindle tool length to probe) all fall back to the legacy static
@@ -2071,7 +2069,7 @@ fn emit_post_change_z<P: PostProcessor>(
     let is_mill = machine.mode == crate::project::MachineMode::Mill;
 
     // Legacy static-shift fallback: the `None` default, the first tool,
-    // and non-Mill modes all keep the pre-hat3 `tool_z_shift` behavior.
+    // and non-Mill modes all keep the prior `tool_z_shift` behavior.
     if matches!(machine.post_change_z, S::None) || is_first_tool || !is_mill {
         if let Some(shift) = new_tool.and_then(|t| t.z_shift_mm) {
             post.tool_z_shift(shift);
@@ -2127,9 +2125,8 @@ fn emit_post_change_z<P: PostProcessor>(
     }
 }
 
-// 56a: pipeline integration tests live in `pipeline/tests.rs` so this
-// dispatcher file stays navigable (was 2223 lines pre-split; the 1300+
-// lines of test cases dominated the view).
+// Pipeline integration tests live in `pipeline/tests.rs` so this
+// dispatcher file stays navigable.
 #[cfg(test)]
 mod tests;
 
@@ -2156,7 +2153,7 @@ mod count_tool_changes_tests {
         }
     }
 
-    /// ye4b: a single-op program counts one tool change — the spindle
+    /// A single-op program counts one tool change — the spindle
     /// enters the program empty, so the first op always emits a load.
     #[test]
     fn single_op_counts_one_change() {
@@ -2167,7 +2164,7 @@ mod count_tool_changes_tests {
         assert_eq!(count_tool_changes(&project), 1);
     }
 
-    /// ye4b: back-to-back same-tool ops collapse to one change.
+    /// Back-to-back same-tool ops collapse to one change.
     #[test]
     fn back_to_back_same_tool_counts_one() {
         let project = project_with(
@@ -2180,7 +2177,7 @@ mod count_tool_changes_tests {
         assert_eq!(count_tool_changes(&project), 1);
     }
 
-    /// ye4b: switching tools counts the boundary.
+    /// Switching tools counts the boundary.
     #[test]
     fn two_distinct_tools_count_two() {
         let project = project_with(
@@ -2193,7 +2190,7 @@ mod count_tool_changes_tests {
         assert_eq!(count_tool_changes(&project), 2);
     }
 
-    /// ye4b: Pause ops don't touch the spindle and don't affect the
+    /// Pause ops don't touch the spindle and don't affect the
     /// next op's boundary decision — three same-tool cuts with a Pause
     /// in between still count as one change.
     #[test]
@@ -2209,7 +2206,7 @@ mod count_tool_changes_tests {
         assert_eq!(count_tool_changes(&project), 1);
     }
 
-    /// ye4b: disabled ops are skipped.
+    /// Disabled ops are skipped.
     #[test]
     fn disabled_ops_are_skipped() {
         let mut a = profile_op(1, 1, crate::project::ToolOffset::Outside);
@@ -2221,7 +2218,7 @@ mod count_tool_changes_tests {
         assert_eq!(count_tool_changes(&project), 1);
     }
 
-    /// vmm0: a Profile op with `finish_tool_id` set to a different tool
+    /// A Profile op with `finish_tool_id` set to a different tool
     /// MUST NOT count an internal swap. The runtime `dual_tool` path
     /// only synthesizes a finish setup for Pocket / drill-with-chamfer
     /// ops (`synthesize_finish_setup` at pipeline.rs:1037); a Profile
@@ -2237,7 +2234,7 @@ mod count_tool_changes_tests {
         assert_eq!(count_tool_changes(&project), 1);
     }
 
-    /// vmm0: Pocket op WITH a distinct `finish_tool_id` still counts the
+    /// Pocket op WITH a distinct `finish_tool_id` still counts the
     /// internal swap — Pocket is the canonical dual-tool path. The
     /// estimator slightly over-counts when the offsets cascade fails
     /// to produce an `is_finish` ring (e.g. zero-size pocket), but that
@@ -2255,7 +2252,7 @@ mod count_tool_changes_tests {
 }
 
 /// Register this module's wire types in the OpenAPI components map.
-/// Co-located with the type definitions (kb1y) so adding a wire type is
+/// Co-located with the type definitions so adding a wire type is
 /// a same-file edit; `crate::schema::components_schemas` composes these.
 pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
     crate::schema::insert::<PipelineRequest>(map, "GenerateRequest");

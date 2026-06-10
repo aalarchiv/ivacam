@@ -18,7 +18,7 @@ export interface ApproachColors {
   ring: string;
 }
 
-/// Paint the approach-point marker (n79) for the currently selected
+/// Paint the approach-point marker for the currently selected
 /// op when it has one set, plus the live preview while in pick mode
 /// or actively dragging (preview != null).
 export function drawApproachPoint(
@@ -68,7 +68,7 @@ export function drawApproachPoint(
     ctx.arc(sx, sy, 9, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
-    // Snap glyph by kind (64p):
+    // Snap glyph by kind:
     //   endpoint     → ■ filled square
     //   midpoint     → ▲ filled triangle
     //   intersection → ✕ diagonal cross
@@ -81,7 +81,7 @@ export function drawApproachPoint(
   }
 }
 
-/// Paint the OSnap classification glyph (64p) at canvas position
+/// Paint the OSnap classification glyph at canvas position
 /// (sx, sy). The glyph reads at a glance which CAD feature the
 /// cursor latched onto.
 export function drawOSnapGlyph(

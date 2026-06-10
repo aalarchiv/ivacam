@@ -103,7 +103,7 @@ describe('History coalescing', () => {
   });
 
   it('redo_after_coalesced_run_restores_final_value', () => {
-    // 7iej.3 regression: a coalesced drag 0→1→…→100 then undo→0 then
+    // Regression: a coalesced drag 0→1→…→100 then undo→0 then
     // redo must return to 100, NOT the first intermediate value (1). The
     // bug was that the stacked entry kept command #1's apply, so redo
     // replayed to 1.
@@ -244,7 +244,7 @@ describe('History clear / version', () => {
   });
 
   it('version monotonically increases on every state change', () => {
-    // History exposes `version` as a `$state` counter (jbz1) so
+    // History exposes `version` as a `$state` counter so
     // $derived expressions re-run on push / undo / redo / clear. The
     // contract checked here is the monotonic bump, not the subscribe
     // callback (which the .svelte.ts conversion removed).

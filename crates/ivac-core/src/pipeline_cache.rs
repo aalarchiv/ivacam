@@ -87,7 +87,7 @@ pub struct OpCacheValue {
     /// Cutter XY position after this op finished, used by the next op's
     /// `order_offsets` to pick the nearest-first cut.
     pub exit_xy: (f64, f64),
-    /// nguf: `true` when the cached body contains an internal dual-tool
+    /// `true` when the cached body contains an internal dual-tool
     /// toolchange envelope (rough→finish, drill→chamfer). Lets the
     /// per-op driver replay the correct `prev_tool_id` bias on a cache
     /// hit — without this, an op that declared a finish tool but
@@ -95,13 +95,13 @@ pub struct OpCacheValue {
     /// next op to the finish id, causing the next same-rough-tool op
     /// to skip its M6 envelope and run with the wrong tool.
     pub internal_swap_emitted: bool,
-    /// my03: the per-op `PipelineWarning`s this op produced during its
+    /// The per-op `PipelineWarning`s this op produced during its
     /// fresh emit (tool-fit / tool-kind mismatch, trochoidal, ramp-arcs,
     /// depth-limited, zero-rate, etc.). Re-attached verbatim on a cache
     /// HIT so the second+ identical Generate still surfaces them —
     /// otherwise `build_op_offsets` / the driver / `synthesize_op_setup`
     /// never re-run and a critical warning (e.g. `tool_kind_mismatch`,
-    /// classified critical by the 94sf gate) would silently vanish.
+    /// classified as critical) would silently vanish.
     /// Excludes the pre-cache-lookup `validate_op_source_*` warnings,
     /// which already run on both paths.
     pub warnings: Vec<PipelineWarning>,
@@ -191,7 +191,7 @@ pub fn op_cache_key(
 }
 
 /// Cache-key constructor that folds a SECOND tool's entry into the
-/// hash — used for dual-tool Pocket ops (rt1.33) so changes to the
+/// hash — used for dual-tool Pocket ops so changes to the
 /// finish tool's diameter / `feed_rate_finish` / etc. invalidate the
 /// cache. Pass `finish_tool = None` for single-tool ops (legacy
 /// callers route through [`op_cache_key`]).
@@ -247,17 +247,17 @@ pub fn op_cache_key_with_finish(
         hash_segment(seg, &mut h);
     }
     hash_serde(fixtures, &mut h);
-    // sqa3: fold the consumed text layers into the key. Edits to font /
+    // Fold the consumed text layers into the key. Edits to font /
     // content / size / placement / alignment must invalidate the cache
     // (otherwise the user changes the engraving text and Generate
     // happily serves the old gcode). Conservative — every text_layer,
     // not just the ones this op consumes via `OpSource::Layers`.
     hash_serde(text_layers, &mut h);
-    // f60x: fold relief surface sources into the key like text_layers —
+    // Fold relief surface sources into the key like text_layers —
     // editing the source image (brightness grid) must invalidate the
     // cached relief toolpath. Conservative (hash all).
     hash_serde(relief_sources, &mut h);
-    // ls7y: project work_offset (xyz + WCS selector) is consulted by sim
+    // Project work_offset (xyz + WCS selector) is consulted by sim
     // alignment + the WCS-origin warning, and will drive G10 L20 /
     // G54..G59 emission — hash it so cached gcode authored against a
     // different work_offset is invalidated.
@@ -533,7 +533,7 @@ mod tests {
         assert_ne!(k1, k2);
     }
 
-    /// rt1.10 — tabs now live on the OP (`op.params.tab_placements`),
+    /// Tabs now live on the OP (`op.params.tab_placements`),
     /// so the cache-invalidation test exercises that path: bumping
     /// a tab in op.params changes `hash_operation`, which changes the
     /// key. Verified separately by `tab_mode_change_changes_key`
@@ -594,7 +594,7 @@ mod tests {
         assert_ne!(k1, k2);
     }
 
-    /// Regression for audit-4zf: estimator-only `MachineConfig` fields
+    /// Regression: estimator-only `MachineConfig` fields
     /// (accel, jerk, `toolchange_s`, `rapid_speed`,
     /// `use_kinematic_time_estimate`) do not affect the emitted G-code
     /// and must NOT be folded into the per-op cache key. Tweaking the
@@ -673,9 +673,9 @@ mod tests {
             hash_segment(s, &mut h);
         }
         hash_serde(no_fixtures, &mut h);
-        hash_serde(no_text, &mut h); // sqa3
-        hash_serde(no_relief, &mut h); // f60x
-        hash_serde(&WorkOffset::default(), &mut h); // ls7y
+        hash_serde(no_text, &mut h); // text layers
+        hash_serde(no_relief, &mut h); // relief sources
+        hash_serde(&WorkOffset::default(), &mut h); // work offset
         let bumped = OpCacheKey(h.finish());
         assert_ne!(real, bumped);
     }
@@ -732,7 +732,7 @@ mod tests {
         assert_eq!(got.offset_count, v.offset_count);
     }
 
-    /// sqa3: editing a `TextLayer` (font, size, content) invalidates the
+    /// Editing a `TextLayer` (font, size, content) invalidates the
     /// per-op cache. The `op_cache_key` wrapper passes an empty
     /// `text_layers` slice; this test exercises the wider entry point
     /// directly to assert that two different `text_layers` slices
@@ -767,7 +767,7 @@ mod tests {
         assert_ne!(k1, k2, "text content change must invalidate the cache key");
     }
 
-    /// ul60: changing `machine.name` / `work_area` / `capabilities`
+    /// Changing `machine.name` / `work_area` / `capabilities`
     /// invalidates the per-op cache. These were missing from
     /// `hash_machine` before the audit fix.
     #[test]
@@ -813,9 +813,9 @@ mod tests {
         assert_ne!(k1, k2, "machine.capabilities should invalidate the cache");
     }
 
-    // ─── scwx: hash_tool kerf / stickout / spindle_direction ────────
+    // ─── hash_tool kerf / stickout / spindle_direction ──────────────
 
-    /// scwx: editing a laser tool's kerf must invalidate the cache
+    /// Editing a laser tool's kerf must invalidate the cache
     /// (the heightmap carve radius depends on `kerf_mm`).
     #[test]
     fn hash_tool_changes_when_kerf_mm_changes() {
@@ -831,7 +831,7 @@ mod tests {
         assert_ne!(k1, k2, "tool.kerf_mm should invalidate the cache");
     }
 
-    /// scwx: tool `stickout_length_mm` participates in holder/shank
+    /// Tool `stickout_length_mm` participates in holder/shank
     /// clearance checks — editing it must invalidate the cache.
     #[test]
     fn hash_tool_changes_when_stickout_length_changes() {
@@ -850,10 +850,10 @@ mod tests {
         );
     }
 
-    /// scwx + z1y0: flipping the tool's `spindle_direction` routes the
+    /// Flipping the tool's `spindle_direction` routes the
     /// post between M3 and M4 — emitted gcode changes verbatim, so
     /// the cache key must change.
-    // juvx: `k_cw`/`k_ccw` are an intentional pair — same key
+    // `k_cw`/`k_ccw` are an intentional pair — same key
     // computation for cw vs ccw spindle. The cache-test convention
     // reuses this naming throughout the file.
     #[allow(clippy::similar_names)]
@@ -872,9 +872,9 @@ mod tests {
         );
     }
 
-    // ─── 75zr: hash_machine RPM clamps / dwells / park ─────────────
+    // ─── hash_machine RPM clamps / dwells / park ────────────────────
 
-    /// 3nnj: tweaking `spindle_rpm_min` or _max changes whether an
+    /// Tweaking `spindle_rpm_min` or _max changes whether an
     /// emitted S<rpm> is clamped (and the matching warning fires),
     /// so the cache must invalidate on either bound.
     #[test]
@@ -909,7 +909,7 @@ mod tests {
         );
     }
 
-    /// eaeq: the two spindle dwell knobs are emitted as G4 P<sec>
+    /// The two spindle dwell knobs are emitted as G4 P<sec>
     /// lines inside the M6 envelope — output bytes change with them.
     #[test]
     fn hash_machine_changes_when_spindle_stop_dwell_changes() {
@@ -943,7 +943,7 @@ mod tests {
         );
     }
 
-    /// syol: `park_at_home` toggles a G53 G0 X0 Y0 line into the
+    /// `park_at_home` toggles a G53 G0 X0 Y0 line into the
     /// `program_end` footer.
     #[test]
     fn hash_machine_changes_when_park_at_home_toggles() {
@@ -958,7 +958,7 @@ mod tests {
         assert_ne!(k1, k2, "machine.park_at_home should invalidate the cache");
     }
 
-    /// syol: explicit `park_xy` overrides the home / work-zero
+    /// Explicit `park_xy` overrides the home / work-zero
     /// fallback in the `program_end` footer.
     #[test]
     fn hash_machine_changes_when_park_xy_changes() {
@@ -973,9 +973,9 @@ mod tests {
         assert_ne!(k1, k2, "machine.park_xy should invalidate the cache");
     }
 
-    // ─── cgcu: hash_operation_kind Thread radial_passes / start_angle
+    // ─── hash_operation_kind Thread radial_passes / start_angle ─────
 
-    /// sqnh: number of radial roughing passes — driver emits one
+    /// Number of radial roughing passes — driver emits one
     /// helix body per pass, so the cache key MUST react.
     #[test]
     fn hash_thread_changes_when_radial_passes_changes() {
@@ -1006,7 +1006,7 @@ mod tests {
         assert_ne!(k1, k2, "Thread.radial_passes should invalidate the cache");
     }
 
-    /// 6uns: start angle rotates the helix's starting tangent point —
+    /// Start angle rotates the helix's starting tangent point —
     /// emitted gcode coordinates change with it.
     #[test]
     fn hash_thread_changes_when_start_angle_rad_changes() {
@@ -1037,9 +1037,9 @@ mod tests {
         assert_ne!(k1, k2, "Thread.start_angle_rad should invalidate the cache");
     }
 
-    // ─── 3xxj: hash_operation_params stock_to_leave_mm ──────────────
+    // ─── hash_operation_params stock_to_leave_mm ────────────────────
 
-    /// 1mlv: `stock_to_leave_mm` bloats the tool offset radius in the
+    /// `stock_to_leave_mm` bloats the tool offset radius in the
     /// cascade builder. Output coordinates change verbatim.
     #[test]
     fn hash_op_changes_when_stock_to_leave_mm_changes() {
@@ -1056,9 +1056,9 @@ mod tests {
         );
     }
 
-    // ─── sulg: CapturedPostState last_coolant + last_spindle_dir ────
+    // ─── CapturedPostState last_coolant + last_spindle_dir ──────────
 
-    /// sulg: the captured post state struct now carries coolant and
+    /// The captured post state struct now carries coolant and
     /// spindle direction. Round-trip a non-default state through a
     /// real post's capture / restore and assert both fields survive
     /// the trip — that's what cached op N→N+1 splicing relies on.
@@ -1114,9 +1114,9 @@ mod tests {
         );
     }
 
-    // ─── ls7y: work_offset xyz + WCS selector ───────────────────────
+    // ─── work_offset xyz + WCS selector ─────────────────────────────
 
-    /// ls7y: bumping `project.work_offset.x_mm` must invalidate the
+    /// Bumping `project.work_offset.x_mm` must invalidate the
     /// per-op cache so that future WCS-driven emission (G10 L20 /
     /// G54..G59) doesn't serve gcode authored against a different
     /// origin.
@@ -1168,7 +1168,7 @@ mod tests {
         assert_ne!(k1, k2, "work_offset.z_mm should invalidate the cache");
     }
 
-    /// ls7y: the WCS selector (G54..G59) is a discriminant byte in the
+    /// The WCS selector (G54..G59) is a discriminant byte in the
     /// hash; switching G54 → G55 invalidates the cache even when the
     /// xyz offsets are identical (default zeros).
     #[test]
@@ -1187,7 +1187,7 @@ mod tests {
         assert_ne!(k1, k2, "work_offset.wcs should invalidate the cache");
     }
 
-    /// rt1.10: changing `op.tab_mode` invalidates the cache (`tab_mode`
+    /// Changing `op.tab_mode` invalidates the cache (`tab_mode`
     /// is hashed via `hash_operation_params`).
     #[test]
     fn tab_mode_change_changes_key() {

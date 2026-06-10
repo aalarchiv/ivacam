@@ -10,7 +10,7 @@
 ///      and a `<div id="heightfield-demo" style="width:100vw;height:100vh"></div>`.
 ///   2. `npm run dev` and browse to /dev.html.
 /// The orchestrator can later wire this as a multi-input vite build target
-/// or a /dev route; that lives in c28, not here.
+/// or a /dev route; that lives in the orchestrator, not here.
 ///
 /// Mounts a Three.js scene, builds a 64×64 heightmap with values
 /// `topZ - sin(x*0.4)*cos(y*0.4) * 2`, runs it through HeightfieldMesh,

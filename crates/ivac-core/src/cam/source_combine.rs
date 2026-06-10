@@ -14,7 +14,7 @@
 //!   ops on the tessellated polygons; outers/holes are recovered from the
 //!   resulting `PolyTreeD`.
 //! * `None` — no combination; one region per selected closed object with
-//!   no holes (the pre-j7y behavior, surfaced for callers who really
+//!   no holes (the legacy behavior, surfaced for callers who really
 //!   want it).
 
 // # CAM/sim pedantic-lint exemptions
@@ -158,7 +158,7 @@ pub struct CombinedRegion {
 const TESS_INTERPOLATE: usize = 6;
 
 /// Per-call lazy cache of tessellated boundary points, keyed by object
-/// index in the caller's slice (wv81). `combine_*` modes all walk the
+/// index in the caller's slice. `combine_*` modes all walk the
 /// same object set — `combine_auto` reads each object as a boundary AND
 /// as a potential hole of its outer; `combine_difference` /
 /// `_intersection` / `_union` / `_xor` each call `paths_for` repeatedly
@@ -168,7 +168,7 @@ const TESS_INTERPOLATE: usize = 6;
 ///
 /// Scoped to the call — there's no cross-call invalidation concern.
 /// `VcObject` can stay `Clone + Copy`-shaped (the `OnceCell` alternative
-/// would have required wider API changes; see wv81 audit notes).
+/// would have required wider API changes).
 #[derive(Default)]
 struct TessCache {
     by_idx: std::collections::HashMap<usize, std::rc::Rc<Vec<Point2>>>,
@@ -227,7 +227,7 @@ fn combine_auto(
 ) -> Vec<CombinedRegion> {
     let selected_set: HashSet<usize> = selected.iter().copied().collect();
     let mut out = Vec::new();
-    // uksn: when ranking containment, the NESTING DEPTH of `idx` inside
+    // When ranking containment, the NESTING DEPTH of `idx` inside
     // the selected set decides whether it's a region outer (even depth)
     // or a region hole (odd depth). `outer_objects` is the flat list of
     // every selected ancestor, so the depth is its count.
@@ -314,7 +314,7 @@ fn combine_difference(
         &mut tree,
         CLIPPER_PRECISION,
     );
-    // 5tgk: difference is order-sensitive ("first minus the rest"), so
+    // Difference is order-sensitive ("first minus the rest"), so
     // attributing the result to the FIRST selected object's layer / color
     // is the right semantic choice — even if the first is degenerate the
     // user's intent is "carve from THAT shape's layer".
@@ -322,7 +322,7 @@ fn combine_difference(
     polytree_to_regions(&tree, *first, &template.layer, template.color)
 }
 
-/// 5tgk: pick the first selected object whose tessellated boundary has
+/// Pick the first selected object whose tessellated boundary has
 /// at least 3 points. Boolean-op modes (Intersection / Xor) re-attribute
 /// the result to this object's layer/color so the gcode emitter doesn't
 /// inherit a degenerate first selection's metadata (e.g. an
@@ -362,7 +362,7 @@ fn combine_union(
         &mut tree,
         CLIPPER_PRECISION,
     );
-    // 5tgk: union is order-insensitive — inherit from first non-degenerate.
+    // Union is order-insensitive — inherit from first non-degenerate.
     let tmpl_idx = first_non_degenerate(objects, selected, cache);
     let template = &objects[tmpl_idx];
     polytree_to_regions(&tree, tmpl_idx, &template.layer, template.color)
@@ -398,7 +398,7 @@ fn combine_intersection(
         &mut tree,
         CLIPPER_PRECISION,
     );
-    // 5tgk: inherit layer/color from the first NON-degenerate selected
+    // Inherit layer/color from the first NON-degenerate selected
     // object — otherwise a degenerate-first (open polyline, < 3 pts)
     // selection silently propagates the wrong metadata into the boolean
     // result. Intersection / Xor are order-INSENSITIVE so picking a
@@ -432,7 +432,7 @@ fn combine_xor(
         &mut tree,
         CLIPPER_PRECISION,
     );
-    // 5tgk: same rationale as combine_intersection — Xor is symmetric.
+    // Same rationale as combine_intersection — Xor is symmetric.
     let tmpl_idx = first_non_degenerate(objects, selected, cache);
     let template = &objects[tmpl_idx];
     polytree_to_regions(&tree, tmpl_idx, &template.layer, template.color)
@@ -464,7 +464,7 @@ fn paths_for(indices: &[usize], objects: &[VcObject], cache: &mut TessCache) -> 
 /// grandchildren are outers again (an island inside a hole inside an
 /// outer — i.e. a re-entrant boss the cutter must leave standing).
 ///
-/// uksn: previously this only walked top-level outers and their direct
+/// Previously this only walked top-level outers and their direct
 /// hole-children. Grandchildren (re-entrant outers nested inside a hole)
 /// were silently dropped — auto-combine with a frame-plus-window-plus-boss
 /// DXF produced a single annulus that machined straight through the boss.
@@ -707,7 +707,7 @@ mod tests {
         assert!((area - 300.0).abs() < 5.0, "expected ~300, got {area}");
     }
 
-    /// 5tgk: when the first selected object is degenerate (e.g. an
+    /// When the first selected object is degenerate (e.g. an
     /// open polyline that got mis-included), boolean ops still produce
     /// a sensible region from the remaining inputs, but the result
     /// must inherit the layer/color of the first NON-degenerate
@@ -749,7 +749,7 @@ mod tests {
         assert_eq!(regions[0].color, 42);
     }
 
-    /// uksn regression: depth-2 nested polygons (outer with a hole that
+    /// Regression: depth-2 nested polygons (outer with a hole that
     /// contains another outer, e.g. a plate with a window with a label
     /// boss in the middle) must emit TWO `CombinedRegion`s under
     /// `SourceCombine::Auto` — one for the outer-with-window-as-hole, and

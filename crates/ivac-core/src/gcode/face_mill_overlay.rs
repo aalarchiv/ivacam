@@ -1,11 +1,11 @@
-//! 7z7w: Face-mill helical-spiral overlay (3e5 / Estlcam
+//! Face-mill helical-spiral overlay (Estlcam
 //! `Flooper.cs`) — applied to every cut move when a "Whirl"-tagged
 //! tool is active in the project. **Historically called "Wirbeln"**
 //! after the Estlcam menu label, but the operation is NOT thread-
 //! whirling — it's a face-mill spiral overlay that displaces the
 //! cutter centerline around a small circle while it walks the path.
 //! The public symbols (`WhirlParams`, `apply_whirl`, the `whirl*`
-//! serde fields) were renamed German → English in ob3e; the old
+//! serde fields) were renamed German → English; the old
 //! `gcode::wirbeln` back-compat re-export shim has been retired.
 //!
 //! For each chord step of length `stride / steps` along the
@@ -63,7 +63,7 @@ pub struct WhirlParams {
     pub climb: bool,
 }
 
-/// qm9x: persistent helical-overlay state that carries the spiral phase
+/// Persistent helical-overlay state that carries the spiral phase
 /// (`angle`) and stride residual (`consumed_since_last_step`) across
 /// successive `apply_whirl` calls — typically the per-pass loop in
 /// `multi_pass`. Without this, every pass restarted at `angle = 0`
@@ -72,7 +72,7 @@ pub struct WhirlParams {
 /// step, so the cutter entered the new pass from the same direction
 /// regardless of where the previous pass left off).
 ///
-/// Matches 89n5's cross-chord continuity for cross-pass continuity:
+/// Matches the cross-chord continuity for cross-pass continuity:
 /// the spiral now traces ONE continuous helical centerline across the
 /// entire multi-pass cut.
 #[derive(Debug, Clone, Copy, Default)]
@@ -117,17 +117,17 @@ pub fn steps_for_radius(radius: f64) -> u32 {
 /// (e.g. tests, plot-mode single-pass emit) it's fine. For multi-pass
 /// emission use `apply_whirl_with_state` and thread a single
 /// `WhirlState` across passes so the spiral phase doesn't reset and
-/// produce flat spots at pass boundaries (qm9x).
+/// produce flat spots at pass boundaries.
 #[must_use]
 pub fn apply_whirl(segments: &[Segment], cut_z: f64, params: WhirlParams) -> Vec<(f64, f64, f64)> {
     let mut state = WhirlState::default();
     apply_whirl_with_state(segments, cut_z, params, &mut state)
 }
 
-/// qm9x: variant of [`apply_whirl`] that takes an external
+/// Variant of [`apply_whirl`] that takes an external
 /// [`WhirlState`] reference. The caller can keep ONE state across
 /// successive calls so spiral phase + stride residual carry over —
-/// matching 89n5's cross-chord continuity for cross-pass continuity.
+/// matching the cross-chord continuity for cross-pass continuity.
 ///
 /// Pass `&mut WhirlState::default()` for the single-shot behavior.
 #[must_use]
@@ -153,7 +153,7 @@ pub fn apply_whirl_with_state(
     // Always stamp the first waypoint at the very start of the path so
     // the cutter approaches the cascade ring's start cleanly. Phase is
     // the CURRENT cumulative angle (carried over from prior calls when
-    // a shared state is threaded — qm9x).
+    // a shared state is threaded).
     let start = segments[0].start;
     out.push(stamp(
         start.x,
@@ -265,7 +265,7 @@ fn walk_chord(
     }
     let ux = dx / len;
     let uy = dy / len;
-    // 89n5: phase MUST carry continuously across chord boundaries.
+    // Phase MUST carry continuously across chord boundaries.
     // The previous code reset `consumed_since_last_step` to 0 at the
     // chord endpoint and unconditionally bumped `angle` by
     // `step_rad` there — losing the stride residual and producing
@@ -470,7 +470,7 @@ mod tests {
 
     #[test]
     fn walk_chord_phase_is_continuous_across_boundaries() {
-        // 89n5: walk_chord carries the stride residual across chord
+        // Walk_chord carries the stride residual across chord
         // boundaries — the spiral phase after N unit chords must
         // equal N · (step_rad / stride) · stride within FP
         // tolerance, independent of how the total length is split.
@@ -534,12 +534,12 @@ mod tests {
         );
     }
 
-    /// qm9x: when the SAME shared `WhirlState` is threaded across two
+    /// When the SAME shared `WhirlState` is threaded across two
     /// consecutive `apply_whirl_with_state` calls, the second call's
     /// spiral phase continues from where the first ended. Reset state
     /// (a fresh `WhirlState::default()` for each call) restarts the
-    /// phase at zero — that's the pre-qm9x flat-spot bug.
-    // juvx: `sx_shared`/`sy_shared` vs `sx_fresh`/`sy_fresh` are an
+    /// phase at zero — that's the flat-spot bug.
+    // `sx_shared`/`sy_shared` vs `sx_fresh`/`sy_fresh` are an
     // intentional pair — same XY component, two different state-carry
     // scenarios. The shared prefix is the test contract.
     #[allow(clippy::similar_names)]
@@ -561,7 +561,7 @@ mod tests {
         let pass1_shared = apply_whirl_with_state(&segs, -1.0, params, &mut shared);
         let angle_after_pass1 = shared.angle;
         let pass2_shared = apply_whirl_with_state(&segs, -2.0, params, &mut shared);
-        // Two calls with FRESH state each time (the pre-qm9x bug).
+        // Two calls with FRESH state each time (the flat-spot bug).
         let mut fresh1 = WhirlState::default();
         let pass1_fresh = apply_whirl_with_state(&segs, -1.0, params, &mut fresh1);
         let mut fresh2 = WhirlState::default();

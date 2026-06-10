@@ -12,7 +12,7 @@ use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::math;
 use crate::project::{LeadKind, ToolOffset};
 
-/// xmwy: open-contour test — the lead-in / lead-out helpers below
+/// Open-contour test — the lead-in / lead-out helpers below
 /// downgrade Arc → Straight when the path is open (start != end). On
 /// an open slot the cutter enters and exits in free space already; a
 /// tangent roll-on arc adds tool-path length and a 90° sweep that
@@ -176,7 +176,7 @@ pub(crate) fn lead_in_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeome
     };
     let free_left = lead_free_side_left(setup, segments);
     let (px, py) = if free_left { (-ty, tx) } else { (ty, -tx) };
-    // xmwy: arc lead-in only makes geometric sense on a closed
+    // Arc lead-in only makes geometric sense on a closed
     // contour where the cutter has to ease tangent to a continuous
     // wall. On an open slot the first segment ends in free space; the
     // arc adds path length + a 90° sweep with no quality benefit, and
@@ -206,7 +206,7 @@ pub(crate) fn lead_in_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeome
                 first.start.x + radius * (px - tx),
                 first.start.y + radius * (py - ty),
             );
-            // 62pd: validate that the arc envelope fits — the swept
+            // Validate that the arc envelope fits — the swept
             // quarter-disk of radius `radius` around `center` must not
             // overlap any non-adjacent contour wall, otherwise the
             // roll-on cuts into the part. If it doesn't fit, fall back
@@ -228,7 +228,7 @@ pub(crate) fn lead_in_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeome
     }
 }
 
-/// 62pd: does the arc-lead's swept disk overlap any contour wall that
+/// Does the arc-lead's swept disk overlap any contour wall that
 /// isn't immediately adjacent to the entry / exit point?
 ///
 /// Returns true when the disk of radius `radius` around `center`
@@ -277,7 +277,7 @@ fn arc_lead_fits(segments: &[Segment], center: Point2, radius: f64, is_lead_in: 
 ///
 /// Lines: standard point-to-chord projection.
 ///
-/// Arcs / Circles: u2u1 — the prior chord-based distance over-estimated
+/// Arcs / Circles: the prior chord-based distance over-estimated
 /// safety by the sagitta. A bulgy contour wall could carve into the
 /// lead arc's swept disk while chord distance still reported "fits in
 /// available room"; the lead-in then arc'd straight into the just-cut
@@ -365,7 +365,7 @@ pub(crate) fn lead_out_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeom
     };
     let free_left = lead_free_side_left(setup, segments);
     let (px, py) = if free_left { (-ty, tx) } else { (ty, -tx) };
-    // xmwy: same closed-contour gate as lead_in_geometry — open
+    // Same closed-contour gate as lead_in_geometry — open
     // contours roll off into free space; the arc sweep adds nothing.
     let kind = if matches!(setup.leads.out, LeadKind::Arc) && !is_closed_contour(segments) {
         LeadKind::Straight
@@ -387,7 +387,7 @@ pub(crate) fn lead_out_geometry(setup: &Setup, segments: &[Segment]) -> LeadGeom
                 last.end.x + radius * (px + tx),
                 last.end.y + radius * (py + ty),
             );
-            // 62pd: same fit check as lead-in — if the swept disk
+            // Same fit check as lead-in — if the swept disk
             // overlaps a non-adjacent contour wall, fall back to a
             // straight lead-out so the cutter doesn't carve into the
             // already-cut profile while rolling off.
@@ -494,8 +494,8 @@ mod tests {
         setup.leads.r#in = LeadKind::Arc;
         setup.leads.in_length = 1.0;
         // 50 × 50 closed square, CCW — large enough that the 1 mm
-        // arc lead envelope clears the adjacent walls (62pd fit-check
-        // passes alongside the xmwy closed-contour gate).
+        // arc lead envelope clears the adjacent walls (fit-check
+        // passes alongside the closed-contour gate).
         let segments = vec![
             segline(p(0.0, 0.0), p(50.0, 0.0)),
             segline(p(50.0, 0.0), p(50.0, 50.0)),
@@ -509,7 +509,7 @@ mod tests {
         );
     }
 
-    /// u2u1 regression: arc segments are measured against the true
+    /// Arc segments are measured against the true
     /// arc-to-point distance, not chord distance. A bulgy contour wall
     /// whose chord sits comfortably outside the lead arc's swept disk
     /// while the bulge itself reaches INTO the disk must be detected
@@ -547,7 +547,7 @@ mod tests {
         );
     }
 
-    /// u2u1: a point on the arc itself must report ~zero distance.
+    /// A point on the arc itself must report ~zero distance.
     /// The chord distance would over-report by the local sagitta.
     #[test]
     fn u2u1_arc_segment_distance_zero_on_arc() {
@@ -568,7 +568,7 @@ mod tests {
         assert!(d < 1e-9, "probe on arc should have ~zero distance, got {d}");
     }
 
-    /// u2u1: when the probe's radial foot falls outside the arc's
+    /// When the probe's radial foot falls outside the arc's
     /// angular sweep, the nearest point on the arc is one of the
     /// endpoints — not a phantom radial projection.
     #[test]
@@ -596,7 +596,7 @@ mod tests {
         );
     }
 
-    /// u2u1: chord-distance would report ~0 here (the probe sits
+    /// Chord-distance would report ~0 here (the probe sits
     /// right on the chord midpoint); the true arc distance is the
     /// radius minus zero (probe is at arc center) → radius. Verifies
     /// the function doesn't accidentally pretend chord-distance is

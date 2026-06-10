@@ -1,6 +1,6 @@
 <script lang="ts">
   /// Stock settings — the always-present workpiece every layer / op
-  /// attaches to. Phase qmbr of the stock-first rework redesigned this
+  /// attaches to. The stock-first rework redesigned this
   /// panel around the project's only piece of stock (a box):
   ///
   /// * Auto-bbox vs Manual as radio buttons.
@@ -223,7 +223,7 @@
         <span class="unit">mm</span>
       </span>
     </label>
-    <!-- ya00: stock-top Z. 0 = top at the WCS origin plane (you zeroed on
+    <!-- Stock-top Z. 0 = top at the WCS origin plane (you zeroed on
          the stock top). A positive value raises the stock above z=0 (e.g.
          you zeroed on the bed → set this to the stock thickness). Drives
          the 3D stock box, the sim heightmap top, and the out-of-stock
@@ -245,9 +245,9 @@
     </label>
   </fieldset>
 
-  <!-- abdk: Work-coordinate-system origin (per-project). Where on the
+  <!-- Work-coordinate-system origin (per-project). Where on the
        drawing the operator zeroed the machine. Fresh imports auto-default
-       to bbox bottom-left (audit gldc); this section lets the user pick a
+       to bbox bottom-left; this section lets the user pick a
        different WCS slot (G54..G59) or nudge the origin manually. -->
   <fieldset class="wcs">
     <legend
@@ -296,7 +296,7 @@
         <span class="unit">mm</span>
       </span>
     </label>
-    <!-- 1bcu: Z spinner intentionally omitted. work_offset.z_mm stays
+    <!-- Z spinner intentionally omitted. work_offset.z_mm stays
          in the wire format + cache key for forward-compat, but the sim
          and pipeline currently treat stock-top as z=0, so exposing a
          spinner that does nothing was actively misleading. Restore the

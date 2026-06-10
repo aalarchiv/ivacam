@@ -36,7 +36,7 @@ use crate::cancel::CancelToken;
 use crate::geometry::point_in_polygon;
 use crate::geometry::{Point2, Segment};
 
-/// 1ao5: structured record produced when the trochoidal emitter has to
+/// Structured record produced when the trochoidal emitter has to
 /// abandon the toolpath before the full centerline has been swept —
 /// typically because the loop disc at some vertex strayed outside the
 /// safe pocket interior (a narrow neck the `loop_radius_factor` can't
@@ -75,13 +75,13 @@ pub fn take_trochoidal_incompletes() -> Vec<TrochoidalIncomplete> {
 // engagement-angle + step parameters because the loop generation derives
 // every other quantity from them.
 //
-// q57s: `spindle` is the per-tool rotation direction. For a right-hand
+// `spindle` is the per-tool rotation direction. For a right-hand
 // (CW, M3) spindle the geometric loop direction follows `climb` directly
 // — climb=true ⇒ CCW loops. For a left-hand (CCW, M4) spindle the
 // cutting edge rotates the other way, so the GEOMETRIC loop direction
 // that produces a climb cut is the OPPOSITE. We XOR `climb` with the
 // spindle bit so the physical chip evacuation matches the user's intent
-// regardless of M3/M4. Pre-q57s, the emitter hard-coded right-hand and
+// regardless of M3/M4. Previously the emitter hard-coded right-hand and
 // silently inverted climb/conventional on left-hand cutters.
 #[allow(clippy::too_many_arguments)]
 #[must_use]
@@ -125,7 +125,7 @@ pub fn pocket_trochoidal_cancellable(
     spindle: crate::project::tool::SpindleDirection,
 ) -> Option<Vec<Segment>> {
     use crate::project::tool::SpindleDirection;
-    // q57s: flip geometric loop direction on a left-hand spindle.
+    // Flip geometric loop direction on a left-hand spindle.
     let climb = match spindle {
         SpindleDirection::Cw => climb,
         SpindleDirection::Ccw => !climb,
@@ -157,13 +157,13 @@ pub fn pocket_trochoidal_cancellable(
     // spaced too far for the radial-engagement bound to hold.
     let max_chord = (step_main * 2.0).max(1e-3);
     let centerline = subdivide_chords(&centerline, max_chord);
-    // 1ao5: bail check is against the user pocket boundary (already
+    // Bail check is against the user pocket boundary (already
     // inset by tool_r at the caller, so this is the cutter-clearance
     // wall), NOT `rings[0]` (which is a further `step_main` inboard).
     // Discs that fit the wall pass even when they extend past the
     // outermost cascade ring — which they routinely do, because
     // r_loop is intentionally > step_main so consecutive loops
-    // overlap. Pre-fix, checking against rings[0] forced a bail at
+    // overlap. Previously, checking against rings[0] forced a bail at
     // every cascade vertex whose disc reached back to the ring, which
     // is essentially every vertex on the outer ring; the unsafe
     // full-slot bridge then "covered" the pocket. Switching to the
@@ -181,7 +181,7 @@ pub fn pocket_trochoidal_cancellable(
 
     // `prev_exit` is set ONLY after a real loop has been emitted — it
     // refers to a point on the previous loop circle (i.e. cut material).
-    // 1ao5: pre-fix, `prev_exit` was also set to the centerline vertex
+    // Previously, `prev_exit` was also set to the centerline vertex
     // on every bail, which let the next iteration emit
     // `Segment::line(prev_exit, entry)` from uncut centerline stock — a
     // full-slot move. Now we only update it on successful loop
@@ -189,7 +189,7 @@ pub fn pocket_trochoidal_cancellable(
     // toolpath instead of bridging.
     let mut prev_exit: Option<Point2> = None;
     let mut emitted_any_loop = false;
-    // g9so: track the last case-(a) bail so that if EVERY centerline
+    // Track the last case-(a) bail so that if EVERY centerline
     // vertex fails the disc guard (narrow pocket / large
     // loop_radius_factor), we can still surface a `trochoidal_incomplete`
     // warning instead of silently returning an empty (entirely uncut)
@@ -221,12 +221,12 @@ pub fn pocket_trochoidal_cancellable(
             (tangent.1, -tangent.0)
         };
         let center = Point2::new(p.x + normal.0 * r_loop, p.y + normal.1 * r_loop);
-        // 1ao5: when the loop disc at this centerline vertex strays
+        // When the loop disc at this centerline vertex strays
         // outside the safe interior (re-entrant corner, narrow neck,
         // first vertex right at a tight pocket corner), we MUST NOT
         // emit a full-slot G1 along the centerline — at trochoidal
         // feed/RPM that would full-immerse the cutter and chatter /
-        // break it. Pre-fix the bail did exactly that: it pushed
+        // break it. Previously the bail did exactly that: it pushed
         // `Segment::line(prev_exit, p)` from the previous loop's exit
         // straight across uncut centerline stock.
         //
@@ -298,7 +298,7 @@ pub fn pocket_trochoidal_cancellable(
         emitted_any_loop = true;
     }
 
-    // g9so: every centerline vertex failed the disc guard — the boundary
+    // Every centerline vertex failed the disc guard — the boundary
     // is left entirely uncut. Surface the same `trochoidal_incomplete`
     // signal case (b) uses so the user learns the pocket needs a smaller
     // loop_radius_factor / engagement angle (or a separate finishing op)
@@ -502,7 +502,7 @@ mod tests {
     /// near-wall band is the user's job to finish with a contour or
     /// zigzag op).
     ///
-    /// 1ao5: pre-fix this test asserted ≥95% coverage and passed only
+    /// Coverage regression: this test previously asserted ≥95% and passed only
     /// because the buggy bail emitted full-slot bridge lines along
     /// the centerline, which the path-point sampler counted as
     /// "covered". With the bail-then-terminate fix in place, the
@@ -592,15 +592,15 @@ mod tests {
             x += cell;
         }
         let pct = covered as f64 / total as f64;
-        // 1ao5: 30% is well above what the buggy full-slot bail
+        // 30% is well above what the buggy full-slot bail
         // contributes to the safe interior (those lines run along the
         // centerline, far from the wall — they don't add much to
         // the inset-by-tool_r grid coverage anyway). The threshold
         // confirms that the trochoidal strategy at standard params
         // covers a meaningful chunk of the pocket interior; the
         // remainder is what trochoidal incompleteness leaves for a
-        // separate cleanup op (and what the new
-        // `trochoidal_incomplete` warning tells the user about).
+        // separate cleanup op (and what the `trochoidal_incomplete`
+        // warning tells the user about).
         // Drain any trochoidal_incomplete record so we don't leak
         // it into a later test on the same thread. (Whether the
         // incomplete fires at factor=0.3 depends on the rect's
@@ -613,7 +613,7 @@ mod tests {
         );
     }
 
-    /// q57s: on a left-hand spindle (M4) the geometric loop direction
+    /// On a left-hand spindle (M4) the geometric loop direction
     /// flips for any given climb/conventional intent — climb on M4 must
     /// emit CW loops (the physically-climb direction with reversed
     /// rotation) where on M3 it emits CCW.
@@ -665,13 +665,13 @@ mod tests {
         assert!(arcs.iter().all(|a| a.bulge < 0.0));
     }
 
-    /// 1ao5 regression: when the loop disc at a centerline vertex strays
+    /// Bail regression: when the loop disc at a centerline vertex strays
     /// outside the safe interior (here forced by an over-large
     /// `loop_radius_factor` in a narrow pocket), the emitter must NOT
-    /// fall back to a full-slot G1 along the centerline. Pre-fix the
+    /// fall back to a full-slot G1 along the centerline. Previously the
     /// bail emitted `Segment::line(prev, p)` at full radial engagement
     /// — a trochoidal cut at trochoidal feed/RPM would full-immerse the
-    /// cutter and chatter / break it. Post-fix the toolpath stops at
+    /// cutter and chatter / break it. The fixed toolpath stops at
     /// the previous safe loop's exit and a `TrochoidalIncomplete`
     /// record is stashed for the pipeline to surface as a warning.
     #[test]

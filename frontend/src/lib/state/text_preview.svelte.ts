@@ -63,7 +63,7 @@ function hashLayer(layer: TextLayer): string {
       : `u:${layer.fontSource.filename}:${layer.fontSource.bytes_b64.length}`;
   // NOTE: origin is deliberately excluded — it only translates the result,
   // so dragging the origin must not invalidate the cache / trigger a render
-  // (each render re-marshals the whole font; k9cz). Consumers apply the
+  // (each render re-marshals the whole font). Consumers apply the
   // origin delta at draw time.
   return [
     layer.text,
@@ -79,7 +79,7 @@ function hashLayer(layer: TextLayer): string {
 }
 
 /// Strict wire shape — mirrors the Rust TextLayer. `font_bytes` is the
-/// base64 string the in-memory `TextFontSource` already holds (dya2), so
+/// base64 string the in-memory `TextFontSource` already holds, so
 /// the live preview passes it straight through instead of expanding the
 /// ~742 KB font into an integer array on every keystroke.
 interface WireLayer {
@@ -135,8 +135,8 @@ export function requestPreview(layer: TextLayer): void {
     // Build the wire payload (the base64 font string + params, marshalled
     // across the worker / IPC boundary) only when the debounce actually
     // fires. Origin is out of the hash, so a drag no longer reaches here at
-    // all — this runs only on a real text / size / font change (k9cz). The
-    // font rides as a base64 string now, not a ~742 KB integer array (dya2).
+    // all — this runs only on a real text / size / font change. The
+    // font rides as a base64 string now, not a ~742 KB integer array.
     const wire = toWire(layer);
     // The origin baked into these segments. Consumers translate by
     // (currentOrigin - renderOrigin), so an origin drag needs no re-render.
@@ -170,7 +170,7 @@ export function requestPreview(layer: TextLayer): void {
 /// translation), so a drag never re-renders — every consumer (draw, 3D,
 /// hit-test, bbox) passes the layer's CURRENT origin and gets correctly
 /// positioned segments. Translating start/end suffices: draw + tessellate
-/// recompute arc centers from start/end, and the hit-test uses chords. (k9cz)
+/// recompute arc centers from start/end, and the hit-test uses chords.
 export function previewSegmentsFor(
   layerId: number,
   origin: { x: number; y: number },

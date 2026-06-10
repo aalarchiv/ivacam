@@ -1,4 +1,4 @@
-//! v5az programmatic repro: chamfer cone tip rendered/carved BELOW
+//! Programmatic repro: chamfer cone tip rendered/carved BELOW
 //! surrounding pocket floor.
 //!
 //! Replicates the user's screenshot scenario:
@@ -18,9 +18,9 @@
 //!   what the chamfer actually carves: a V-bevel from Z = 0 at the
 //!   rim down to ≈ -1.21 at the source line.
 //!
-//! v5az's screenshot showed the cone tip carved BELOW the pocket
+//! The screenshot showed the cone tip carved BELOW the pocket
 //! floor — i.e. cells with Z < -2 — which is exactly the assertion
-//! this test runs. Before oulh's fix the open-polyline cascade left
+//! this test runs. Before the fix the open-polyline cascade left
 //! a deep cone-tip pit at the path endpoint; after the fix the
 //! closed-rectangle path no longer hits that bug. This test pins
 //! the result so any future regression that re-deepens the pocket
@@ -78,10 +78,10 @@ fn cone_tool(id: u32, diameter_mm: f64, tip_angle_deg: f64) -> ivac_core::projec
 /// pocket has cleared the interior to Z = -2 mm. The chamfer's
 /// cone-tip Z (≈ -1.21 mm) sits well above the pocket floor, so the
 /// post-chamfer heightmap must not have any cell below -2 mm. Any
-/// dip below -2 is the v5az "cone tip below surrounding floor" bug.
-// juvx: pocket-then-chamfer end-to-end + heightmap sweep + STL dump
+/// dip below -2 is the "cone tip below surrounding floor" bug.
+// Pocket-then-chamfer end-to-end + heightmap sweep + STL dump
 // + assertion block; splitting would scatter the sentinel constants
-// across helpers and obscure the v5az contract.
+// across helpers and obscure the regression contract.
 #[allow(clippy::too_many_lines)]
 #[test]
 fn chamfer_after_pocket_does_not_dip_below_pocket_floor() {
@@ -116,7 +116,7 @@ fn chamfer_after_pocket_does_not_dip_below_pocket_floor() {
     );
     // Use step = -1 mm so the cascade emits a TWO-pass schedule
     // ([-1, -1.2071]) — this is what the user almost certainly had
-    // when they took the v5az screenshot (the mill_default step).
+    // (the mill_default step).
     // Pinning the multi-pass path catches any cascade-induced
     // overshoot that a single-pass test would silently miss.
     let chamfer = Op {
@@ -240,7 +240,7 @@ fn chamfer_after_pocket_does_not_dip_below_pocket_floor() {
         "[v5az] after chamfer: min_h={after_chamfer_min:.4} mm, V={after_chamfer_vol:.2} mm³, writes={chamfer_writes}",
     );
 
-    // STL out for visual inspection (the v5az repro path).
+    // STL out for visual inspection (the repro path).
     let stl_bytes = dump_stl(
         &hm,
         "/tmp/ivac_v5az_chamfer_after_pocket.stl",
@@ -248,7 +248,7 @@ fn chamfer_after_pocket_does_not_dip_below_pocket_floor() {
     );
     eprintln!("[v5az] STL → /tmp/ivac_v5az_chamfer_after_pocket.stl ({stl_bytes} bytes)",);
 
-    // ── The v5az assertion ───────────────────────────────────────────
+    // ── Assertion: chamfer must not cut below pocket floor ───────────
     // The chamfer's cone tip sits at Z ≈ -1.21 (the cone math), which
     // is SHALLOWER than the pocket floor at Z = -2. Since
     // `sweep_segment` only LOWERS cells, the chamfer must not deepen
@@ -256,7 +256,7 @@ fn chamfer_after_pocket_does_not_dip_below_pocket_floor() {
     // stays at -2 everywhere inside the pocket.
     assert!(
         f64::from(after_chamfer_min) >= f64::from(after_pocket_min) - 1e-3,
-        "v5az: chamfer carved DEEPER than the pocket floor ({after_chamfer_min} mm < {after_pocket_min} mm). \
+        "Chamfer carved DEEPER than the pocket floor ({after_chamfer_min} mm < {after_pocket_min} mm). \
          The chamfer's cone tip is supposed to sit at Z ≈ {:.4} mm — ABOVE the pocket floor — \
          and the sim's sweep_segment only LOWERS cells. Anything deeper is the v5az bug.",
         sol.z,

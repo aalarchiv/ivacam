@@ -1,4 +1,4 @@
-/// Unit tests for the TS post-profile preview helpers (uzz). Avoids
+/// Unit tests for the TS post-profile preview helpers. Avoids
 /// importing from `project.svelte` so this test file stays in the
 /// logic-only (no-svelte-runtime) vitest config.
 

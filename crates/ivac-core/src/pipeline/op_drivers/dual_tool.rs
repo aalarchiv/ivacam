@@ -1,4 +1,4 @@
-//! Dual-tool finish dispatch (rt1.33).
+//! Dual-tool finish dispatch.
 //!
 //! Run from [`super::run_standard_op`] for any non-Drill op kind:
 //! if the op declares a finish tool AND the offsets cascade produced
@@ -24,7 +24,7 @@ use crate::project::{Op, Project};
 /// Returns `true` when the driver actually emitted an internal
 /// rough→finish toolchange envelope. Used by `run_per_op` to decide
 /// whether to bias `prev_tool_id` to `finish_tool_id` for the next
-/// op's M6 decision (nguf).
+/// op's M6 decision.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn run_dual_tool_or_single<P: PostProcessor>(
     op: &Op,
@@ -40,7 +40,7 @@ pub(super) fn run_dual_tool_or_single<P: PostProcessor>(
     let Some(finish_setup) = dual.filter(|_| has_finish_offsets) else {
         // Plain single-tool single-emit path — the common case for
         // Profile / Pocket / Engrave / etc. without a finish ring.
-        // nguf: includes the dual-tool-declared-but-no-finish-offsets
+        // Includes the dual-tool-declared-but-no-finish-offsets
         // fall-through, which previously left `prev_tool_id` biased
         // to the finish id even though no swap was emitted.
         emit_polylines_block(setup, offsets, post, last_pos);
@@ -70,7 +70,7 @@ pub(super) fn run_dual_tool_or_single<P: PostProcessor>(
         "; toolchange: finish pass with tool {}",
         finish_setup.tool.number
     ));
-    // bd eaeq/m8sq: wrap the rough→finish M6 in the safety envelope
+    // Wrap the rough→finish M6 in the safety envelope
     // (safe-Z → M5+dwell → M6 → z-shift → M3+dwell). The helper picks
     // up the finish tool's Z shift, spindle speed, and warm-up pause
     // automatically — the previous code emitted only `T<n> M6`
@@ -86,7 +86,7 @@ pub(super) fn run_dual_tool_or_single<P: PostProcessor>(
         finish_tool,
         finish_setup.tool.number,
         false,
-        // liyy: the finish block emits at the resolved finish RPM; spin
+        // The finish block emits at the resolved finish RPM; spin
         // the envelope up to that directly so the post doesn't emit a
         // transient M3 at the rough speed first.
         Some(finish_setup.tool.speed),
@@ -104,7 +104,7 @@ mod tests {
     use crate::project::{MachineConfig, ToolChangeStrategy};
     use crate::project::{Op, OpKind, OpParams, OpSource, Project};
 
-    /// Dual-tool Pocket op (rt1.33): when `finish_tool_id` is set to a
+    /// Dual-tool Pocket op: when `finish_tool_id` is set to a
     /// different tool, the gcode contains a `T<n> M6` toolchange and
     /// uses the finish tool's feed for the wall ring.
     #[test]
@@ -251,7 +251,7 @@ mod tests {
         assert!(!resp.gcode.contains(" M6"));
     }
 
-    /// Dual-tool Pocket (rt1.33) with `z_shift` on the finish tool:
+    /// Dual-tool Pocket with `z_shift` on the finish tool:
     /// after the M6 we emit the finish tool's G92 Z shift.
     #[test]
     fn dual_tool_finish_tool_z_shift_emits_g92_after_m6() {

@@ -1,4 +1,4 @@
-/// Canonical draft / commit / discard state for modal dialogs (kdfh).
+/// Canonical draft / commit / discard state for modal dialogs.
 ///
 /// Before this, every dialog reinvented the pattern: ToolLibraryDialog
 /// hand-rolled deepEqual, MachineDialog fingerprinted via

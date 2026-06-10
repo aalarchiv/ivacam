@@ -1,5 +1,5 @@
 // Project-file / workspace lifecycle extracted from the ProjectState
-// god root (361x part 2). Save/load of .ivac-project files, the
+// god root. Save/load of .ivac-project files, the
 // project-boundary reset, and the per-project workspace view state all
 // live here; ProjectState keeps one-line delegators so the
 // component-facing `project.*` API is unchanged.
@@ -33,7 +33,7 @@ export function clearProject(p: ProjectState) {
   p.data.reliefSources = [];
   p.data.groupOpsByTool = false;
   p.data.stock = { ...p.data.stock };
-  // j4tv: workOffset is per-project (the user pre-zeros their machine
+  // workOffset is per-project (the user pre-zeros their machine
   // at a different point per drawing), so reset to default like ops.
   p.data.workOffset = defaultWorkOffset();
   p.gen.generated = null;
@@ -90,7 +90,7 @@ export function setActiveProjectPath(p: ProjectState, path: string | null) {
 /// Defers the workspace write off the synchronous Svelte 5 effect flush
 /// via queueMicrotask. The write would otherwise mutate
 /// `workspace.version` ($state) inside the effect body — when the
-/// dispatch chain landed on top of the eb8.6 commit, this caused the
+/// dispatch chain caused the
 /// entire reactivity scheduler to abort silently after the first DXF
 /// import (toolbar buttons stopped responding, file picker opened but
 /// imports didn't propagate, etc.). The try/catch guards against the
@@ -119,8 +119,8 @@ export function persistPerProjectState(p: ProjectState) {
 /// owned by `workspace.per_project[path].visible_layers`. Including
 /// them in the .ivac-project save caused a two-source-of-truth
 /// conflict where workspace silently won on reopen, surprising
-/// users who expected their saved file to dictate visibility (audit
-/// vep). Old projects that still carry them load fine via the
+/// users who expected their saved file to dictate visibility.
+/// Old projects that still carry them load fine via the
 /// `?? []` fallback in restore().
 export function snapshotProject(p: ProjectState): ProjectFile {
   return {
@@ -136,11 +136,11 @@ export function snapshotProject(p: ProjectState): ProjectFile {
     fixtures: p.data.fixtures,
     textLayers: p.data.textLayers,
     ...(p.data.reliefSources.length > 0 ? { reliefSources: p.data.reliefSources } : {}),
-    // i5g4 / j4tv: only persist work_offset when non-default so legacy
+    // Only persist work_offset when non-default so legacy
     // / unset projects keep their compact .ivac-project payloads. The
     // restore() side defaults to defaultWorkOffset() when absent.
     ...(isDefaultWorkOffset(p.data.workOffset) ? {} : { workOffset: p.data.workOffset }),
-    // l8lk: persist the tool-grouping toggle only when on.
+    // Persist the tool-grouping toggle only when on.
     ...(p.data.groupOpsByTool ? { groupOpsByTool: true } : {}),
   };
 }
@@ -149,7 +149,7 @@ export function restoreProject(p: ProjectState, file: ProjectFile) {
   if (file.kind !== 'ivac-project') {
     throw new Error('not a ivaCAM project file');
   }
-  // wrsu Phase 1: imports[] is the canonical shape. Pre-wrsu project
+  // imports[] is the canonical shape. Pre-migration project
   // files (with bare `imported` / `fileTransform` / `lastImportPath`
   // fields) are no longer loadable — the user explicitly waived
   // backward compatibility for this migration.
@@ -166,7 +166,7 @@ export function restoreProject(p: ProjectState, file: ProjectFile) {
   //   3. setImported defaults (all layers visible).
   // Empty `file.visibleLayers` is treated as "no opinion" and falls
   // through to setImported defaults — new saves OMIT these fields
-  // (audit vep) so workspace can be the single source of truth.
+  // so workspace can be the single source of truth.
   if (Array.isArray(file.visibleLayers) && file.visibleLayers.length > 0) {
     p.data.visibleLayers = new Set(file.visibleLayers);
   }
@@ -181,13 +181,13 @@ export function restoreProject(p: ProjectState, file: ProjectFile) {
   p.data.fixtures = Array.isArray(file.fixtures) ? file.fixtures : [];
   p.data.textLayers = Array.isArray(file.textLayers) ? file.textLayers : [];
   p.data.reliefSources = Array.isArray(file.reliefSources) ? file.reliefSources : [];
-  // j4tv: restore the program-level WCS offset. Legacy files lack
+  // Restore the program-level WCS offset. Legacy files lack
   // this field — fall back to all-zero @ G54, which matches the
-  // pre-i5g4 behavior (geometry origin = WCS origin).
+  // original behavior (geometry origin = WCS origin).
   p.data.workOffset = file.workOffset
     ? { ...defaultWorkOffset(), ...file.workOffset }
     : defaultWorkOffset();
-  // l8lk: restore the tool-grouping toggle (legacy files lack it → false).
+  // Restore the tool-grouping toggle (legacy files lack it → false).
   p.data.groupOpsByTool = file.groupOpsByTool === true;
   p.sel.selectedFixtureId = null;
   p.sel.selectedOpId = null;

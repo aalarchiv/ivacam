@@ -1,5 +1,5 @@
 //! Tab attachment — projecting imported-segment-keyed tab points onto the
-//! generated offset polylines. Split out of `offsets.rs` (6yst). The tab
+//! generated offset polylines. Split out of `offsets.rs`. The tab
 //! [`TabPoint`] type lives here and is re-exported by the parent so
 //! `PolylineOffset.tabs` and external `cam::offsets::TabPoint` users resolve
 //! unchanged.

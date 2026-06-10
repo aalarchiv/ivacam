@@ -1,4 +1,4 @@
-//! Sub-op geometry caches (eb8.8).
+//! Sub-op geometry caches.
 //!
 //! [`crate::pipeline_cache`] keys the WHOLE-OP output by every field that
 //! affects the emitted G-code — depth, feeds, plunge, leads, tabs, the
@@ -188,7 +188,7 @@ pub(crate) fn clear_all_caches() {
 mod tests {
     use super::*;
 
-    /// fgay: the medial-axis / pocket-cascade caches are process-global
+    /// The medial-axis / pocket-cascade caches are process-global
     /// (`OnceLock<Mutex<LruCache>>`), so the cache tests — which each
     /// `clear_all_caches()` then assert a global length — raced under the
     /// default parallel test runner (one test's clear/insert landed

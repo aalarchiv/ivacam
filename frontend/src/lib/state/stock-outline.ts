@@ -1,5 +1,5 @@
 /// Synthesize the stock material's outline as a selectable geometry
-/// object (8jce). The Rust pipeline has no concept of stock — it's a
+/// object. The Rust pipeline has no concept of stock — it's a
 /// frontend-only construct — so to let an op (chamfer the perimeter,
 /// profile, engrave a border) target the workpiece edge we inject a
 /// closed rectangle, built from the effective stock footprint, into the

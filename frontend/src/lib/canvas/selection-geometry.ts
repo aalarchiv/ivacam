@@ -1,6 +1,6 @@
 // Pure-TypeScript 2D geometry primitives for the entity canvas. Lives
 // outside `EntityCanvas2D.svelte` so vitest specs can exercise them
-// without mounting the canvas DOM (audit y0ez). The selection / hit-
+// without mounting the canvas DOM. The selection / hit-
 // test machinery in the component consumes these.
 
 import type { Segment } from '../api/types';
@@ -128,7 +128,7 @@ export function bboxOfSegments(segs: Segment[]): BBox2D {
 
 /// Bottom-left (min) corner of the union of the bboxes of the objects
 /// in `selectedIds`, read from the import's per-object `object_meta`
-/// (245i). This is the "0,0 of the selection bbox" anchor used to place
+/// This is the "0,0 of the selection bbox" anchor used to place
 /// a freshly-added text op at the selection's origin. Returns `null`
 /// when no selected object has a finite bbox (empty selection, or ids
 /// that don't resolve to a meta entry). Pure so it's unit-testable

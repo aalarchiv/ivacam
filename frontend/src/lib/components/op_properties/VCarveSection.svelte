@@ -1,10 +1,10 @@
 <script lang="ts">
   /// V-Carve op-properties fieldset. Shown only when op.kind === 'vcarve'.
   /// Styling is mostly inherited from OpPropertiesPanel's :global(.props ...)
-  /// rules; the local style block below only covers the rt1.7 inlay
-  /// button. (svelte-check treats a literal "style" tag in a JSDoc
-  /// comment as the start of a real style block, so the word is spelled
-  /// out rather than tagged here.)
+  /// rules; the local style block below only covers the inlay button.
+  /// (svelte-check treats a literal "style" tag in a JSDoc comment as the
+  /// start of a real style block, so the word is spelled out rather than
+  /// tagged here.)
   import {
     project,
     type OpField,
@@ -135,8 +135,8 @@
   :global(.hint.hint-trailing) {
     margin-left: 0.5rem;
   }
-  /* rt1.7: 'Duplicate as inlay plug' button. Sized to match the
-     existing per-section action buttons (re-pick, repick) so the V-Carve
+  /* 'Duplicate as inlay plug' button. Sized to match the existing
+     per-section action buttons (re-pick, repick) so the V-Carve
      fieldset doesn't look like it bolted on something special. */
   .inlay-btn {
     background: color-mix(in srgb, var(--accent) 18%, transparent);

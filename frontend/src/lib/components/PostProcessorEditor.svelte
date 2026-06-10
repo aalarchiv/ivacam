@@ -1,5 +1,5 @@
 <script lang="ts">
-  /// Dedicated post-processor editor (uzz). Splits the inline editor
+  /// Dedicated post-processor editor. Splits the inline editor
   /// out of MachineDialog into its own modal with a live preview
   /// pane and JSON import/export. Matches Estlcam's editor in spirit:
   /// flat form on the left, ~12-line preview on the right that
@@ -31,7 +31,7 @@
   }
   let { open, initial, onSave, onClose }: Props = $props();
 
-  // The draft/dirty/discard lifecycle lives in DialogDraft (kdfh): it
+  // The draft/dirty/discard lifecycle lives in DialogDraft: it
   // mirrors the parent's `initial` prop at open() but lets us edit
   // without committing until Save. We avoid reading `initial` at
   // module init (svelte's state_referenced_locally rule) — the effect
@@ -188,8 +188,7 @@
   }
 
   /// Discard guard: a draft that diverged from `initial` prompts before
-  /// closing (audit hzlr flagged the earlier unguarded close as
-  /// inconsistent with MachineDialog / ToolLibraryDialog). DialogDraft
+  /// closing. DialogDraft
   /// owns the dirty check + two-step confirm.
   function close() {
     if (dd.requestClose()) onClose();

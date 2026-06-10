@@ -1,4 +1,4 @@
-//! Layer-name interning helper (mieu / jzpl Phase 2 follow-up).
+//! Layer-name interning helper.
 //!
 //! [`Segment::layer`] is an [`Arc<str>`] so the clone path is alloc-free.
 //! But every `Segment::line(start, end, "0", 7)` call in an importer goes

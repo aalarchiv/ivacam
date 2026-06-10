@@ -66,9 +66,9 @@
       closeAddMenu();
     }
   }
-  /// Arrow-key nav across the "+ Add" disclosure (audit xc3a). The
-  /// disclosure has just two items so keyboard support is small but
-  /// matches the pattern used by the menubar dropdowns.
+  /// Arrow-key nav across the "+ Add" disclosure. The disclosure has
+  /// just two items so keyboard support is small but matches the
+  /// pattern used by the menubar dropdowns.
   function onAddMenuKey(e: KeyboardEvent) {
     const root = e.currentTarget as HTMLElement;
     const items = Array.from(
@@ -108,9 +108,9 @@
     return ACI[c] ?? 'var(--text-faint)';
   }
 
-  /// Usable layers across ALL imports (wrsu Phase 2). When several
-  /// drawings share a layer name (e.g. both have "0") the counts sum;
-  /// visibility toggles apply across imports.
+  /// Usable layers across ALL imports. When several drawings share a
+  /// layer name (e.g. both have "0") the counts sum; visibility toggles
+  /// apply across imports.
   let usableLayers = $derived.by(() => {
     const byName = new Map<string, { name: string; color: number; segment_count: number }>();
     for (const entry of project.data.imports) {
@@ -572,9 +572,9 @@
        vertical space on tall windows. Let the host own scrolling. */
     overflow-y: auto;
   }
-  /* Per-import card (wrsu Phase 2). When the project has multiple
-     drawings the head row identifies each one and offers a remove
-     button; single-import projects skip the head row entirely. */
+  /* Per-import card. When the project has multiple drawings the head
+     row identifies each one and offers a remove button; single-import
+     projects skip the head row entirely. */
   .import-card {
     margin: 0.1rem 0 0.4rem;
   }
@@ -610,7 +610,7 @@
   .import-remove:hover {
     color: var(--error);
   }
-  /* File-transform foldout (bww). Lives inside each import-card. */
+  /* File-transform foldout. Lives inside each import-card. */
   .xform {
     margin: 0.05rem 0 0.3rem;
     border: 1px solid var(--border);

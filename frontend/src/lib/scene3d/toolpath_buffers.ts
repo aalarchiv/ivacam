@@ -1,5 +1,5 @@
 // Pure toolpath-buffer geometry math, extracted from Scene3D.svelte
-// (7iej.17) so the direction-arrow chevron math — the kind of vector
+// so the direction-arrow chevron math — the kind of vector
 // geometry that silently regresses — can be unit-tested without a live
 // THREE renderer. Scene3D still owns the buffer assembly + GPU upload;
 // these are the side-effect-free pieces it calls.
@@ -97,7 +97,7 @@ export function computeArrowChevron(from: Vec3, to: Vec3, p: ArrowParams): Arrow
 /// move-kind boost slightly past 1.0, exactly as the inline math did.
 export type Rgb = [number, number, number];
 
-/// 7iej.20: brightness multiplier per move kind — rapids dimmest,
+/// Brightness multiplier per move kind — rapids dimmest,
 /// plunge/retract mid, cuts/arcs (and anything else) brightest. Pulled
 /// out of `rebuildToolpathGeometry` so the emphasis ladder is one
 /// testable place instead of an inline ternary.
@@ -107,7 +107,7 @@ export function moveBoost(kind: string): number {
   return 1.15;
 }
 
-/// 7iej.20: final base color for a toolpath segment. `op_id === 0`
+/// Final base color for a toolpath segment. `op_id === 0`
 /// (legacy / unstamped moves) uses the move-kind tint verbatim; a
 /// stamped op uses its hue color scaled by the move-kind boost so the
 /// cut/rapid/plunge emphasis reads on top of the per-op hue. THREE +
@@ -119,7 +119,7 @@ export function resolveSegmentColor(opId: number, kind: string, moveTint: Rgb, o
   return [opColor[0] * b, opColor[1] * b, opColor[2] * b];
 }
 
-/// 7iej.20: playhead fade. A `past` move (already cut) renders at full
+/// Playhead fade. A `past` move (already cut) renders at full
 /// `base` color; a `future` move dims to `base * factor + offset` — the
 /// offset keeps a faded line visible (a non-black floor) instead of
 /// collapsing to the background. Pulled out of `applyToolpathFade`.

@@ -79,7 +79,7 @@ pub(super) fn greedy_nearest_among(offsets: &[&PolylineOffset], start: Point2) -
             //   1. closer distance wins,
             //   2. deeper level wins (innermost ring first — pocket
             //      cascades unwind inside-out),
-            //   3. non-finish before finish (rt1.24 — the dedicated
+            //   3. non-finish before finish (the dedicated
             //      finish-wall ring runs LAST so surface quality
             //      isn't degraded by re-traversing it).
             let level = o.level;

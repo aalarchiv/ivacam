@@ -95,7 +95,7 @@ export function buildEndmillStack(
   // Shank: between top of flutes and bottom of holder. When the
   // holder is undefined, give the shank a sensible default length so
   // the user can still see "this is the non-cutting part" sticking
-  // out. dhh0: when an overall tool length is set, the shank fills the
+  // out. When an overall tool length is set, the shank fills the
   // remainder up to that length (tip → collet) so the rendered tool
   // matches the real proportions instead of the diameter heuristic.
   const shankLen =

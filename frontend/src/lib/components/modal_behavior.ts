@@ -7,7 +7,7 @@ export const __scrollCache = new Map<string, number>();
 
 /// Module-level cache of dragged/resized modal geometry, keyed by
 /// persistKey, so a draggable dialog reopens where the user left it
-/// (zi6p). null width/height means "not yet resized" → intrinsic size.
+/// null width/height means "not yet resized" → intrinsic size.
 export interface ModalGeom {
   left: number;
   top: number;
@@ -18,7 +18,7 @@ export const __geomCache = new Map<string, ModalGeom>();
 
 /// Centered top-left for a modal of size (w, h) in a viewport (vw, vh).
 /// Clamped to >= 0 so an oversized modal starts at the top-left corner
-/// rather than off-screen-negative (zi6p).
+/// rather than off-screen-negative.
 export function centeredModalPosition(
   w: number,
   h: number,
@@ -34,7 +34,7 @@ export function centeredModalPosition(
 /// Clamp a proposed modal top-left so the drag handle (header) stays
 /// grabbable: never let the header go above the viewport top or below
 /// its bottom, and always keep `edgeMargin` px of the modal reachable
-/// on each horizontal side (zi6p).
+/// on each horizontal side.
 export function clampModalPosition(
   left: number,
   top: number,

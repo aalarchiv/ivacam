@@ -1,4 +1,4 @@
-//! f60x relief / 3-axis ball-nose surfacing driver.
+//! Relief / 3-axis ball-nose surfacing driver.
 //!
 //! Resolves the op's [`crate::project::ReliefSource`] into a target
 //! [`SurfaceField`] (mapping brightness → Z with the op's depth range),
@@ -56,7 +56,7 @@ pub(in crate::pipeline) fn run_relief_op<P: PostProcessor>(
     };
 
     // Tool-kind gate (BallNose) + impossible-geometry checks live in the
-    // shared helper so a cached replay surfaces them too (my03).
+    // shared helper so a cached replay surfaces them too.
     push_tool_fit_kind_warnings(op, project, setup, warnings);
 
     let tool = project
@@ -89,7 +89,7 @@ pub(in crate::pipeline) fn run_relief_op<P: PostProcessor>(
     if radius <= 0.0 {
         return Ok(());
     }
-    // izvd: a bull-nose surfaces with its corner-fillet tip (flat centre +
+    // A bull-nose surfaces with its corner-fillet tip (flat centre +
     // rounded corner); a ball-nose is the full-hemisphere case (corner =
     // radius). The drop-cutter + scallop use this corner radius.
     let corner_radius = match tool.kind {

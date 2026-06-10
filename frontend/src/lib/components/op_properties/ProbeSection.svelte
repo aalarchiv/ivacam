@@ -1,5 +1,5 @@
 <script lang="ts">
-  /// 8n4k Probe op-properties: G38.2 probe move along the selected axis.
+  /// Probe op-properties: G38.2 probe move along the selected axis.
   /// No tool / source needed — the operator wires the probe to the machine.
   /// Styles inherited from OpPropertiesPanel's :global(.props ...) rules.
   import type { OpField, OpFieldValue, ProbeOp } from '../../state/project.svelte';

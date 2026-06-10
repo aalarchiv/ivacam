@@ -1,4 +1,4 @@
-/// rt1.12: mirrors the Rust oracle in
+/// Mirrors the Rust oracle in
 /// `crates/ivac-core/src/cam/raster.rs` (the `tests` module). Each case
 /// here is the TS twin of a Rust `#[test]` so the live preview stays
 /// faithful to what the backend emitter actually burns.

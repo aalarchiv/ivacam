@@ -51,7 +51,7 @@ export function drawSegment(ctx: CanvasRenderingContext2D, seg: Segment, p: Proj
   const counterClockwise = bulge > 0;
 
   const [pcx, pcy] = p(cx, cy);
-  // 7iej.19: screen-space radius by projecting a point `radius` away from
+  // Screen-space radius by projecting a point `radius` away from
   // the center and measuring. The viewport transform is a uniform scale,
   // so direction is irrelevant — and this avoids the div-by-near-zero the
   // old `(sx - pcx) / (seg.start.x - cx)` ratio hit on a vertical chord

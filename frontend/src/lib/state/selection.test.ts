@@ -1,7 +1,7 @@
-/// Pure-logic tests for the selection helpers extracted in 80gv.
-/// `SelectionState` itself is Svelte-rune-backed; the helpers live
-/// in selection.svelte.ts but are plain functions, so vitest can
-/// drive them without booting the rune runtime.
+/// Pure-logic tests for the selection helpers. `SelectionState` itself
+/// is Svelte-rune-backed; the helpers live in selection.svelte.ts but
+/// are plain functions, so vitest can drive them without booting the
+/// rune runtime.
 
 import { describe, expect, it } from 'vitest';
 import { computeSelectionUpdate, selectionsEqual } from './selection.svelte';

@@ -48,7 +48,7 @@ pub struct AppState {
     /// confirmed a dirty-discard or determined there is nothing to
     /// lose. The `CloseRequested` handler reads this flag to decide
     /// whether to prevent the close and bounce a prompt back to the
-    /// UI, or let the window destroy normally (qjec).
+    /// UI, or let the window destroy normally.
     pub close_confirmed: AtomicBool,
     /// Milliseconds since `process_start()` of the previous
     /// `CloseRequested` we intercepted; `0` means "never". Lets a
@@ -123,7 +123,7 @@ pub fn healthz() -> HealthResponse {
     HealthResponse { ok: true }
 }
 
-/// eu2b: drop every entry from the process-global pipeline cache.
+/// Drop every entry from the process-global pipeline cache.
 /// Frontend project-load / replace flows call this whenever the
 /// machine config or tool library changes since the last load — the
 /// cache key already encodes both fingerprints (so stale gcode can't

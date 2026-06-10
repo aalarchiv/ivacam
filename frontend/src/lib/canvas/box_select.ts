@@ -1,5 +1,5 @@
 // Box-select containment hit logic extracted from EntityCanvas2D.svelte
-// (2o8s, l8u6 follow-up). The canvas component still owns the input
+// The canvas component still owns the input
 // gestures + state; this module is the pure "which object ids land
 // inside this canvas-pixel rectangle" calculation.
 

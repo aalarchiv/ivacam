@@ -2,7 +2,7 @@
 /// can't leave. A dashed box from (0,0,0) to (workArea.x/y/z) so the user
 /// sees the machinable limits; dim so it sits behind the toolpath.
 ///
-/// Extracted from Scene3D.svelte (4w2f). Owns its THREE.Group; rebuilt
+/// Extracted from Scene3D.svelte. Owns its THREE.Group; rebuilt
 /// whenever the user edits the work area in MachineDialog.
 
 import * as THREE from 'three';

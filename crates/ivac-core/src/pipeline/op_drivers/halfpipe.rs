@@ -18,7 +18,7 @@ use crate::pipeline::{
 };
 use crate::project::{Op, OpKind, PocketStrategy, Project};
 
-/// o3od: cheap pre-check used by `run_per_op` to decide whether the
+/// Cheap pre-check used by `run_per_op` to decide whether the
 /// toolchange envelope needs to fire before this op. Mirrors the
 /// driver's own `regions.is_empty()` short-circuit at the top of
 /// `run_halfpipe_op` — an op selecting open polylines / no closed
@@ -44,7 +44,7 @@ pub(in crate::pipeline) fn halfpipe_would_emit(op: &Op, objects: &[VcObject]) ->
 }
 
 // Halfpipe driver (Pocket strategy with cross-section profile) walks
-// densified pocket regions per pass — see 55o4 for the planned split.
+// densified pocket regions per pass.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
     op: &Op,
@@ -84,7 +84,7 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
                 });
             }
             let tool_r = tool.diameter * 0.5;
-            // srxi: the previous threshold was 50 % of the profile R,
+            // The previous threshold was 50 % of the profile R,
             // which let large mismatches through silently (a 6 mm tool
             // on a 5 mm profile is a 20 % mismatch and used to pass —
             // the resulting floor isn't even close to the requested
@@ -135,7 +135,7 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
         .map(f64::abs)
         .unwrap_or(1.0)
         .max(0.05);
-    // 898l: cap Z to the cutting flute length so the ball-nose shank
+    // Cap Z to the cutting flute length so the ball-nose shank
     // never engages stock. Fallback to tool radius when flute_length
     // isn't recorded — past that depth the shank starts to drag even
     // on a pointed bit if it's a long-thin cutter.
@@ -165,12 +165,12 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
         if cancelled(cancel) {
             return Err(PipelineError::Cancelled);
         }
-        // iqbu: prune medial-axis spurs (same hairy-boundary problem
+        // Prune medial-axis spurs (same hairy-boundary problem
         // as V-carve). For halfpipe the tip-radius is 0 (the cutter's
         // tip is the deepest point of the ball / V apex, not a flat
         // plateau), so only the short-branch rule fires.
         let axes = crate::cam::vcarve::prune_medial_axis(axes_raw, tool_r_for_prune, 0.0);
-        // mchy: build the flat boundary segment list so polyline_to_z
+        // Build the flat boundary segment list so polyline_to_z
         // can detect re-entrant corners. The outer ring plus any
         // hole rings — same convention as the V-Carve medial-axis
         // builder.
@@ -205,10 +205,10 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
             if tool_reach_limited {
                 any_tool_reach_limited = true;
             }
-            // kagr: ratchet_emit returns sub-polylines split at any
+            // ratchet_emit returns sub-polylines split at any
             // above-surface gaps. Push each one as a separate cut
             // block so the caller G0-rapids between them at safe Z.
-            // ot80: per-tool lead-in angle override (0.0 ⇒ default 10°).
+            // Per-tool lead-in angle override (0.0 ⇒ default 10°).
             for p in crate::cam::vcarve_emit::ratchet_emit_with_lead_in(
                 &z_axis,
                 dpp,
@@ -259,12 +259,12 @@ mod tests {
     use crate::project::MachineConfig;
     use crate::project::{Op, OpKind, OpParams, OpSource, Project, ToolEntry, ToolKind};
 
-    /// Whirl (3e5): when a Pocket op uses a Whirl-tagged tool
+    /// When a Pocket op uses a Whirl-tagged tool
     /// with a non-zero extra-width, the gcode body contains many more
     /// G1 moves than the same op without Whirl — the helical-spiral
     /// overlay subdivides every cut move at the spiral stride. The
-    /// cascade-ring count stays the same (3e5 removed the v1
-    /// `xy_step` clamp); the extra moves come from the overlay's
+    /// cascade-ring count stays the same (the `xy_step` clamp was
+    /// removed); the extra moves come from the overlay's
     /// stride stamping at gcode-emit time.
     #[test]
     fn whirl_tool_inflates_gcode_g1_count() {
@@ -330,11 +330,11 @@ mod tests {
         // Cascade ring count stays the same — the overlay doesn't add rings.
         assert_eq!(
             resp_a.stats.offset_count, resp_b.stats.offset_count,
-            "3e5 removed the xy_step clamp; ring count should match",
+            "xy_step clamp was removed; ring count should match",
         );
     }
 
-    /// Whirl serde round-trip on `ToolEntry` (rt1.25). Default = false
+    /// Whirl serde round-trip on `ToolEntry`. Default = false
     /// (skipped on serialize); when on with an override, both round-trip.
     #[test]
     fn whirl_serde_round_trip() {
@@ -351,7 +351,7 @@ mod tests {
         assert_eq!(back.whirl_stepover_mm, Some(0.75));
     }
 
-    /// Halfpipe op (rt1.19): a closed region + Halfpipe `CircularArc`
+    /// A closed region + Halfpipe `CircularArc`
     /// emits cutting moves whose Z dips to within tolerance of the
     /// configured profile radius along the centerline.
     #[test]
@@ -431,7 +431,7 @@ mod tests {
         );
     }
 
-    /// srxi: a 20 % tool/profile-R mismatch — 6 mm tool on a 5 mm
+    /// A 20 % tool/profile-R mismatch — 6 mm tool on a 5 mm
     /// profile — used to pass silently under the loose 50 % threshold.
     /// The tightened 10 % gate now fires `halfpipe_radius_mismatch`.
     #[test]
@@ -498,7 +498,7 @@ mod tests {
         );
     }
 
-    /// 898l: halfpipe with profile R larger than the cutter's flute
+    /// Halfpipe with profile R larger than the cutter's flute
     /// length must clamp Z to -`flute_length` and emit a
     /// `halfpipe_tool_reach_exceeded` warning.
     #[test]
@@ -581,7 +581,7 @@ mod tests {
         }
     }
 
-    /// `PocketStrategy::Halfpipe` serde round-trip (rt1.19) covers both
+    /// `PocketStrategy::Halfpipe` serde round-trip covers both
     /// `CircularArc` and `VBottom` profiles.
     #[test]
     fn halfpipe_serde_round_trip() {

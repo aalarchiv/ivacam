@@ -15,7 +15,7 @@ pub struct Post {
     pen_down: bool,
     last_x: Option<i64>,
     last_y: Option<i64>,
-    /// p9ji: last emitted plotter velocity (`VS<v>;`) in cm/s. Tracked
+    /// Last emitted plotter velocity (`VS<v>;`) in cm/s. Tracked
     /// so we only re-emit when the value changes; the plotter remembers
     /// the last VS until it sees a new one or `IN;` resets it.
     last_vs: Option<u32>,
@@ -36,7 +36,7 @@ impl Post {
     }
 
     /// Tessellate a G2/G3 arc into pen-down chord polyline at ~5° per
-    /// chord (audit 1pcz). HPGL has an `AA` (arc absolute) opcode but
+    /// chord. HPGL has an `AA` (arc absolute) opcode but
     /// support varies between controllers; tessellation is universal
     /// and visually indistinguishable on the 40 plu/mm grid at 5°
     /// (chord error r·(1-cos(2.5°)) ≈ 0.001·r ≈ 0.04 mm on a 40 mm
@@ -46,7 +46,7 @@ impl Post {
     /// emitted as a zero-length move (start == end), a quarter-arc
     /// from (10, 0) to (0, 10) became a straight diagonal. Drag knives
     /// cut a triangle where the operator drew a curve.
-    // juvx: local `const TAU` lives near its use so the tessellation
+    // Local `const TAU` lives near its use so the tessellation
     // math reads top-to-bottom without scrolling. Hoisting it would
     // split the related step + sweep + dtheta block.
     #[allow(clippy::items_after_statements)]
@@ -127,7 +127,7 @@ impl PostProcessor for Post {
         // HPGL is plotter-units (40 per mm); units handled by fmt_xy.
     }
     fn feedrate(&mut self, rate: u32) {
-        // p9ji: HPGL exposes plotter velocity via `VS<v>;` (cm/s).
+        // HPGL exposes plotter velocity via `VS<v>;` (cm/s).
         // Without an explicit VS, the plotter falls back to its boot
         // default — wrong for drag-knife setups where a slow first cut
         // prevents the marker from dragging through the workpiece.
@@ -161,7 +161,7 @@ impl PostProcessor for Post {
             self.write("PU;");
             self.pen_down = false;
         }
-        // ywsj: mirror `linear`'s single-axis fallback. A caller that
+        // Mirror `linear`'s single-axis fallback. A caller that
         // emits move_to(Some(x), None, None) or move_to(None, Some(y),
         // None) should still produce a PA emit — the missing axis
         // falls back to the last known position. Without this, partial
@@ -213,7 +213,7 @@ impl PostProcessor for Post {
     }
     fn tool_offsets(&mut self, _offset: ToolOffset) {}
     fn finish(&self) -> String {
-        // 2nll: HPGL is one logical "program-statement-list" terminated
+        // HPGL is one logical "program-statement-list" terminated
         // by `;`, and historically ivaCAM concatenated every
         // statement onto a single mega-line. Plotter firmware accepts
         // both forms; humans, diff tools, and the ivac preview pane do
@@ -275,7 +275,7 @@ impl PostProcessor for Post {
             last_z: None,
             last_rate: None,
             last_speed: None,
-            // sulg: HPGL pen plotters have no coolant or spindle —
+            // HPGL pen plotters have no coolant or spindle —
             // leave the new modal-state fields at their defaults
             // (Unknown / None). Round-trips cleanly with restore_state
             // below, which ignores them.
@@ -295,7 +295,7 @@ mod tests {
 
     #[test]
     fn hpgl_circle_renders_as_polygon() {
-        // 1pcz: A full circle (start == end with I/J center offset)
+        // A full circle (start == end with I/J center offset)
         // must produce a curved polyline, not a zero-length move.
         let mut post = Post::new();
         post.program_start();
@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn nll2_finish_inserts_newlines_after_semicolons() {
-        // 2nll: HPGL output used to be a single mega-line; plotter
+        // HPGL output used to be a single mega-line; plotter
         // firmware accepts that but humans, diff tools, and the ivac
         // preview pane don't. Verify each statement (terminated by
         // `;`) lands on its own output line so `git diff` and the
@@ -400,7 +400,7 @@ mod tests {
 
     #[test]
     fn hpgl_quarter_arc_renders_as_curve() {
-        // 1pcz: A quarter-arc from (10, 0) to (0, 10) must draw as a
+        // A quarter-arc from (10, 0) to (0, 10) must draw as a
         // tessellated curve, not a single diagonal chord.
         let mut post = Post::new();
         post.program_start();
@@ -426,7 +426,7 @@ mod tests {
         );
     }
 
-    /// ywsj: `move_to(Some(x), None, None)` (single-axis partial move)
+    /// `move_to(Some(x), None, None)` (single-axis partial move)
     /// must NOT silently drop. The previous code's `if let (Some(x),
     /// Some(y)) = (x, y)` guard skipped PA emission when only one
     /// axis was supplied, asymmetric with `linear` which already fell

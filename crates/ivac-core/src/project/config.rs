@@ -293,7 +293,7 @@ pub enum PlungeStrategy {
 }
 
 /// Accept the new `null` form AND the legacy bare-number form
-/// (`"radius_mm": 5.0`) saved by pre-rt1.2 projects. Required for
+/// (`"radius_mm": 5.0`) saved by older projects. Required for
 /// project-file backward compatibility.
 fn deserialize_helix_radius<'de, D>(de: D) -> Result<Option<f64>, D::Error>
 where

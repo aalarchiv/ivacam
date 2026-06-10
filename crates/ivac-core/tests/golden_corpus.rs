@@ -25,7 +25,7 @@ fn rust_smoke_pipeline_runs_without_panicking() {
         .join("tests")
         .join("data");
     if !dxf_dir.is_dir() {
-        // 1zya: refs/ is optional dev scaffolding, so a checkout without it
+        // Refs/ is optional dev scaffolding, so a checkout without it
         // must not fail. Announce the skip clearly (visible under
         // `cargo test -- --nocapture`) so a green run isn't mistaken for
         // actual corpus coverage — the real correctness load lives in

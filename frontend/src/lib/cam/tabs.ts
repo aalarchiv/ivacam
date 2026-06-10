@@ -1,4 +1,4 @@
-/// TS mirror of `ivac_core::cam::tabs` (rt1.10). The 2D canvas
+/// TS mirror of `ivac_core::cam::tabs`. The 2D canvas
 /// (ghost-tab projection + click toggle) and the 3D scene (tab marker
 /// rendering) both need to resolve `(objectId, t)` to world XY without
 /// a round-trip to the backend. Keep this file numerically equivalent
@@ -188,8 +188,8 @@ export function polylineAtT(
 }
 
 /// Walk a polyline and collect t parameters for every vertex and
-/// every segment midpoint (1q3). Useful as snap candidates next to
-/// the contour projection.
+/// every segment midpoint. Useful as snap candidates next to the
+/// contour projection.
 export function vertexAndMidpointTs(
   pts: Point2[],
   closed: boolean,

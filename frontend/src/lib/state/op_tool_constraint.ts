@@ -1,4 +1,4 @@
-/// Per-op-kind acceptable-tool-kind constraints (k94n).
+/// Per-op-kind acceptable-tool-kind constraints.
 ///
 /// Each OpKind expects a SET of ToolKinds it can sensibly run with.
 /// `expectedToolKinds('drill')` returns `['drill', 'endmill']` — endmills
@@ -31,7 +31,7 @@ export function expectedToolKinds(op: OpKind): readonly ToolKind[] {
       // holes with poor chip evacuation. Anything else is wrong.
       return ['drill', 'endmill'];
     case 'thread':
-      // gm1u: a dedicated thread mill is the natural fit; an endmill or
+      // A dedicated thread mill is the natural fit; an endmill or
       // form-profile still works as a fallback single-point cutter.
       return ['thread_mill', 'endmill', 'form_profile'];
     case 'chamfer':
@@ -50,11 +50,11 @@ export function expectedToolKinds(op: OpKind): readonly ToolKind[] {
       // dragoff geometry.
       return ['drag_knife'];
     case 't_slot':
-      // 3g6u / z5yw: needs the undercut wide-disk → narrow-neck profile,
-      // authored as a form-profile (z, r) cutter (T-slot preset).
+      // Needs the undercut wide-disk → narrow-neck profile, authored as a
+      // form-profile (z, r) cutter (T-slot preset).
       return ['form_profile'];
     case 'dovetail':
-      // b7qz: needs the angled-flank cross-section of a form / profile
+      // Needs the angled-flank cross-section of a form / profile
       // (dovetail) cutter to carve the undercut walls.
       return ['form_profile'];
     case 'vcarve':
@@ -65,13 +65,13 @@ export function expectedToolKinds(op: OpKind): readonly ToolKind[] {
       // No tool reference — accept anything (Op.tool_id may be 0).
       return [];
     case 'relief_mill':
-      // f60x / izvd: the drop-cutter follows the cutter's round tip — a
-      // ball-nose (full hemisphere) or a bull-nose (flat centre + corner
-      // fillet). The corner radius shapes the floor + the scallop stepover.
+      // The drop-cutter follows the cutter's round tip — a ball-nose
+      // (full hemisphere) or a bull-nose (flat centre + corner fillet).
+      // The corner radius shapes the floor + the scallop stepover.
       return ['ball_nose', 'bull_nose'];
     case 'raster_engrave':
-      // rt1.12: laser raster engraving needs a laser head — the power
-      // curve modulates the beam's `S` word; no rotating cutter applies.
+      // Laser raster engraving needs a laser head — the power curve
+      // modulates the beam's `S` word; no rotating cutter applies.
       return ['laser_beam'];
     default:
       return [];

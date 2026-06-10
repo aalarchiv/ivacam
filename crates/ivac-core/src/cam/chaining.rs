@@ -15,7 +15,7 @@ use crate::cam::{is_inside_polygon, segment_to_points, segments_to_points, VcObj
 use crate::geometry::{Point2, Segment};
 
 /// Minimum endpoint-distance below which two segment endpoints are
-/// treated as the same vertex. sj4t: a flat 1e-3 mm tolerance is too
+/// treated as the same vertex. A flat 1e-3 mm tolerance is too
 /// loose for sub-mm imports (a 0.5 mm cabochon would have its edges
 /// chained into the neighbouring contour). [`fuzzy_for_segments`]
 /// returns a bbox-scaled tolerance so callers adapt to the working
@@ -23,7 +23,7 @@ use crate::geometry::{Point2, Segment};
 /// for callers that don't yet take a tolerance.
 const FUZZY_MIN: f64 = 1e-3;
 /// Scale factor applied to the diagonal of the segments' bbox to derive
-/// an adaptive endpoint-merge tolerance (sj4t). A 200 mm-diagonal sheet
+/// an adaptive endpoint-merge tolerance. A 200 mm-diagonal sheet
 /// gets ~2e-2 mm, a 5 mm cabochon gets the floor at 1e-3 mm.
 const FUZZY_BBOX_FRACTION: f64 = 1e-4;
 
@@ -246,7 +246,7 @@ pub fn classify_containment(objects: &mut [VcObject]) -> usize {
 /// centroid of an outer square containing an inner square lies inside
 /// the inner — wrong answer for "is outer contained in inner").
 ///
-/// is68: the prior implementation returned the chord midpoint of the
+/// The prior implementation returned the chord midpoint of the
 /// first segment. For a LINE segment that's a point ON the boundary,
 /// which the even-odd rule handles consistently when probing against
 /// OTHER polygons (the probe is on the OUTER object's edge, not on the
@@ -258,7 +258,7 @@ pub fn classify_containment(objects: &mut [VcObject]) -> usize {
 /// other's boundary touch point, and even-odd classification flipped
 /// non-deterministically.
 ///
-/// Fix: for arc segments, return the TRUE arc midpoint (centre + tangent
+/// Fix: for arc segments, return the true arc midpoint (centre + tangent
 /// direction at half-sweep) instead of the chord midpoint. Line segments
 /// keep their legacy chord-midpoint behaviour.
 fn sample_point(obj: &VcObject) -> Point2 {
@@ -268,10 +268,10 @@ fn sample_point(obj: &VcObject) -> Point2 {
     };
     match s.kind {
         SegmentKind::Arc | SegmentKind::Circle => {
-            // True arc midpoint on the curve, NOT the chord midpoint.
+            // True arc midpoint on the curve, not the chord midpoint.
             // The chord midpoint of a 180° arc collapses to the centre,
             // which lands inside another tangent-circle's interior at
-            // the touch-point edge case (see is68).
+            // the touch-point edge case.
             if let Some(c) = s.center {
                 let r = s.start.distance(c);
                 let a0 = (s.start.y - c.y).atan2(s.start.x - c.x);
@@ -411,7 +411,7 @@ mod tests {
         assert!(!objs[0].closed);
     }
 
-    /// sj4t: a large-bbox project (200 mm sheet) gets a looser endpoint-
+    /// A large-bbox project (200 mm sheet) gets a looser endpoint-
     /// merge tolerance than a sub-mm project (a 0.5 mm cabochon). The
     /// adaptive tolerance is `max(1e-3 mm, 1e-4 * bbox_diag)`.
     #[test]
@@ -432,7 +432,7 @@ mod tests {
         );
     }
 
-    /// sj4t regression: two sub-mm contours sitting 0.5 mm apart must NOT
+    /// Regression: two sub-mm contours sitting 0.5 mm apart must NOT
     /// chain together. Previously the flat 1e-3 mm tolerance was so
     /// loose (relative to the geometry's working scale) that any
     /// rounding in the upstream importer could pull the two contours
@@ -455,7 +455,7 @@ mod tests {
         );
     }
 
-    /// is68 regression: a half-arc whose chord midpoint sits at the
+    /// Regression: a half-arc whose chord midpoint sits at the
     /// circle's CENTER would land at a coincident point with another
     /// circle's centre when the two circles are concentric — or, in the
     /// reported reproduction, at the touch-point of two tangent circles
@@ -501,7 +501,7 @@ mod tests {
         // Probe must NOT coincide with the centre (the chord midpoint).
         assert!(
             (probe.x - centre.x).abs() + (probe.y - centre.y).abs() > 0.5,
-            "probe collapsed to chord midpoint = centre ({centre:?}); is68 fix not active. probe = {probe:?}"
+            "probe collapsed to chord midpoint = centre ({centre:?}); arc-midpoint fix not active. probe = {probe:?}"
         );
         // Probe is on the arc (distance 1 from centre = radius).
         let d = probe.distance(centre);

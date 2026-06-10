@@ -1,6 +1,6 @@
 // SimWarning → world-XYZ position lookup. Extracted from Scene3D.svelte
-// (2o8s, l8u6 follow-up) so the per-kind position resolution can be
-// unit-tested without a THREE.js scene or the rune runtime.
+// so the per-kind position resolution can be unit-tested without a
+// THREE.js scene or the rune runtime.
 //
 // The Scene3D marker layer and the playback-bar / generate-bar warning
 // chips all need to answer "where does this warning live in the work

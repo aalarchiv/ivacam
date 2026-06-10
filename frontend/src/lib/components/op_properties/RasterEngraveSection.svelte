@@ -1,5 +1,5 @@
 <script lang="ts">
-  /// rt1.12: RasterEngrave op-properties fieldset. Shown when op.kind ===
+  /// RasterEngrave op-properties fieldset. Shown when op.kind ===
   /// 'raster_engrave'. Reuses the relief image-import path (image →
   /// ReliefSource brightness grid, referenced by sourceId) — only the
   /// processing differs: brightness maps to laser power (S), not Z. Owns

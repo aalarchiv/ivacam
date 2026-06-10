@@ -39,7 +39,7 @@ export function playheadToSegment(
 
 /// Per-frame plan emitted by the heightfield driver's state machine to
 /// move the simulator from `(appliedSeg, partialT)` to a target playhead
-/// `(targetSeg, targetT)` (pi8r). Encoded as a small object so the
+/// `(targetSeg, targetT)`. Encoded as a small object so the
 /// driver dispatches one Sim call per non-null field plus updates its
 /// own state, and so vitest can assert call sequence without booting
 /// the WASM module.

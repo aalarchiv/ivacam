@@ -27,14 +27,14 @@
 /// caller.
 pub type ZPolyline = Vec<(f64, f64, f64)>;
 
-/// Default lead-in ramp angle (degrees from horizontal). pmpk fix:
-/// the medial-axis chain endpoints sit AT boundary-touching vertices
+/// Default lead-in ramp angle (degrees from horizontal). The
+/// medial-axis chain endpoints sit AT boundary-touching vertices
 /// (R ≈ 0) so the cutter would otherwise plunge vertically by `dpp`
 /// into solid stock on its first cut — fatal for a sharp V-bit which
-/// has effectively zero safe plunge depth. Vectric Aspire and Estlcam
-/// both use a ramp lead-in for V-carve entry; 10° from horizontal is
-/// a defensible conservative default (≈ 5.7× more XY travel than
-/// vertical drop). ot80: now configurable per-tool via
+/// has effectively zero safe plunge depth. Vectric Aspire uses a ramp
+/// lead-in for V-carve entry; 10° from horizontal is a defensible
+/// conservative default (≈ 5.7× more XY travel than vertical drop).
+/// Now configurable per-tool via
 /// [`crate::project::ToolEntry::vcarve_lead_in_angle_deg`]; this
 /// constant remains the fallback when the tool field is unset.
 pub const LEAD_IN_ANGLE_DEG: f64 = 10.0;
@@ -47,16 +47,16 @@ pub const LEAD_IN_ANGLE_DEG: f64 = 10.0;
 /// magnitude (always positive — the cutter goes negative). The result
 /// is a list of sub-polylines whose Z monotonically respects the
 /// ratchet: every segment starts at the cut-Z reached by the previous
-/// segment and never violates the polyline's actual `z`. **kagr**: the
+/// segment and never violates the polyline's actual `z`. The
 /// emitter splits its output into multiple sub-polylines so the
 /// caller (V-Carve / Halfpipe drivers) can rapid (G0) between them
 /// over uncut stock instead of dragging the bit along the surface at
-/// feed rate. Before kagr the emitter returned a single continuous
+/// feed rate. Previously the emitter returned a single continuous
 /// polyline that contained intermediate `z=0` waypoints across uncut
 /// medial-axis points; the gcode emitter then dragged the non-flat
 /// V-bit tip across the workpiece surface, marring it.
 ///
-/// **pmpk:** the first sub-polyline begins with an angled lead-in ramp
+/// The first sub-polyline begins with an angled lead-in ramp
 /// that walks along the chain's spine while Z descends from 0 to the
 /// first-cut depth (`-dpp` or the chain's shallowest target, whichever
 /// is shallower). This avoids the V-bit-snapping vertical plunge that
@@ -73,7 +73,7 @@ pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> Vec<Z
     ratchet_emit_with_lead_in(axis, depth_per_pass, LEAD_IN_ANGLE_DEG)
 }
 
-/// ot80: same as `ratchet_emit` but with a configurable lead-in angle
+/// Same as `ratchet_emit` but with a configurable lead-in angle
 /// (degrees from horizontal). Values outside (0°, 90°) silently fall
 /// back to the legacy 10° default — this is the kernel of the
 /// configurable lead-in ramp; the per-tool setting flows through
@@ -83,7 +83,7 @@ pub fn ratchet_emit(axis: &[(f64, f64, f64, f64)], depth_per_pass: f64) -> Vec<Z
 /// `depth_per_pass` and `z_min` (both guarded against NaN by the
 /// early-return short-vec check and the `dpp.abs().max(...)` floor), but
 /// the comparator uses the `unwrap_or(Ordering::Equal)` house idiom
-/// (7iej.15) so a future NaN slipping through degrades to a stable sort
+/// so a future NaN slipping through degrades to a stable sort
 /// rather than a panic.
 #[allow(clippy::too_many_lines)]
 pub fn ratchet_emit_with_lead_in(
@@ -161,7 +161,7 @@ pub fn ratchet_emit_with_lead_in(
 
     let mut path: Vec<(f64, f64, f64)> = Vec::new();
 
-    // pmpk: emit angled lead-in ramp from z=0 down to z=first_cut_z
+    // Emit angled lead-in ramp from z=0 down to z=first_cut_z
     // along the chain's spine, replacing the original `-dpp` forward
     // sweep. The ramp slope is set by `lead_in_angle` (resolved above)
     // so the V-bit shaves a sloped sliver of material instead of
@@ -195,7 +195,7 @@ pub fn ratchet_emit_with_lead_in(
         (-tan_angle * total_arc, total_arc)
     };
 
-    // kagr: output is now a list of sub-polylines so the caller can
+    // Output is a list of sub-polylines so the caller can
     // rapid (G0) between them over uncut stock rather than dragging
     // the cutter at feed across the workpiece surface. We accumulate
     // into `out` and use `push_path` to flush whenever a segment of
@@ -219,7 +219,7 @@ pub fn ratchet_emit_with_lead_in(
     //     thing the standard forward sweep at current_level=-dpp would
     //     have emitted.
     //
-    // kagr: when target_z[i] = 0 (a R≈0 boundary point — the chain
+    // When target_z[i] = 0 (a R≈0 boundary point — the chain
     // has nothing to cut here), the natural z_i collapses to 0 too.
     // We MUST NOT emit a position move at z=0 across uncut stock —
     // the non-flat V-bit tip would scrape the surface at feed rate.
@@ -291,7 +291,7 @@ pub fn ratchet_emit_with_lead_in(
         return out;
     }
     let mut current_level = -2.0 * dpp;
-    // kagr: subsequent forward/reverse sweeps emit a position move
+    // Subsequent forward/reverse sweeps emit a position move
     // ONLY when cut_z[i] < 0 (real cut has already happened at this
     // point). Above the surface, we flush the in-progress sub-polyline
     // and the caller will rapid (G0) to the next cut site.
@@ -308,8 +308,8 @@ pub fn ratchet_emit_with_lead_in(
         }
     }
     push_path(&mut out, &mut path);
-    // j1zs: iteration cap is a hard absolute bound on the ratchet loop.
-    // Pre-fix the loop relied on `progressed` AND a DPP-relative break
+    // The iteration cap is a hard absolute bound on the ratchet loop.
+    // Previously the loop relied on `progressed` AND a DPP-relative break
     // (`current_level < z_min - dpp`) — the DPP-relative form could
     // race against pathological floating-point edge cases on
     // densified polylines (cut_z[i] within 1e-9 of target_z[i] for
@@ -352,7 +352,7 @@ pub fn ratchet_emit_with_lead_in(
             } else {
                 // Above surface — break the polyline so the caller
                 // G0-lifts over uncut stock at fast_z instead of
-                // dragging the V-bit tip across the workpiece (kagr).
+                // dragging the V-bit tip across the workpiece.
                 push_path(&mut out, &mut path);
             }
         }
@@ -375,7 +375,7 @@ pub fn ratchet_emit_with_lead_in(
         }
         push_path(&mut out, &mut path);
         current_level -= dpp;
-        // j1zs: stop the moment the next pass would cut at-or-below
+        // Stop the moment the next pass would cut at-or-below
         // the deepest target. The previous DPP-relative form
         // (`< z_min - dpp`) was a 1-DPP slack window that combined
         // with the `progressed` flag to break — we now use the
@@ -413,12 +413,12 @@ mod tests {
         assert!((z_min + 0.5).abs() < 1e-6, "z_min = {z_min}");
     }
 
-    /// pmpk: a straight medial-axis chain whose endpoint sits at R≈0
+    /// A straight medial-axis chain whose endpoint sits at R≈0
     /// (`target_z≈0`) must not produce any segment with vertical drop
     /// > 0.05 mm at zero (or near-zero) horizontal travel. Before the
-    /// > fix, the first cut move dropped Z by `dpp` while XY barely
-    /// > moved — V-bit snap territory. The lead-in ramp now spreads the
-    /// > drop over `dpp / tan(LEAD_IN_ANGLE_DEG)` mm of XY travel.
+    /// fix, the first cut move dropped Z by `dpp` while XY barely
+    /// moved — V-bit snap territory. The lead-in ramp now spreads the
+    /// drop over `dpp / tan(LEAD_IN_ANGLE_DEG)` mm of XY travel.
     #[test]
     fn first_plunge_uses_angled_lead_in() {
         // 50 mm-long chain, target depth -3 mm at both ends → in
@@ -484,7 +484,7 @@ mod tests {
         );
     }
 
-    /// kagr: when the medial-axis chain has uncut sections (`target_z`
+    /// When the medial-axis chain has uncut sections (`target_z`
     /// stays at 0 across long stretches because the slot is shallower
     /// than DPP at those points), the ratchet must NOT emit position
     /// moves at z=0 that walk across the workpiece surface at feed
@@ -497,7 +497,7 @@ mod tests {
     /// uncut ends. Each sub-polyline is allowed to BEGIN with a
     /// single z=0 waypoint (the lead-in ramp entry / re-entry XY);
     /// every other waypoint must sit below the work surface.
-    /// j1zs: even a deep V-carve must terminate cleanly (the iteration
+    /// Even a deep V-carve must terminate cleanly (the iteration
     /// cap is `n_levels + 2`, derived up-front from `z_min / dpp`). A
     /// chain reaching -10 mm at dpp 0.5 mm has 20 levels; the cap
     /// guarantees the loop never spins for longer than that even if
@@ -548,13 +548,13 @@ mod tests {
             let surface_count = poly.iter().filter(|t| t.2 >= -1e-9).count();
             assert!(
                 surface_count <= 1,
-                "polyline #{poly_idx} has {surface_count} surface waypoints (>1 = kagr bug); \
+                "polyline #{poly_idx} has {surface_count} surface waypoints (>1 is a surface-scrape bug); \
                  poly = {poly:?}",
             );
         }
     }
 
-    /// ot80: the configurable lead-in angle changes the ramp slope.
+    /// The configurable lead-in angle changes the ramp slope.
     /// A steeper angle ⇒ shorter horizontal travel for the same
     /// descent; the wrapper `ratchet_emit_with_lead_in` flows the
     /// user-configured angle through. Out-of-range values silently
@@ -600,11 +600,11 @@ mod tests {
         // MUST get to -dpp in less XY travel.
         assert!(
             xy_steep < xy_default,
-            "ot80: steeper lead-in must hit -dpp in less XY travel; default={xy_default:.3} steep={xy_steep:.3}",
+            "steeper lead-in must hit -dpp in less XY travel; default={xy_default:.3} steep={xy_steep:.3}",
         );
     }
 
-    /// ot80: out-of-range / non-finite angle overrides silently revert
+    /// Out-of-range / non-finite angle overrides silently revert
     /// to the legacy 10° default — defensive against bad project
     /// data.
     #[test]

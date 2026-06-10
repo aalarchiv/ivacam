@@ -1,4 +1,4 @@
-/// Workspace/session wiring extracted from App.svelte (oytm pt 2):
+/// Workspace/session wiring extracted from App.svelte (part 2):
 /// startup reopen prompt, recent-project loads, desktop source-watch +
 /// close-confirm wiring, and the window-level drag-and-drop import.
 /// Same house pattern as `file_ops.ts` — plain functions over the
@@ -88,7 +88,7 @@ export async function acceptReopen(): Promise<void> {
   else await loadFromPath(path);
   // If the project file already restored layer-visibility from
   // per-project workspace state, leave it alone — overwriting was
-  // the previous behavior (audit zxee). If the user had every layer
+  // the previous behavior. If the user had every layer
   // hidden when they closed (rare but possible), expand to
   // all-visible so the user isn't staring at an empty canvas.
   if (project.transformedImport && project.data.visibleLayers.size === 0) {
@@ -134,7 +134,7 @@ export function persistPerProjectStateOnChange(): void {
 /// double-prompt when loadFromPath / loadProjectPath also vet it.
 /// `openFile` / `openProject` do their own check; the path variants
 /// don't, because the OS file-association launch + reopen banner cases
-/// intentionally skip the prompt. npig: route through the shared styled
+/// intentionally skip the prompt. Routes through the shared styled
 /// ConfirmPrompt (same dialog as Open / Quit) rather than a native
 /// window.confirm.
 export async function openRecentProject(path: string): Promise<void> {
@@ -154,7 +154,7 @@ export async function wireSourceWatch(): Promise<void> {
   unlistenSourceWatch = await wireDesktopSourceWatch();
 }
 
-/// qjec: desktop close interception. Always confirm — accidental
+/// Desktop close interception. Always confirm — accidental
 /// closes lose work even on a "clean" project (camera, panel sizes,
 /// in-progress text not yet committed via Add). The double-click
 /// escape hatch in the Tauri backend covers the case where the user
@@ -164,7 +164,7 @@ export async function wireCloseConfirm(): Promise<void> {
   unlistenCloseRequested = await wireCloseRequested(async () => {
     if (project.hasUnsavedWork) {
       // Three-way so a misclick on the close button doesn't force a
-      // choice between losing work and re-opening the app (ed67).
+      // choice between losing work and re-opening the app.
       const choice = await confirmStore.askChoice({
         title: 'Quit ivaCAM?',
         body: 'You have unsaved changes. Save before you quit?',
@@ -205,7 +205,7 @@ export function unwireSession(): void {
   unlistenCloseRequested = null;
 }
 
-// dteo: window-level drag-and-drop import. Accept .dxf / .svg
+// Window-level drag-and-drop import. Accept .dxf / .svg
 // (loadFile) and .ivac-project.json / .json (loadProjectFile). The
 // overlay only paints while a drag with a `Files` payload is over
 // the window; we count enter / leave to avoid flicker when the
@@ -237,7 +237,7 @@ export async function onDrop(e: DragEvent): Promise<void> {
   // .ivac-project.json / *-project.json / bare .json are treated as a
   // project; anything else (.dxf / .svg / …) as a drawing. Both are
   // REPLACE loads, so gate on unsaved changes like the menu paths do —
-  // a drop is just as destructive as File ▸ Open (944t).
+  // a drop is just as destructive as File ▸ Open.
   const isProject =
     name.endsWith('.ivac-project.json') || name.endsWith('-project.json') || name.endsWith('.json');
   if (

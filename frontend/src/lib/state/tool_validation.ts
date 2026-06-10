@@ -1,5 +1,5 @@
 // Pure tool-row validation, field-applicability, and disabled-field
-// reasoning extracted from ToolLibraryDialog.svelte (fak4) so the
+// reasoning extracted from ToolLibraryDialog.svelte so the
 // dialog stays a thin reactive shell and the predicates can be unit-
 // tested without the rune runtime.
 //
@@ -13,7 +13,7 @@ import type { ToolEntry } from './project-types';
 import type { ToolKind } from './op_types';
 import { attrApplies, KIND_DISPLAY_LABELS } from './tool_family';
 
-/// jkgj: diameter must be at or above the HTML min="0.01" mm floor. The
+/// Diameter must be at or above the HTML min="0.01" mm floor. The
 /// prior `> 0` check accepted values that downstream clamping silently
 /// ignored, denying the user red-border feedback.
 export function diameterInvalid(t: ToolEntry): boolean {
@@ -84,7 +84,7 @@ export function fieldApplies(field: string, kind: ToolKind): boolean {
 }
 
 /// Whether the kind row's expanded section is load-bearing enough that
-/// the dialog should auto-expand it (k94n). A kind needs auto-expansion
+/// the dialog should auto-expand it. A kind needs auto-expansion
 /// when it has a kind-specific attribute without which the emitter falls
 /// back to wrong defaults — drag-knife dragoff, bull-nose corner radius,
 /// or form-profile samples.

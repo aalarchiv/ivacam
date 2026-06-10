@@ -1,5 +1,5 @@
 <script lang="ts">
-  /// rt1.34 Pause op-properties: name + operator message. No tool, no
+  /// Pause op-properties: name + operator message. No tool, no
   /// source, no geometry — the op is a program-flow stop.
   /// Styles inherited from OpPropertiesPanel's :global(.props ...) rules.
   import type { OpField, OpFieldValue, PauseOp } from '../../state/project.svelte';

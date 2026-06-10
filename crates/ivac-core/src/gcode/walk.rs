@@ -13,18 +13,18 @@ use crate::cam::setup::Setup;
 use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::math;
 
-/// Cut-pass dispatcher (3e5). When the active tool has a Whirl
+/// Cut-pass dispatcher. When the active tool has a Whirl
 /// overlay configured, route the path through the helical-spiral
 /// emit; otherwise fall back to the standard corner-feed walker. All
 /// five `multi_pass` call sites go through here so the Whirl check
 /// lives in exactly one place.
 ///
-/// qm9x: `whirl_state` carries the spiral phase + stride residual
+/// `whirl_state` carries the spiral phase + stride residual
 /// across multiple `emit_cut_path` calls so the spiral doesn't reset
 /// at every pass boundary. `multi_pass` instantiates ONE state before
-/// the per-pass loop and reuses it across passes — matches 89n5's
-/// cross-chord continuity for cross-pass continuity. Callers outside
-/// `multi_pass` (the helix-cleanup pass etc.) pass a fresh state.
+/// the per-pass loop and reuses it across passes for cross-pass
+/// continuity. Callers outside `multi_pass` (the helix-cleanup pass etc.)
+/// pass a fresh state.
 pub(super) fn emit_cut_path<P: PostProcessor>(
     segments: &[Segment],
     setup: &Setup,
@@ -58,7 +58,7 @@ pub(super) fn emit_cut_path<P: PostProcessor>(
     );
 }
 
-/// oulh: reverse a polyline chain end-to-end so the cascade can
+/// Reverse a polyline chain end-to-end so the cascade can
 /// walk it back instead of plunging in place at the trailing
 /// endpoint. Mirrors `cam::offsets::reverse_offset`'s arc handling
 /// (swap endpoints and negate `bulge`) but operates on a borrowed
@@ -151,7 +151,7 @@ fn arc_bulge_from_center(
     center: Point2,
     ccw: bool,
 ) -> (Point2, f64, f64) {
-    // 7iej.10: shared positive-sweep primitive (was an inline atan2 copy).
+    // Shared positive-sweep primitive (was an inline atan2 copy).
     let sweep = math::arc_sweep(center, start, end, ccw);
     let signed_sweep = if ccw { sweep } else { -sweep };
     let bulge = (signed_sweep * 0.25).tan();
@@ -263,19 +263,19 @@ pub(super) fn emit_path_with_corner_feed<P: PostProcessor>(
 /// is below the self-align threshold (`self_align_angle_rad`) and
 /// the whole swivel + linear pre-move is skipped.
 ///
-/// g30a: factored out so both Line and Arc branches in
+/// Factored out so both Line and Arc branches in
 /// `emit_path_with_dragoff` can call the same logic. Previously the
 /// swivel was inlined only in the Line branch, so Line→Arc corners
 /// emitted the arc with NO swivel — bending the blade.
 ///
-/// 0t9o: when `self_align_angle_rad > 0`, skip the swivel + linear
-/// pre-move entirely for corners whose tangent change |diff| is
-/// below the threshold. Real drag knives self-align below ~30° via
-/// the trailing offset, so emitting a swivel arc for every short
-/// chord pivot (e.g. a 64-chord circle approximating a real arc)
-/// bloats output and stresses the blade pivot. Returning `None`
-/// signals "no pre-move emitted" so the caller updates `last_motion`
-/// from the incoming direction rather than the post-swivel position.
+/// When `self_align_angle_rad > 0`, skip the swivel + linear pre-move
+/// entirely for corners whose tangent change |diff| is below the
+/// threshold. Real drag knives self-align below ~30° via the trailing
+/// offset, so emitting a swivel arc for every short chord pivot (e.g.
+/// a 64-chord circle approximating a real arc) bloats output and
+/// stresses the blade pivot. Returning `None` signals "no pre-move
+/// emitted" so the caller updates `last_motion` from the incoming
+/// direction rather than the post-swivel position.
 fn emit_dragoff_swivel<P: PostProcessor>(
     corner: Point2,
     last_m: f64,
@@ -294,8 +294,8 @@ fn emit_dragoff_swivel<P: PostProcessor>(
     while diff < -PI {
         diff += 2.0 * PI;
     }
-    // 0t9o: skip the linear pre-move + swivel arc for corners below
-    // the self-align threshold. The next cut emit follows in the new
+    // Skip the linear pre-move + swivel arc for corners below the
+    // self-align threshold. The next cut emit follows in the new
     // direction and the trailing blade snaps into alignment on its
     // own. We deliberately return None (not Some(off1)) so the
     // caller's `last_motion` tracks the incoming chord direction —
@@ -366,13 +366,13 @@ fn emit_path_with_dragoff<P: PostProcessor>(
                 let center = seg
                     .center
                     .unwrap_or_else(|| math::bulge_to_arc(seg.start, seg.end, seg.bulge).0);
-                // g30a: emit the drag-knife swivel arc at the
-                // Line→Arc (or Arc→Arc) corner BEFORE the cut arc.
-                // The arc's start tangent is the radius vector rotated
-                // 90° in the arc's orientation (+90° for CCW / bulge>0,
-                // -90° for CW). Without this, the blade enters the arc
-                // pointing along the previous motion — bending the
-                // blade and tearing material at every line→arc seam.
+                // Emit the drag-knife swivel arc at the Line→Arc (or
+                // Arc→Arc) corner BEFORE the cut arc. The arc's start
+                // tangent is the radius vector rotated 90° in the arc's
+                // orientation (+90° for CCW / bulge>0, -90° for CW).
+                // Without this, the blade enters the arc pointing along
+                // the previous motion — bending the blade and tearing
+                // material at every line→arc seam.
                 let rx_start = seg.start.x - center.x;
                 let ry_start = seg.start.y - center.y;
                 let (sx, sy) = if seg.bulge > 0.0 {
@@ -420,7 +420,7 @@ mod tests {
     use super::reverse_chain;
     use crate::geometry::{Point2, Segment};
 
-    /// oulh: open-path cascade reversal needs `reverse_chain` to
+    /// Open-path cascade reversal needs `reverse_chain` to
     /// invert the polyline end-to-end so the next pass starts at
     /// the previous pass's exit. Three-segment chain: pre-reverse
     /// flows A→B→C→D; post-reverse flows D→C→B→A with each
@@ -446,7 +446,7 @@ mod tests {
         assert_eq!(rev[2].end, a);
     }
 
-    /// oulh: arc bulges must NEGATE on reversal — a CCW arc traversed
+    /// Arc bulges must NEGATE on reversal — a CCW arc traversed
     /// backwards is a CW arc. Mirrors `cam::offsets::reverse_offset`'s
     /// arc handling.
     #[test]

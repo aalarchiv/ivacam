@@ -365,7 +365,7 @@ impl Default for ToolEntry {
             whirl_osc_mm: None,
             pause: default_tool_pause(),
             spindle_direction: SpindleDirection::default(),
-            // pierce_height_mm / cut_height_mm / pierce_delay_sec — zpuk:
+            // pierce_height_mm / cut_height_mm / pierce_delay_sec:
             // None ⇒ emission code falls back to plasma defaults
             // (3.8 / 1.5 / 0.5) at cut time. Listing them here keeps
             // the struct literal exhaustive even though Default for
@@ -474,7 +474,7 @@ pub enum ToolKind {
 /// authority mirrored by `TOOL_FAMILY` in
 /// `frontend/src/lib/state/tool_family.ts`; keep the two in sync. Used to
 /// collapse the per-kind branching in the sim / cache as the family-model
-/// refactor (epic l9zn) lands.
+/// refactor lands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolFamily {
     /// Flat bottom, straight wall (Endmill, Compression).

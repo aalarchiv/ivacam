@@ -1,6 +1,6 @@
 // Heightfield level-of-detail projection math, extracted from
-// Scene3D.svelte (l8u6) so the threshold tuning tracked in 9gpa can be
-// unit-tested without a live THREE renderer.
+// Scene3D.svelte so the threshold tuning can be unit-tested without
+// a live THREE renderer.
 
 /// Pixel-projection of a single L0 heightfield cell at the camera target.
 ///

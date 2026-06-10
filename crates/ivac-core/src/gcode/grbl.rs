@@ -12,7 +12,7 @@ use crate::gcode::post_profile::template_lines;
 use crate::gcode::{linuxcnc, CapturedPostState, PostProcessor};
 use crate::project::{ToolOffset, UnitSystem};
 
-/// gcxl: GRBL doesn't accept paren-style `(text)` block comments — it
+/// GRBL doesn't accept paren-style `(text)` block comments — it
 /// only recognises `;` line comments. Rewrite any `(...)` segments in
 /// `line` to `; ...` so a paren comment leaking through `raw()` or a
 /// user-defined template doesn't get rejected by the controller.
@@ -105,7 +105,7 @@ impl Post {
 
 impl PostProcessor for Post {
     fn fmt_dwell_post(&self, seconds: f64) -> String {
-        // pxyt: delegate to the inner LinuxCNC post so the trait-default
+        // Delegate to the inner LinuxCNC post so the trait-default
         // drill_simple / drill_peck / drill_chip_break methods (GRBL
         // doesn't override them — no canned cycle support) honour the
         // active profile's dwell_unit. Without this, a GRBL build
@@ -118,7 +118,7 @@ impl PostProcessor for Post {
         self.inner.separation();
     }
     fn raw(&mut self, cmd: &str) {
-        // gcxl: GRBL rejects paren-style `(text)` comments. Rewrite
+        // GRBL rejects paren-style `(text)` comments. Rewrite
         // them to `; ...` line comments BEFORE handing off to the
         // inner linuxcnc post (which would emit them verbatim). The
         // rewriter is a no-op for paren-free lines so normal gcode
@@ -142,7 +142,7 @@ impl PostProcessor for Post {
         self.inner.feedrate(rate);
     }
     fn program_start(&mut self) {
-        // gcxl: expand the template HERE (not in the inner linuxcnc
+        // Expand the template HERE (not in the inner linuxcnc
         // post) so we can rewrite paren-style comments to `; ...`
         // BEFORE they land in the output buffer. The inner post would
         // emit them verbatim, breaking GRBL.
@@ -230,13 +230,13 @@ impl PostProcessor for Post {
         self.inner.spindle_ccw(speed, pause);
     }
     fn laser_on(&mut self, power: u32) {
-        // 20y5: delegate to the inner LinuxCNC post, which emits
+        // Delegate to the inner LinuxCNC post, which emits
         // `M3 S<power>`. GRBL in laser-mode (`$32=1`) accepts the
         // same syntax and modally tracks S as the laser PWM duty.
         self.inner.laser_on(power);
     }
     fn laser_arm(&mut self) {
-        // xkvv: delegate to LinuxCNC's `M3 S0`. GRBL laser-mode
+        // Delegate to LinuxCNC's `M3 S0`. GRBL laser-mode
         // (`$32=1`) tracks the modal S = 0 through the rapid, so the
         // pierce-time `laser_on(power)` re-emits the S<power> word.
         self.inner.laser_arm();
@@ -250,28 +250,28 @@ impl PostProcessor for Post {
     fn rapid_machine_xy(&mut self, x_mm: f64, y_mm: f64) {
         // GRBL accepts G53 from v1.1 onward; delegate to the inner
         // LinuxCNC post for identical formatting + position-cache
-        // invalidation (ad0v). Same reuse pattern as `move_to`.
+        // invalidation. Same reuse pattern as `move_to`.
         self.inner.rapid_machine_xy(x_mm, y_mm);
     }
     fn rapid_machine_z(&mut self, z_mm: f64) {
-        // hat3: GRBL accepts G53 G0 Z; identical formatting via inner.
+        // GRBL accepts G53 G0 Z; identical formatting via inner.
         self.inner.rapid_machine_z(z_mm);
     }
     fn tool_length_offset(&mut self, h: u32) {
-        // llkf: grblHAL supports G43 H<n> (stock GRBL ignores it, but
-        // the i185 footgun guard already steers stock-GRBL users to a
-        // template / M0 instead). Same emission as inner.
+        // grblHAL supports G43 H<n> (stock GRBL ignores it, but the
+        // footgun guard already steers stock-GRBL users to a template /
+        // M0 instead). Same emission as inner.
         self.inner.tool_length_offset(h);
     }
     fn tool_length_offset_off(&mut self) {
         self.inner.tool_length_offset_off();
     }
     fn probe_toward_z(&mut self, distance_mm: f64, feed_mm_min: u32) {
-        // hat3: GRBL / grblHAL support G38.2; same emission as inner.
+        // GRBL / grblHAL support G38.2; same emission as inner.
         self.inner.probe_toward_z(distance_mm, feed_mm_min);
     }
     fn apply_probed_tool_length(&mut self) {
-        // hat3 / 7iej.1: stock GRBL has no numbered-parameter system, so
+        // Stock GRBL has no numbered-parameter system, so
         // LinuxCNC's `G43.1 Z[#5063]` (apply the probed Z) can't be
         // emitted here — and our own `G38.2` is NOT wired into grblHAL's
         // `$341` tool-measure cycle (that runs inside the controller's M6
@@ -337,7 +337,7 @@ impl PostProcessor for Post {
             .configure(decimal_separator, line_number_start, unit);
     }
     fn tool_z_shift(&mut self, shift_mm: f64) {
-        // plau: GRBL's G92 semantics are firmware-revision-dependent —
+        // GRBL's G92 semantics are firmware-revision-dependent —
         // some builds reset the G92 offset on power cycle / soft reset,
         // others persist it, and a few ignore the Z component
         // altogether. Use `G10 L20 P<n> Z<shift>` instead: that's the
@@ -347,7 +347,7 @@ impl PostProcessor for Post {
         // (or our own LinuxCNC peer) might have left active —
         // otherwise the new G10 stacks on top.
         //
-        // e2mq: target the *active* WCS — `PostState.wcs` is pinned at
+        // Target the *active* WCS — `PostState.wcs` is pinned at
         // program_begin from `Setup.wcs` / `Project.work_offset.wcs`,
         // so G54=P1, G55=P2, ..., G59=P6. The prior code hardcoded P1
         // (G54) even when the user picked G55, silently writing the
@@ -371,7 +371,7 @@ impl PostProcessor for Post {
         self.inner.state.last_z = None;
     }
     fn set_work_z_here(&mut self, z_mm: f64) {
-        // hat3: same `G10 L20 P<n> Z` mechanism as `tool_z_shift`, but
+        // Same `G10 L20 P<n> Z` mechanism as `tool_z_shift`, but
         // always emitted (a 0 mm touch plate still re-zeros Z). G92.1
         // first clears any stale G92 offset so the new origin doesn't
         // stack, matching tool_z_shift.
@@ -414,8 +414,8 @@ impl PostProcessor for Post {
         self.inner.set_token_ctx(ctx);
     }
     fn select_wcs(&mut self, wcs: crate::project::Wcs) {
-        // e2mq: delegate to the inner LinuxCNC post so the WCS word
-        // and `PostState.wcs` are pinned identically — our overriden
+        // Delegate to the inner LinuxCNC post so the WCS word
+        // and `PostState.wcs` are pinned identically — our overridden
         // `tool_z_shift` reads `inner.state.wcs` for its `G10 L20 P<n>`.
         self.inner.select_wcs(wcs);
     }
@@ -463,7 +463,7 @@ mod tests {
 
     #[test]
     fn gcxl_template_program_start_paren_rewritten() {
-        // gcxl: program_start templates containing paren-style
+        // program_start templates containing paren-style
         // comments leak through. Verify the GRBL path rewrites them.
         let mut post = Post::new();
         let mut profile = PostProfile::grbl_default();

@@ -1,4 +1,4 @@
-//! Per-offset gcode emission machinery, split out of `gcode.rs` (cula).
+//! Per-offset gcode emission machinery, split out of `gcode.rs`.
 //!
 //! `emit_offset` is the per-offset shell — rapid-to-start, ramp/helix
 //! plunge, cut, retract — and `multi_pass` walks the Z-pass schedule with
@@ -46,7 +46,7 @@ pub(super) fn emit_offset<P: PostProcessor>(
         ));
     }
     // Pick the per-tool feed / speed / plunge set: finish-set for the
-    // wall-defining ring of a Pocket op (rt1.27), rough-set everywhere
+    // wall-defining ring of a Pocket op, rough-set everywhere
     // else. Posts delta-encode so emitting the same values back-to-back
     // is free.
     let (use_speed, use_rate_v, use_rate_h) = if offset.is_finish {
@@ -58,7 +58,7 @@ pub(super) fn emit_offset<P: PostProcessor>(
     } else {
         (setup.tool.speed, setup.tool.rate_v, setup.tool.rate_h)
     };
-    // 20y5: dispatch by machine mode. Mill: spin the spindle. Laser:
+    // Dispatch by machine mode. Mill: spin the spindle. Laser:
     // fire M3 S<power>. Drag: no-op. The previous code gated
     // `spindle_on` behind `mode == Mill` only, so laser cuts never
     // turned the beam on — the program emitted G0/G1 moves with the
@@ -72,7 +72,7 @@ pub(super) fn emit_offset<P: PostProcessor>(
     }
     // Surface the chosen cut feedrate before the cut; the plunge feed
     // gets set explicitly at each Z-down move inside multi_pass and at
-    // the lead-in entry plunge below (vfpa).
+    // the lead-in entry plunge below.
     post.feedrate(use_rate_h);
     let start = offset.segments[0].start;
     // Lead-in (straight, arc, or off) before the first cut. The arc
@@ -81,14 +81,14 @@ pub(super) fn emit_offset<P: PostProcessor>(
     // tangent — no dwell at the start point. multi_pass then plunges
     // from z=0 to the first pass depth at segments[0].start.
     let lead_in = lead_in_geometry(setup, &offset.segments);
-    // rt1.29 / gd2x: laser pierce — rapid XY at safe Z (no Z change
+    // Laser pierce — rapid XY at safe Z (no Z change
     // away from fast_move_z), plunge to cut Z, THEN dwell at the cut
     // height so the beam burns through focused stock before motion
     // begins. Dwelling at fast_move_z (the old order) left the head
     // defocused, never pierced, and the first cut yanked unmelted
-    // material. Order matches Lightburn / T2Laser / Estlcam laser.
+    // material. Order matches Lightburn / T2Laser laser convention.
     let pierce_sec = setup.tool.pierce_sec;
-    // zpuk: plasma entry — when machine.mode == Plasma the lead-in
+    // Plasma entry — when machine.mode == Plasma the lead-in
     // emits a two-step Z descent instead of a single plunge:
     //   1. Torch already on (cut_tool_on above) — rapid XY at fast_z.
     //   2. Rapid (G0) to pierce_height_mm above stock.
@@ -118,16 +118,16 @@ pub(super) fn emit_offset<P: PostProcessor>(
     } else {
         None
     };
-    // lyq6: the lead-in plunge must drop to `start_depth` (the entry
+    // The lead-in plunge must drop to `start_depth` (the entry
     // plane just above the workpiece), NOT to a literal Z=0. Stock
     // proud of Z=0 (start_depth < 0) would crash the cutter at the
     // approach; recesses (start_depth > 0) would have the cutter
     // cutting air. `multi_pass` then descends from `start_depth` to
     // the first pass depth via plunge / ramp / helix.
     let entry_z = setup.mill.start_depth;
-    // vfpa: the lead-in plunge from fast_move_z to entry_z is a G1
+    // The lead-in plunge from fast_move_z to entry_z is a G1
     // Z-drop — emit it at the plunge feed (rate_v), not the cut feed
-    // (rate_h). Modal F was set to `use_rate_h` at line 715 (so the
+    // (rate_h). Modal F was set to `use_rate_h` above (so the
     // first cut motion has a known F nearby), so we switch to rate_v
     // here, plunge, then restore rate_h before the lateral cut. Without
     // this, the cutter dives from safe Z to start_depth at the (often
@@ -138,7 +138,7 @@ pub(super) fn emit_offset<P: PostProcessor>(
         LeadGeometry::Straight { from } => {
             post.move_to(Some(from.x), Some(from.y), Some(setup.mill.fast_move_z));
             if let Some((pierce_h, cut_h, delay)) = plasma_entry {
-                // zpuk: plasma two-step Z. Rapid to pierce, dwell, G1
+                // Plasma two-step Z. Rapid to pierce, dwell, G1
                 // to cut height. cut_height is the cut plane that
                 // multi_pass walks at (it short-circuits to one pass
                 // because mode == Plasma — see the plasma branch in
@@ -152,7 +152,7 @@ pub(super) fn emit_offset<P: PostProcessor>(
             } else {
                 post.feedrate(use_rate_v);
                 post.linear(None, None, Some(entry_z));
-                // xkvv: laser-mode ramps from armed (S0) to full power
+                // Laser-mode ramps from armed (S0) to full power
                 // here, between the plunge and the pierce dwell. Mill /
                 // drag / plasma are no-ops in this helper.
                 cut_tool_pierce(post, setup, use_speed);
@@ -178,7 +178,7 @@ pub(super) fn emit_offset<P: PostProcessor>(
             } else {
                 post.feedrate(use_rate_v);
                 post.linear(None, None, Some(entry_z));
-                // xkvv: laser-mode ramps from armed (S0) to full power
+                // Laser-mode ramps from armed (S0) to full power
                 // here, between the plunge and the pierce dwell. Mill /
                 // drag / plasma are no-ops in this helper.
                 cut_tool_pierce(post, setup, use_speed);
@@ -186,15 +186,15 @@ pub(super) fn emit_offset<P: PostProcessor>(
                     post.dwell(pierce_sec);
                 }
             }
-            // 3o3n: re-emit the cutting feedrate immediately before
+            // Re-emit the cutting feedrate immediately before
             // the arc lead-in. The roll-on is the first ACTUAL cut
             // motion in the program (G2/G3 honors F); relying on a
             // modal set further upstream means the listing's first
             // arc has no F line nearby — defensive on FANUC / vintage
             // controllers that re-evaluate F at each motion-mode
             // change. Posts dedupe identical-rate emits so this is
-            // free when the modal already matches. vfpa also makes
-            // this the post-plunge feedrate restore (rate_v → rate_h).
+            // free when the modal already matches. This is also the
+            // post-plunge feedrate restore (rate_v → rate_h).
             post.feedrate(use_rate_h);
             // I/J are the offset from the arc's start (current XY) to
             // its center — same convention as ezdxf / ngc / linuxcnc.
@@ -218,7 +218,7 @@ pub(super) fn emit_offset<P: PostProcessor>(
             } else {
                 post.feedrate(use_rate_v);
                 post.linear(None, None, Some(entry_z));
-                // xkvv: laser-mode ramps from armed (S0) to full power
+                // Laser-mode ramps from armed (S0) to full power
                 // here, between the plunge and the pierce dwell. Mill /
                 // drag / plasma are no-ops in this helper.
                 cut_tool_pierce(post, setup, use_speed);
@@ -263,13 +263,13 @@ pub(super) fn emit_offset<P: PostProcessor>(
         }
         LeadGeometry::None => {}
     }
-    // 20y5: drop the laser BEFORE the safe-Z retract so the rapid
+    // Drop the laser BEFORE the safe-Z retract so the rapid
     // traverse to the next offset / op doesn't burn a stripe through
     // the part. Mill keeps the spindle running between cuts (the
     // post's delta-encoded `last_speed` dedupes the next cut's M3
     // re-arm so no extra lines emit); Drag is a no-op.
     cut_tool_off(post, setup);
-    // o1g3: final retract after lead-out is a rapid (G0), not a cut
+    // Final retract after lead-out is a rapid (G0), not a cut
     // motion (G1). The lead-out already rolled the cutter off the
     // contour into free space; lifting to fast_move_z at cut feed
     // multiplies cycle time across hundreds of contours with zero
@@ -283,13 +283,13 @@ pub(super) fn emit_offset<P: PostProcessor>(
 /// Single-pass emit for the plot-mode / drag-knife / plasma modes that
 /// collapse the multi-pass schedule to ONE pass at the cut depth.
 ///
-/// rt1.35: laser / plasma / pen-plotter / 3D-printer / drag-knife
+/// Laser / plasma / pen-plotter / 3D-printer / drag-knife
 /// controllers expect binary pen-up / pen-down Z — the multi-step
 /// descent + helix / ramp / finish_step / through_depth / depth_list
-/// machinery is noise. 6yhs: `MachineMode::Drag` collapses here even when
+/// machinery is noise. `MachineMode::Drag` collapses here even when
 /// the global `plot_mode_z` is off (`setup_resolver` pins `mode = Drag`
 /// per-op for `DragKnife`); the knife is locked at one depth, so extra
-/// passes only wear the Z axis. zpuk: Plasma holds the torch at
+/// passes only wear the Z axis. Plasma holds the torch at
 /// `cut_height_mm` for the whole cut.
 fn emit_single_pass<P: PostProcessor>(
     setup: &Setup,
@@ -298,7 +298,7 @@ fn emit_single_pass<P: PostProcessor>(
     rate_h: u32,
     post: &mut P,
 ) {
-    // zpuk: plasma cuts at `cut_height_mm` above stock (positive Z), NOT
+    // Plasma cuts at `cut_height_mm` above stock (positive Z), NOT
     // at `mill.depth` (the milling-style depth below stock). For
     // plot_mode_z / Drag the cut Z is still mill.depth.min(0).
     let cut_z = if setup.machine.mode == MachineMode::Plasma {
@@ -349,7 +349,7 @@ fn multi_pass<P: PostProcessor>(
     post: &mut P,
 ) {
     use crate::project::{PlungeStrategy, TabType};
-    // Finish-set rates (rt1.27): swap in the tool's _finish overrides
+    // Finish-set rates: swap in the tool's _finish overrides
     // when this offset is the wall-defining ring of a Pocket. Falls
     // back to rough rates everywhere else.
     let rate_v = if is_finish {
@@ -386,7 +386,7 @@ fn multi_pass<P: PostProcessor>(
     } else {
         setup.mill.step
     };
-    // 580k: normalize finish_step at the call boundary — reject
+    // Normalize finish_step at the call boundary — reject
     // negative / zero / non-finite values so z_schedule sees a clean
     // positive magnitude. The schedule builder also abs()-then-filters
     // internally, but normalizing here makes the contract explicit and
@@ -466,10 +466,10 @@ fn multi_pass<P: PostProcessor>(
     // when it matters most. We track them with separate state.
     let mut prev_z: Option<f64> = None;
     let mut ramp_from: f64 = setup.mill.start_depth;
-    // qm9x: ONE shared whirl state for the entire multi-pass cut so
+    // One shared whirl state for the entire multi-pass cut so
     // the spiral phase accumulates continuously across pass boundaries
-    // — same continuity principle as 89n5 (cross-chord) extended to
-    // cross-pass. Pre-qm9x, every pass instantiated fresh state at
+    // — same continuity principle as cross-chord extended to
+    // cross-pass. Previously, every pass instantiated fresh state at
     // `angle = 0`, leaving a visible flat spot on the wall at every
     // pass boundary.
     let mut whirl_state = WhirlState::default();
@@ -479,7 +479,7 @@ fn multi_pass<P: PostProcessor>(
     }
     for (pass_idx, &z) in z_schedule.iter().enumerate() {
         let pass_uses_tabs = setup.tabs.active && !tabs.is_empty() && z < tabs_z;
-        // oulh: for an OPEN polyline, the cascade alternates walk
+        // For an OPEN polyline, the cascade alternates walk
         // direction so consecutive passes pick up where the
         // previous one ended — pass 0 forward (start→end), pass 1
         // reversed (end→start), pass 2 forward, ... Closed paths
@@ -510,7 +510,7 @@ fn multi_pass<P: PostProcessor>(
             let pz = ramp_from;
             post.feedrate(rate_h);
             emit_helix_entry(plan, pz, z, post);
-            // lja0: previously this walked from the helix landing
+            // Previously this walked from the helix landing
             // point STRAIGHT to the contour start with a G1 at rate_h
             // at the new cut depth — cutting through unmilled stock
             // at full DOC, which defeats the safety helix entry was
@@ -522,14 +522,13 @@ fn multi_pass<P: PostProcessor>(
             // full depth — the lift+rapid+plunge below uses rate_v
             // (typically 100 mm/min) for that small final plunge step.
             let start = segments.first().map_or(plan.center, |s| s.start);
-            // i6c2: this lift to fast_move_z must be a G0 rapid, not a
+            // This lift to fast_move_z must be a G0 rapid, not a
             // G1 cut-feed move. The helix-entry landing already cleared
             // the helix radius worth of stock; the lift just retracts
             // through air on the way to the contour-start rapid. The
             // prior G1 added cycle time across every helix pass with
             // zero safety benefit (the controller's rapid feed isn't
-            // any less safe in air than the cut feed). Pairs with the
-            // o1g3 fix at line 896 (final-retract G0).
+            // any less safe in air than the cut feed).
             post.move_to(None, None, Some(setup.mill.fast_move_z));
             post.move_to(Some(start.x), Some(start.y), Some(setup.mill.fast_move_z));
             post.feedrate(rate_v);
@@ -636,7 +635,7 @@ fn multi_pass<P: PostProcessor>(
     if needs_ramp_cleanup {
         post.feedrate(rate_h);
         let dragoff = setup.tool.dragoff.unwrap_or(0.0);
-        // oulh: for the open-polyline alternating cascade, the cleanup
+        // For the open-polyline alternating cascade, the cleanup
         // walks from wherever the LAST pass ended so the controller
         // doesn't backtrack at cut feedrate across the entire path. With
         // pass 0 forward / pass 1 reversed / …, pass index N-1 is

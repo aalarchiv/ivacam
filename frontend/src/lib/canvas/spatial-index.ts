@@ -9,7 +9,7 @@
 /// 10-50 candidates regardless of N.
 ///
 /// Pure-TS, no DOM, no `$state` — vitest covers it without mounting
-/// the canvas (audit y0ez).
+/// the canvas.
 //
 // Casts to (number) are deliberate — `Math.floor((dataX - minX) /
 // cellW)` produces non-negative bounded integers (clamped to

@@ -380,7 +380,7 @@ pub fn pocket_mill_default() -> PocketParams {
 // Per-op contour config — tabs + lead-in/out. Lives here (not
 // cam/setup.rs) so an op's full shape — `ContourParams` + the
 // configs it embeds — reads in one module; re-exported from
-// cam::setup for back-compat (u5jf).
+// cam::setup for back-compat.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TabsConfig {
     pub active: bool,
@@ -523,19 +523,19 @@ mod tests {
         );
     }
 
-    /// 4dxb: program-only ops (Pause, Homing, Probe, `CycleMarker`,
+    /// Program-only ops (Pause, Homing, Probe, `CycleMarker`,
     /// `GcodeInclude`) carry no meaningful depth schedule and the
     /// frontend constructors at `project.svelte.ts` omit
     /// `depth` / `startDepth` from the op shape. `JSON.stringify`
     /// drops undefined keys, so the wire `params` bag arrives
-    /// without those fields. Before this fix, the Rust deserializer
-    /// bailed with `missing field depth`, breaking Generate
-    /// whenever a Pause sat between cutting ops. The three universal
-    /// scalars (`depth`, `start_depth`, `fast_move_z`) now decode to 0.0
-    /// when omitted — program-only ops ignore them anyway.
-    // juvx: exact equality vs `0.0` is the contract under test —
-    // serde decoded a missing field to the float-default of zero, NOT
-    // an approximation. The lint's "use approx" guidance doesn't apply.
+    /// without those fields. Previously the Rust deserializer bailed
+    /// with `missing field depth`, breaking Generate whenever a Pause
+    /// sat between cutting ops. The three universal scalars (`depth`,
+    /// `start_depth`, `fast_move_z`) now decode to 0.0 when omitted —
+    /// program-only ops ignore them anyway.
+    // Exact equality vs `0.0` is the contract under test — serde
+    // decoded a missing field to the float-default of zero, NOT an
+    // approximation. The lint's "use approx" guidance doesn't apply.
     #[allow(clippy::float_cmp)]
     #[test]
     fn op_params_decodes_with_all_universal_scalars_missing() {
@@ -550,10 +550,10 @@ mod tests {
         assert_eq!(p.step, None);
     }
 
-    /// 4dxb regression: a completely empty params bag still decodes
-    /// (covers the most-pessimistic future serializer that emits
-    /// nothing for a program-only op).
-    // juvx: same exact-zero contract as above.
+    /// A completely empty params bag still decodes (covers the
+    /// most-pessimistic future serializer that emits nothing for a
+    /// program-only op).
+    // Same exact-zero contract as the test above.
     #[allow(clippy::float_cmp)]
     #[test]
     fn op_params_decodes_from_empty_object() {

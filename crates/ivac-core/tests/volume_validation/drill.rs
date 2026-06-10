@@ -1,4 +1,4 @@
-//! End-to-end Drill validation harness (me1m).
+//! End-to-end Drill validation harness.
 //!
 //! Runs a real drill CAM job — 5 mm Ø drill, three point sources, 5 mm
 //! through-hole into 10 mm stock — and asserts the carved volume equals
@@ -15,7 +15,7 @@
 //!
 //! Catches: tip-cone math, per-hole positioning, plunge depth,
 //! drill-tool sim profile (flat-bottom cylinder regardless of tip
-//! angle), and the v5az floor sentinel.
+//! angle), and the stock-floor sentinel.
 
 #![allow(clippy::cast_possible_truncation)]
 

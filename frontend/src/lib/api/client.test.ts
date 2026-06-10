@@ -84,8 +84,8 @@ describe('HttpWiacClient.computeHelixRadius', () => {
     ).rejects.toThrow(/helix-radius returned 400/);
   });
 
-  // luf1: when the server returns the full structured `ivac_core::Error`
-  // (post-luf1 envelope), the thrown Error.message is the JSON itself so
+  // When the server returns the full structured `ivac_core::Error`
+  // envelope, the thrown Error.message is the JSON itself so
   // tryParseStructuredError() reconstructs every field — including
   // recovery_hint and auto_fix — for ErrorToast / GenerateBar to render.
   it('rethrows structured-error responses verbatim so the frontend recovers kind+hint+auto_fix', async () => {

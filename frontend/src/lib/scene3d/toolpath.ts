@@ -5,7 +5,7 @@
 /// playhead is O(delta) per tick — which also stops the camera resetting
 /// mid-playback.
 ///
-/// Extracted from Scene3D.svelte (4w2f). Owns its THREE.Group.
+/// Extracted from Scene3D.svelte. Owns its THREE.Group.
 
 import * as THREE from 'three';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
@@ -99,7 +99,7 @@ export class ToolpathBuilder implements PickableLineBuilder {
     // with the playhead-fade range math on the main toolpath buffer.
     const arrowPositions: number[] = [];
     const arrowColors: number[] = [];
-    // 7iej.17: chevron geometry lives in toolpath_buffers.ts (pure +
+    // Chevron geometry lives in toolpath_buffers.ts (pure +
     // unit-tested); the buffer assembly + spacing bookkeeping stay here.
     const ARROW_PARAMS = {
       minLen: 1.0, // mm; shorter segments never get an arrow
@@ -126,7 +126,7 @@ export class ToolpathBuilder implements PickableLineBuilder {
       if (!o.enabled) disabledOpIds.add(o.id);
     }
 
-    // rt1.12 (nrob): per-raster-op power grids for the toolpath heatmap.
+    // Per-raster-op power grids for the toolpath heatmap.
     // The wire toolpath carries no `S`, so re-derive it from the source
     // brightness through the same power curve the backend emits from, then
     // colour each cut span by the power at its midpoint.
@@ -173,7 +173,7 @@ export class ToolpathBuilder implements PickableLineBuilder {
       const opId = seg.op_id ?? 0;
       if (opId > 0 && disabledOpIds.has(opId)) continue;
 
-      // rt1.12 (nrob): raster-engrave cut spans get a power heatmap instead
+      // Raster-engrave cut spans get a power heatmap instead
       // of the op-hue colour. Travel moves (rapid) keep the normal tint.
       // Dense engraves stride down to the segment budget.
       const heat = rasterHeat.get(opId);
@@ -197,7 +197,7 @@ export class ToolpathBuilder implements PickableLineBuilder {
         const moveTint = moveTints[seg.kind] ?? moveTints.cut;
         const opHueV = opId === 0 ? 0.0 : opHue(opId);
         const opCol = new THREE.Color().setHSL(opHueV, 0.55, 0.5);
-        // 7iej.20: THREE/theme resolution stays here; the op_id-0 vs
+        // THREE/theme resolution stays here; the op_id-0 vs
         // boosted-hue channel math lives in the pure resolveSegmentColor.
         [r, g, b] = resolveSegmentColor(
           opId,
@@ -223,7 +223,7 @@ export class ToolpathBuilder implements PickableLineBuilder {
       if (len > 0) lenSinceLastArrow += len;
       // Spacing + move-kind eligibility stays here (caller state); the
       // chevron geometry (incl. the per-segment minLen gate) is pure.
-      // rt1.12 (nrob): no direction arrows on raster heat spans — they'd
+      // No direction arrows on raster heat spans — they'd
       // swamp the heatmap and the scan direction is already obvious.
       const spacingOk = lenSinceLastArrow >= ARROW_MIN_SPACING && seg.kind !== 'rapid' && !isHeat;
       const chev = spacingOk ? computeArrowChevron(seg.from, seg.to, ARROW_PARAMS) : null;
@@ -312,7 +312,7 @@ export class ToolpathBuilder implements PickableLineBuilder {
     for (let i = lo; i < hi; i++) {
       const tc = this.colors[i];
       const past = i < head;
-      // 7iej.20: a warning-tinted segment fades from its tint, else from its
+      // A warning-tinted segment fades from its tint, else from its
       // base color; the past/future offset math is the pure fadeColor.
       const tint = this.warningSegmentColors.get(i);
       const [r, g, b] = fadeColor(tint ?? tc.base, past, f, fade_offset);

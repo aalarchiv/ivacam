@@ -13,7 +13,7 @@ use crate::pipeline::warnings::push_tool_fit_kind_warnings;
 use crate::pipeline::{cancelled, op_includes_object, CancelToken, PipelineError, PipelineWarning};
 use crate::project::{Op, OpKind, Project};
 
-/// o3od: cheap pre-check used by `run_per_op` to decide whether the
+/// Cheap pre-check used by `run_per_op` to decide whether the
 /// toolchange envelope (M5+dwell → M6 → z-shift → M3+dwell) needs to
 /// fire BEFORE this op. Mirrors the driver's own "no closed circles"
 /// short-circuit (`emitted == 0` → `thread_no_circles` warning).
@@ -63,8 +63,7 @@ pub(in crate::pipeline) fn thread_would_emit(op: &Op, objects: &[VcObject]) -> b
 
 // Thread driver runs the per-circle helix walker; rather than threading
 // state through five helpers, the per-revolution Z table lives inline.
-// 55o4 tracks the broader pipeline split.
-// juvx: `THREAD_START_RADIUS_FRAC` and `MIN_BORE_RADIUS_MM` consts
+// `THREAD_START_RADIUS_FRAC` and `MIN_BORE_RADIUS_MM` consts
 // live near their use sites so each carries its rationale comment
 // inline.
 #[allow(
@@ -82,9 +81,9 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
     warnings: &mut Vec<PipelineWarning>,
     cancel: Option<&CancelToken>,
 ) -> Result<(), PipelineError> {
-    // lo4j: surface tool-kind mismatches (e.g. user pointed a Drill or
+    // Surface tool-kind mismatches (e.g. user pointed a Drill or
     // LaserBeam at a Thread op) the same way the V-Carve / Halfpipe /
-    // standard drivers do. Pre-fix the thread driver silently emitted
+    // standard drivers do. Before the fix the thread driver silently emitted
     // a helix using whatever cutter happened to be configured —
     // including non-rotating tools the user almost certainly did not
     // mean to thread with.
@@ -100,10 +99,10 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
     else {
         return Ok(());
     };
-    // mniu: thread depth = radial bite past the source-circle wall.
+    // Thread depth = radial bite past the source-circle wall.
     // For an ISO metric 60° thread the canonical single-flank depth is
     // `0.6495 × pitch` (H × 5/8 where H = pitch × √3/2). The
-    // pre-mniu code skipped this entirely — the cutter walked a helix
+    // previous code skipped this entirely — the cutter walked a helix
     // tangent to the bore/stud wall with ZERO engagement (literally
     // kissed it) and emitted a perfectly clean program that cut no
     // thread at all. The fix is to OFFSET the cutter past the wall by
@@ -130,7 +129,7 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
         });
         return Ok(());
     }
-    // ttoa: when the requested Z range is smaller than one full pitch
+    // When the requested Z range is smaller than one full pitch
     // (e.g. a shallow chase / finishing pass), the helix emitter clamps
     // to a minimum of one full revolution at the configured pitch so
     // the cutter doesn't degenerate to a single G1 diagonal across the
@@ -148,7 +147,7 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
             ),
         });
     }
-    // sqnh: schedule multiple roughing passes when the user opts in
+    // Schedule multiple roughing passes when the user opts in
     // (`radial_passes > 1`). Each pass cuts at a fraction of the
     // final radial engagement, ramping linearly from
     // THREAD_START_RADIUS_FRAC of the final helix offset to the
@@ -197,8 +196,8 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
             }
             _ => continue,
         };
-        // al30: guard against zero / near-zero bore radius. The
-        // pre-al30 code only checked `helix_radius <= 0.05` which
+        // Guard against zero / near-zero bore radius. The
+        // previous code only checked `helix_radius <= 0.05` which
         // caught internal-tool-too-large but missed corrupt source
         // data (zero-radius circle from a CAD import) on the EXTERNAL
         // branch — there the helix_radius came out to `tool_radius`
@@ -218,13 +217,13 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
             });
             continue;
         }
-        // mniu: helix radius places the cutter so its working edge
+        // Helix radius places the cutter so its working edge
         // sits `thread_depth` PAST the source-circle wall.
         //   internal: cutter outer edge at `bore_radius + thread_depth`
         //     → helix (cutter centerline) at
         //     `bore_radius + thread_depth - tool_radius`. The helix
         //     therefore SHRINKS by `thread_depth` relative to the
-        //     pre-mniu "tangent" radius (bore - tool), so the cutter's
+        //     old "tangent" radius (bore - tool), so the cutter's
         //     OUTER edge (helix + tool) reaches into the wall by exactly
         //     `thread_depth`.
         //   external: cutter inner edge at `stud_radius - thread_depth`
@@ -248,9 +247,9 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
             });
             continue;
         }
-        // sqnh: emit `n_passes` helices ramping from
+        // Emit `n_passes` helices ramping from
         // THREAD_START_RADIUS_FRAC of the final engagement up to the
-        // full engagement. mniu: ramp anchors are the zero-engagement
+        // full engagement. Ramp anchors are the zero-engagement
         // radius (cutter just kisses the wall) and the full-engagement
         // helix_radius (cutter bites by `thread_depth`). Linear lerp
         // by `frac` between the two — the per-pass radial bite is
@@ -293,7 +292,7 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
                 setup.tool.spindle_direction,
             );
             if path.len() >= 2 {
-                // 4p8c: prepend an axial lead-in arc segment so the
+                // Prepend an axial lead-in arc segment so the
                 // cutter doesn't engage the full thread tooth at the
                 // first G1 of revolution 0. The lead-in sits at the
                 // kiss_radius (the cutter just touches the wall, zero
@@ -336,7 +335,7 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
         });
         return Ok(());
     }
-    // zajd: feed compensation. When a small cutter walks a helix of
+    // Feed compensation. When a small cutter walks a helix of
     // radius `helix_r`, the outer cutting edge at radius `helix_r +
     // tool_r` travels at F * (helix_r + tool_r) / helix_r. Tight
     // bores (small helix_r) amplify this — on an M6 bore (helix_r =
@@ -362,7 +361,7 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
         // Re-derive tightest helix radius without re-walking objects.
         // For internal threads, the tightest engagement is at the
         // FINAL pass (frac = 1.0) → bore_r - tool_r + thread_depth
-        // (mniu: includes the radial bite past the bore wall).
+        // (includes the radial bite past the bore wall).
         for obj in objects {
             if !obj.closed {
                 continue;
@@ -405,7 +404,7 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
     Ok(())
 }
 
-/// 4p8c: axial lead-in for the thread helix. Returns waypoints that
+/// Axial lead-in for the thread helix. Returns waypoints that
 /// take the cutter from the kiss radius (no engagement) to the helix
 /// pass radius over approximately a quarter revolution, all at the
 /// helix top Z. Prepended to the helix waypoints so the cutter eases
@@ -435,7 +434,7 @@ fn thread_lead_in(
     spindle: crate::project::tool::SpindleDirection,
 ) -> Vec<(f64, f64, f64)> {
     use crate::project::tool::SpindleDirection;
-    // 4p8c: quarter-turn lead-in over 16 chord steps (matching the
+    // Quarter-turn lead-in over 16 chord steps (matching the
     // helix's 64 steps/rev default density). A quarter-turn at typical
     // M6 helix radii covers ≈ 2-3 mm of arc length — well over one
     // tool diameter, so the cutter ramps engagement instead of
@@ -480,16 +479,15 @@ mod tests {
     use crate::project::{MachineConfig, ToolChangeStrategy};
     use crate::project::{Op, OpKind, OpParams, OpSource, Project};
 
-    /// Thread op (rt1.17): a closed circle source + Thread op emits
+    /// A closed circle source + Thread op emits
     /// a helical descent. The gcode must contain the helix's bottom
     /// Z (rounded to 4 decimals) and a sweep of XY coordinates
     /// around the bore's center.
     ///
-    /// mniu: helix radius is now
-    /// `bore_radius - tool_radius + thread_depth` so the cutter's
-    /// outer edge actually engages the wall by `thread_depth`. Test
-    /// pins `thread_depth_mm = Some(0.5)` for a clean integer
-    /// waypoint at X = 10 + 5 - 0.5 + 0.5 = 15.
+    /// Helix radius is `bore_radius - tool_radius + thread_depth` so
+    /// the cutter's outer edge actually engages the wall by
+    /// `thread_depth`. Test pins `thread_depth_mm = Some(0.5)` for a
+    /// clean integer waypoint at X = 10 + 5 - 0.5 + 0.5 = 15.
     #[test]
     fn thread_op_emits_helical_descent_on_a_closed_circle() {
         let center = Point2::new(10.0, 20.0);
@@ -554,9 +552,9 @@ mod tests {
         );
     }
 
-    /// mniu: external thread engages the stud — the cutter inner
-    /// edge bites by `thread_depth` past the stud wall. Before
-    /// mniu the helix sat tangent to the stud (zero engagement, no
+    /// External thread engages the stud — the cutter inner
+    /// edge bites by `thread_depth` past the stud wall. Previously
+    /// the helix sat tangent to the stud (zero engagement, no
     /// chip). Verify the helix radius shrinks below
     /// `stud_radius + tool_radius` by the configured depth.
     #[test]
@@ -570,7 +568,7 @@ mod tests {
         // 1mm cutter, thread_depth = 0.5 mm.
         // Helix radius = stud + tool_r - depth = 5 + 0.5 - 0.5 = 5.0.
         // Waypoint at (center.x + helix_r, center.y) = (5, 0).
-        // (Pre-mniu the helix would have walked at 5 + 0.5 = 5.5 —
+        // (Previously the helix would have walked at 5 + 0.5 = 5.5 —
         // tangent to the stud, zero cut.)
         let project = Project {
             segments,
@@ -611,11 +609,11 @@ mod tests {
         )
         .unwrap();
         // External helix should NOT contain a waypoint at X=5.5 (the
-        // pre-mniu tangent radius — zero engagement). It SHOULD
+        // old tangent radius — zero engagement). It SHOULD
         // contain one at X=5 (stud + tool - depth = 5 + 0.5 - 0.5).
         assert!(
             !resp.gcode.contains("X5.5"),
-            "external helix must not sit tangent to the stud (pre-mniu bug):\n{}",
+            "external helix must not sit tangent to the stud (zero-engagement bug):\n{}",
             resp.gcode
         );
         assert!(
@@ -627,10 +625,10 @@ mod tests {
         );
     }
 
-    /// mniu: `thread_depth` defaults to the ISO 60° formula
+    /// `thread_depth` defaults to the ISO 60° formula
     /// `0.6495 × pitch_mm` when the field is `None`. Verify the
     /// driver picks up the default instead of treating None as 0
-    /// (which would reproduce the pre-mniu zero-engagement bug).
+    /// (which would reproduce the zero-engagement bug).
     #[test]
     fn thread_op_uses_iso_default_when_depth_unset() {
         let center = Point2::new(0.0, 0.0);
@@ -686,12 +684,12 @@ mod tests {
             "expected helix at X=5.1495 (ISO default depth):\n{}",
             resp.gcode
         );
-        // And the helix MUST NOT be tangent (pre-mniu X=4.5).
+        // And the helix MUST NOT be tangent (pre-fix X=4.5).
         assert!(
             !resp.gcode.contains("X4.5 ")
                 && !resp.gcode.contains("X4.5\n")
                 && !resp.gcode.contains("X4.5000"),
-            "ISO default helix must not match pre-mniu tangent radius 4.5:\n{}",
+            "ISO default helix must not match pre-fix tangent radius 4.5:\n{}",
             resp.gcode
         );
     }
@@ -755,7 +753,7 @@ mod tests {
         let project = Project {
             segments,
             machine: MachineConfig::default(),
-            // mniu: post-mniu helix_r = bore - tool + thread_depth.
+            // helix_r = bore - tool + thread_depth.
             // With pitch=1 (depth≈0.65), a 3 mm tool gave helix_r =
             // 1 - 1.5 + 0.65 ≈ 0.15 which still slipped past the
             // > 0.05 guard. Use a 5 mm tool so helix_r ≈ -0.85 and
@@ -801,7 +799,7 @@ mod tests {
             .any(|w| w.kind == "thread_tool_too_large"));
     }
 
-    /// sqnh: three radial passes on a single closed circle must
+    /// Three radial passes on a single closed circle must
     /// produce three helices at scaled helix radii (75 %, 87.5 %,
     /// 100 %). Detect by counting how many distinct helical descents
     /// the gcode contains — each helix ends with a Z dive to bottom
@@ -868,8 +866,8 @@ mod tests {
         );
     }
 
-    /// zajd: feed compensation for outer-edge speed. M6 internal
-    /// thread, 3mm cutter (`tool_r` = 1.5). mniu: pinning
+    /// Feed compensation for outer-edge speed. M6 internal
+    /// thread, 3mm cutter (`tool_r` = 1.5). Pinning
     /// `thread_depth_mm = Some(1.5)` makes full-engagement
     /// `helix_r` = bore - tool + depth = 3 - 1.5 + 1.5 = 3.0. Outer
     /// edge at `helix_r` + `tool_r` = 4.5, so factor = 3.0 / 4.5 =
@@ -899,7 +897,7 @@ mod tests {
                     climb: true,
                     radial_passes: 1,
                     start_angle_rad: 0.0,
-                    // mniu: pin to a round value so the
+                    // Pin to a round value so the
                     // compensation ratio simplifies to 2/3.
                     thread_depth_mm: Some(1.5),
                 },
@@ -945,7 +943,7 @@ mod tests {
         );
     }
 
-    /// o3od: a Thread op whose source contains no closed circles
+    /// A Thread op whose source contains no closed circles
     /// (the typical "user pointed Thread at a square" misconfig)
     /// must NOT emit a toolchange envelope. Before the fix the
     /// driver returned with `thread_no_circles` warning AFTER the
@@ -954,9 +952,9 @@ mod tests {
     /// up, then the program emitted ZERO cut moves and the next op
     /// would M6 right back to the previous tool.
     ///
-    /// With the o3od fix the envelope is gated on
-    /// `thread_would_emit`; a Thread op against a closed-square
-    /// source returns false and the M6 line is suppressed entirely.
+    /// The envelope is gated on `thread_would_emit`; a Thread op
+    /// against a closed-square source returns false and the M6 line
+    /// is suppressed entirely.
     #[test]
     fn thread_op_skips_toolchange_envelope_when_no_circles() {
         // Two ops: a Profile against the square (T1) followed by a
@@ -1051,14 +1049,14 @@ mod tests {
         );
     }
 
-    /// lo4j: a Thread op assigned a wrong-kind tool (Drill / `DragKnife`
+    /// A Thread op assigned a wrong-kind tool (Drill / `DragKnife`
     /// / `LaserBeam`) must surface a `tool_kind_mismatch` warning. The
     /// thread driver routes tool-fit sanity through the shared
-    /// `push_tool_fit_kind_warnings` helper at op entry; pre-fix the
+    /// `push_tool_fit_kind_warnings` helper at op entry; before the fix the
     /// driver silently emitted a helix with whatever cutter the user
     /// configured, including ones that can't physically cut a thread.
     #[test]
-    fn lo4j_thread_op_with_drill_tool_emits_kind_mismatch_warning() {
+    fn thread_op_with_drill_tool_emits_kind_mismatch_warning() {
         let center = Point2::new(0.0, 0.0);
         let radius = 5.0;
         let segments = closed_circle(center, radius);

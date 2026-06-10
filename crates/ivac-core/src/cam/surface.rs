@@ -1,4 +1,4 @@
-//! Target 3D surface for relief / ball-nose surfacing (f60x).
+//! Target 3D surface for relief / ball-nose surfacing.
 //!
 //! A [`SurfaceField`] is the INPUT counterpart to the simulator's
 //! [`crate::sim::heightmap::Heightmap`]: same row-major grid + bilinear
@@ -6,10 +6,10 @@
 //! result. Cell `z[iy * cols + ix]` is the target Z at that grid point,
 //! with the stock top at `z = 0` and relief carved downward (negative Z).
 //!
-//! The surface SOURCE is pluggable — the first one (f60x-D) is a grayscale
+//! The surface SOURCE is pluggable — the first one is a grayscale
 //! image mapped through [`SurfaceField::from_grayscale`]; a future STL
 //! rasterizer feeds the very same type. The drop-cutter surfacing engine
-//! (f60x-B) reads it through [`SurfaceField::sample`].
+//! reads it through [`SurfaceField::sample`].
 //!
 //! Outside the field footprint `sample` returns `0.0` (the stock top) —
 //! there is no relief beyond the image, so a ball-nose probing past the
@@ -75,8 +75,8 @@ impl SurfaceField {
     }
 
     /// Map a normalized-brightness grid (each value in `[0, 1]`, row-major
-    /// `cols * rows`) into a target surface, the relief-milling source for
-    /// f60x-D. Brightness is linearly mapped to Z in `[z_min_mm, z_max_mm]`:
+    /// `cols * rows`) into a target surface, the relief-milling source.
+    /// Brightness is linearly mapped to Z in `[z_min_mm, z_max_mm]`:
     /// by default bright = high (toward `z_max_mm`, the shallow/top end),
     /// dark = low (toward `z_min_mm`, the deepest cut) — the standard
     /// white-is-high relief convention. `invert` flips that (useful for

@@ -1,5 +1,4 @@
-// Pure 2D viewport math extracted from EntityCanvas2D.svelte (2o8s,
-// l8u6 follow-up). The canvas component still owns the cached
+// Pure 2D viewport math extracted from EntityCanvas2D.svelte. The canvas component still owns the cached
 // `lastTransform` / `lastBaseTransform` state and the user-pan/zoom
 // fields — what's pure is the formula from (bbox, viewport, user view)
 // to scale + offset.
@@ -77,7 +76,7 @@ export interface Rect {
 
 /// Union of placement rects, expanded by `marginFrac` of each axis span
 /// (with a 1-unit floor so a zero-span axis still gets padding), as a
-/// `BBox`. Returns `null` for an empty list. rt1.12 (fvb0): the fallback
+/// `BBox`. Returns `null` for an empty list. The fallback
 /// viewport extent for a geometry-less raster-engrave project, used when
 /// no machine work area provides a stable bed to fit to.
 export function placementsBBox(rects: readonly Rect[], marginFrac = 0.1): BBox | null {

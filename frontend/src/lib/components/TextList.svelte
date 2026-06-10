@@ -16,10 +16,10 @@
   import { selectionOrigin } from '../canvas/selection-geometry';
   import { parseFiniteNumber } from '../cam/units';
 
-  /// 245i: bottom-left of the current object selection's bbox, or null
-  /// when nothing is selected. Drives the per-text "snap origin to
-  /// selection" affordance — the on-demand equivalent of the placement
-  /// AddTextDialog does at creation time.
+  /// Bottom-left of the current object selection's bbox, or null when
+  /// nothing is selected. Drives the per-text "snap origin to selection"
+  /// affordance — the on-demand equivalent of the placement AddTextDialog
+  /// does at creation time.
   const selOrigin = $derived(
     selectionOrigin(project.transformedImport?.object_meta ?? [], project.sel.selectedObjects),
   );
@@ -250,8 +250,8 @@
                         )}
                     />
                   </label>
-                  <!-- 245i: re-anchor the text origin to the bottom-left
-                       of the current object selection's bbox — the
+                  <!-- Re-anchor the text origin to the bottom-left of
+                       the current object selection's bbox — the
                        on-demand "source of text origin" control. -->
                   <button
                     type="button"
@@ -564,7 +564,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* 245i: full-width snap-origin button under the X/Y origin fields. */
+  /* Full-width snap-origin button under the X/Y origin fields. */
   .edit-form .snap-origin {
     grid-column: 1 / -1;
     padding: 0.2rem 0.4rem;

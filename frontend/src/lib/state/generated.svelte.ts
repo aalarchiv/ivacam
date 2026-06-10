@@ -1,4 +1,4 @@
-/// Generate-pipeline slice of ProjectState (audit 6cpl step 2).
+/// Generate-pipeline slice of ProjectState.
 /// Owns every field that's downstream of the CAM pipeline run plus
 /// the lifecycle methods that mutate them.
 ///

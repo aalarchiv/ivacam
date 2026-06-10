@@ -4,7 +4,7 @@
 /// `computeFootprint` (auto = bbox + margin; manual = customX/Y centered on
 /// the bbox); Z extents are `[offsetZ − thickness, offsetZ]`.
 ///
-/// Extracted from Scene3D.svelte (4w2f). Owns its THREE.Group.
+/// Extracted from Scene3D.svelte. Owns its THREE.Group.
 
 import * as THREE from 'three';
 import type { ImportResponse } from '../api/types';
@@ -44,7 +44,7 @@ export class StockBoxBuilder implements Builder {
 
     const cx = (fp.minX + fp.maxX) * 0.5;
     const cy = (fp.minY + fp.maxY) * 0.5;
-    // ya00: stock top sits at offsetZ (default 0); box centered half a
+    // Stock top sits at offsetZ (default 0); box centered half a
     // thickness below it, so it spans [offsetZ − thickness, offsetZ].
     const cz = (cfg.offsetZ ?? 0) - thickness * 0.5;
     const box = new THREE.BoxGeometry(sizeX, sizeY, thickness);

@@ -1,8 +1,7 @@
 /// Stock-footprint resolution — the auto/manual/margin geometry that
 /// turns the stock UI config + imported bbox into an axis-aligned box.
 /// Extracted from `driver.ts` (which pulls in THREE) so the pure logic
-/// can be imported by the THREE-free API layer (`build-project.ts`,
-/// vrrr) as well as the 3D scene. `driver.ts` re-exports it for the
+/// can be imported by the THREE-free API layer (`build-project.ts`) as well as the 3D scene. `driver.ts` re-exports it for the
 /// existing import sites.
 import type { ImportResponse } from '../api/types';
 

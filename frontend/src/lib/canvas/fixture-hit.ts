@@ -6,7 +6,7 @@
 /// odd ray-cast (delegated to `pointInPolygon`).
 ///
 /// No DOM, no \$state — vitest-friendly extraction from
-/// `EntityCanvas2D.svelte`'s `fixtureHit` (audit y0ez).
+/// `EntityCanvas2D.svelte`'s `fixtureHit`.
 
 import type { Fixture } from '../state/project-types';
 import { pointInPolygon } from './selection-geometry';

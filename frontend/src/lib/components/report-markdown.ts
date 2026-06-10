@@ -1,5 +1,5 @@
 /// Pure serializer for the project report → Markdown with YAML front
-/// matter (vh6e). Kept out of ReportDialog.svelte so vitest can cover
+/// matter. Kept out of ReportDialog.svelte so vitest can cover
 /// the formatting (escaping, front matter, tables) without mounting the
 /// dialog. The dialog assembles `ReportData` from project state and
 /// hands it here.

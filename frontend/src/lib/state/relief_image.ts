@@ -1,4 +1,4 @@
-/// f60x: grayscale-image → relief brightness grid. The pure
+/// Grayscale-image → relief brightness grid. The pure
 /// `grayscaleDownsample` (box-average + luminance, Y-flipped to world
 /// orientation) is unit-tested; `decodeImageFile` is the thin browser
 /// wrapper that decodes a File via canvas and feeds it through.

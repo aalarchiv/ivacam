@@ -1,4 +1,4 @@
-//! Interactive tab placement helpers (rt1.10).
+//! Interactive tab placement helpers.
 //!
 //! Tabs ("bridges" / "Anbindungen" in Estlcam) are short uncut sections
 //! that hold the workpiece to the stock during a through-cut. ivac

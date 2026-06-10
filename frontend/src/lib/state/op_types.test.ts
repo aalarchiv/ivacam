@@ -1,4 +1,4 @@
-/// gseb: `isProgramOnlyOp` is the FE mirror of the Rust
+/// `isProgramOnlyOp` is the FE mirror of the Rust
 /// `Op::is_program_only()` predicate at
 /// `crates/ivac-core/src/project/op.rs`. The two MUST agree —
 /// FE-side row-validation skips tool-existence checks for these

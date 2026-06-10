@@ -16,7 +16,7 @@
 //! JS task queue.
 
 #![forbid(unsafe_code)]
-// juvx: every #[wasm_bindgen] entry returns `JsValue` errors that surface
+// Every #[wasm_bindgen] entry returns `JsValue` errors that surface
 // to JS as a thrown Error with the message attached. The Rust-side
 // `# Errors` doc would be redundant — the JS caller already sees the
 // message via the standard try/catch. Whole crate gets the allow.
@@ -174,7 +174,7 @@ pub(crate) fn into_js_error<E: std::fmt::Display>(err: E) -> JsValue {
     JsValue::from_str(&err.to_string())
 }
 
-/// 7iej.15: run `f` under a panic guard so a panic in a transitive parser
+/// Run `f` under a panic guard so a panic in a transitive parser
 /// (dxf-rs / usvg / ttf font shaping) on malformed user input surfaces as a
 /// structured JS error instead of aborting the whole wasm instance — the
 /// same protection `generate` / `generate_streaming` already have. Wraps

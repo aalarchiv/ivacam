@@ -1,4 +1,4 @@
-/// Regression guard for the dh1n self-scheduling-effect bug (p2c3).
+/// Regression guard for the self-scheduling-effect bug.
 ///
 /// The bug: an `$effect` body assigned to `$state` (e.g. `draft`) and
 /// then read the same proxy back via a function call (e.g.

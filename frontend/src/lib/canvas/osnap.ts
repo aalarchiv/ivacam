@@ -1,4 +1,4 @@
-/// OSnap engine (64p / Estlcam `Transform.cs::Snaps[]`). One place
+/// OSnap engine. One place
 /// to ask "where would my click land if I were within snap distance
 /// of a CAD feature?" — every click-tool routes through here.
 ///

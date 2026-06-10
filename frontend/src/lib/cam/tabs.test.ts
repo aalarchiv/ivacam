@@ -1,4 +1,4 @@
-/// FE arc-length cross-check (audit 50u). The TS implementations in
+/// FE arc-length cross-check. The TS implementations in
 /// `cam/tabs.ts` mirror the Rust helpers in `ivac_core::cam::tabs`.
 /// These tests pin a small set of known fixtures so any future drift
 /// between the two implementations breaks the build instead of

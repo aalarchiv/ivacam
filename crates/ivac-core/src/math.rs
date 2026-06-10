@@ -32,7 +32,7 @@ pub fn bulge_to_arc(start: Point2, end: Point2, bulge: f64) -> (Point2, f64, f64
         // Zero-length chord with a finite bulge is indeterminate — a full
         // circle would need an infinite bulge. Report radius 0 so callers
         // (e.g. `tessellate_arc`) fall back to a degenerate result instead
-        // of fabricating a circle. See `tessellate_arc`'s contract (v0ih).
+        // of fabricating a circle. See `tessellate_arc`'s contract.
         return (start, 0.0, 0.0, 0.0);
     }
     let sagitta = bulge * chord * 0.5;
@@ -93,7 +93,7 @@ pub fn cross_2d(a: Point2, b: Point2, c: Point2) -> f64 {
 /// (inclusive of both endpoints), with each step at most `max_angle_rad`
 /// of sweep. Returns at least two points.
 ///
-/// **Contract (v0ih):** the bulge convention is `tan(included_angle / 4)`,
+/// **Contract:** the bulge convention is `tan(included_angle / 4)`,
 /// so a single segment can only represent sweeps in `(-2π, 2π)` — a *full*
 /// 360° circle would require an infinite bulge and cannot be encoded here.
 /// A full circle must therefore be supplied as two (or more) sub-arc
@@ -142,7 +142,7 @@ pub fn tessellate_arc(start: Point2, end: Point2, bulge: f64, max_angle_rad: f64
     out
 }
 
-/// 7iej.10: positive arc sweep angle (radians, normalized to `[0, 2π)`)
+/// Positive arc sweep angle (radians, normalized to `[0, 2π)`)
 /// from `start` to `end` about `center`, traversed CCW or CW per `ccw`.
 /// Single owner for the atan2-and-normalize the arc-fitter (`gcode::arc_fit`)
 /// and the cut walker (`gcode::walk`) each derived independently.
@@ -161,7 +161,7 @@ pub fn arc_sweep(center: Point2, start: Point2, end: Point2, ccw: bool) -> f64 {
     sweep
 }
 
-/// 7iej.10: does the directed arc `[theta_start, theta_start + sweep]`
+/// Does the directed arc `[theta_start, theta_start + sweep]`
 /// contain the angle `theta`? `sweep > 0` is CCW, `sweep < 0` is CW; a
 /// `|sweep| >= 2π` arc contains every angle. Normalizes `theta -
 /// theta_start` into the sweep's direction so the test reduces to
@@ -271,7 +271,7 @@ mod tests {
         assert!(approx(r2, r));
     }
 
-    /// v0ih: a coincident-endpoint segment with a finite bulge is
+    /// A coincident-endpoint segment with a finite bulge is
     /// geometrically indeterminate (a full circle needs infinite bulge),
     /// so the documented contract is a two-point degenerate — never a
     /// silently-wrong arc. Pin that so a future "helpfully reconstruct a

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { playheadToSegment } from './playhead';
 
-// 0z4b: playheadToSegment is the one load-bearing preview-math function on
+// playheadToSegment is the one load-bearing preview-math function on
 // the TS side (arc-length lookup → segment index + parametric segT, used by
 // Scene3D / PlaybackBar / GcodePanel / the sim driver) and was previously
 // exercised only indirectly.

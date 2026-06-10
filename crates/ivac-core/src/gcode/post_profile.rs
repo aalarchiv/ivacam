@@ -1,4 +1,4 @@
-//! User-configurable post-processor profile (rt1.15, hev).
+//! User-configurable post-processor profile.
 //!
 //! A `PostProfile` is a serde-friendly bundle of TEMPLATE STRINGS that
 //! override the hard-coded headers / footers / toolchange / coolant
@@ -7,7 +7,7 @@
 //! can reference the current tool / feed / spindle / op without
 //! editing ivac source.
 //!
-//! v2 (hev) adds per-axis formatting: each of X/Y/Z/I/J/F/S can be
+//! The v2 extension adds per-axis formatting: each of X/Y/Z/I/J/F/S can be
 //! renamed (e.g. swap Z↔A for rotary), reformatted (`%.4f` for a
 //! lathe), scaled (`-1` flips a Z-up controller, `1.0/60.0` converts
 //! mm/min→mm/s), or disabled (skip the axis entirely, useful for
@@ -197,11 +197,11 @@ impl Default for AxesConfig {
 /// decimal separator after the fact.
 #[must_use]
 pub fn format_axis_value(format: &str, value: f64) -> String {
-    // Clamp width / precision to a sane ceiling (yx9c): a hand-authored
+    // Clamp width / precision to a sane ceiling: a hand-authored
     // profile like `%9999999999f` or `%.9999999999f` would otherwise build
     // a multi-GB padding string (or ask `format!` for billions of decimals)
     // for a single coordinate. No real G-code field is wider than a couple
-    // dozen chars; 64 is comfortably past that. (iynx: hoisted to fn top —
+    // dozen chars; 64 is comfortably past that. (Hoisted to fn top —
     // clippy::items_after_statements.)
     const MAX_FIELD: usize = 64;
     if format.is_empty() {
@@ -336,7 +336,7 @@ impl PostProfile {
     }
 
     /// Mach3 metric bundle — `%` brackets, `.tap` extension, CRLF
-    /// line endings. nxn0: Mach3 reads dwell `P` in milliseconds,
+    /// line endings. Mach3 reads dwell `P` in milliseconds,
     /// not seconds.
     #[must_use]
     pub fn mach3_metric() -> Self {
@@ -462,7 +462,7 @@ pub fn substitute(template: &str, ctx: &TokenCtx) -> String {
 /// lines so the existing `PostProcessor::raw` / `write` paths see
 /// one line at a time (line numbering / comment passes assume that).
 ///
-/// qwhz: each split line is scanned for `<token>`-shaped placeholders
+/// Each split line is scanned for `<token>`-shaped placeholders
 /// that the substitution pass didn't recognize (i.e. survived
 /// untouched). Lines carrying an unknown token are skipped (with a
 /// `(WARN: unknown token …)` comment inserted in their place) so the
@@ -715,7 +715,7 @@ mod tests {
         assert_eq!(p.line_ending.as_deref(), Some("\r\n"));
     }
 
-    // ─── axis formatting (hev) ────────────────────────────────────────
+    // ─── axis formatting ─────────────────────────────────────────────
 
     #[test]
     fn format_axis_value_default_three_decimals() {
@@ -770,7 +770,7 @@ mod tests {
         assert_eq!(format_axis_value("%+.2f", -1.5), "-1.50");
     }
 
-    /// yx9c: a pathological width / precision in a hand-authored profile
+    /// A pathological width / precision in a hand-authored profile
     /// must not trigger a giant allocation. Both clamp to 64, so the call
     /// returns promptly with a bounded string instead of OOMing.
     #[test]

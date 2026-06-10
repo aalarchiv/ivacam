@@ -1,5 +1,5 @@
 <script lang="ts">
-  /// 8n4k CycleMarker op-properties: comment-only marker. Pendants and
+  /// CycleMarker op-properties: comment-only marker. Pendants and
   /// gcode viewers that index by program line can jump to the next marker.
   /// Styles inherited from OpPropertiesPanel's :global(.props ...) rules.
   import type { CycleMarkerOp, OpField, OpFieldValue } from '../../state/project.svelte';

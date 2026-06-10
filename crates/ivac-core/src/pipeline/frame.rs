@@ -1,4 +1,4 @@
-//! Pocket-Outside frame synthesis (rt1.3 / audit-57li). When a Pocket
+//! Pocket-Outside frame synthesis. When a Pocket
 //! op carries `frame_shape`, the pipeline auto-prepends a synthetic
 //! frame [`VcObject`] derived from the op's current selection so the
 //! downstream `SourceCombine::Difference` carves the area between the
@@ -11,7 +11,7 @@ use crate::project::Op;
 
 use super::op_includes_object;
 
-/// Pocket-Outside (rt1.3) helper. When the op carries `frame_shape`,
+/// Pocket-Outside helper. When the op carries `frame_shape`,
 /// builds the synthetic frame around the op's current selection and
 /// returns `(new_objects, ordered_indices)` where:
 ///   * `new_objects` is `objects` with the frame appended at the end.
@@ -35,7 +35,7 @@ pub(super) fn synthesize_pocket_outside_objects(
     objects: &[VcObject],
     tool_radius_mm: f64,
 ) -> Option<(Vec<VcObject>, Vec<usize>)> {
-    // kbx5 step 2: read frame fields from PocketParams; non-Pocket ops
+    // Step 2: read frame fields from PocketParams; non-Pocket ops
     // never carry a frame so they short-circuit to None.
     let pocket = op.pocket_params()?;
     let frame_shape = pocket.frame_shape?;
@@ -49,7 +49,7 @@ pub(super) fn synthesize_pocket_outside_objects(
         let frame_selection: Vec<&VcObject> =
             selected_indices.iter().map(|&i| &objects[i]).collect();
         let user_padding = pocket.frame_padding_mm.unwrap_or(0.0).max(0.0);
-        // l8fz: the real outward extent of the source contour grows
+        // The real outward extent of the source contour grows
         // beyond the raw selection bbox when the op carries lead-in
         // arcs (radius), tabs (width along the cut chord), or a
         // finish-pass stock allowance (`finish_xy_allowance_mm`). The
@@ -164,7 +164,7 @@ mod tests {
             .fold(f64::INFINITY, f64::min)
     }
 
-    /// l8fz: lead-arc length 5 mm + `frame_padding` 2 mm should yield a
+    /// Lead-arc length 5 mm + `frame_padding` 2 mm should yield a
     /// frame that sits 7 mm outside the source contour (lead-arc adds to
     /// padding, not max with).
     #[test]
@@ -190,7 +190,7 @@ mod tests {
         );
     }
 
-    /// l8fz: `finish_xy_allowance` pushes the frame outward too.
+    /// `finish_xy_allowance` pushes the frame outward too.
     #[test]
     fn frame_envelope_includes_finish_xy_allowance() {
         let op = pocket_frame_op(ContourParams::default(), Some(1.0), Some(3.0));
@@ -206,7 +206,7 @@ mod tests {
         );
     }
 
-    /// l8fz: tabs widen the outward extent by tabs.width when the
+    /// Tabs widen the outward extent by tabs.width when the
     /// op carries an active tabs config.
     #[test]
     fn frame_envelope_includes_tab_width() {

@@ -1,4 +1,4 @@
-//! End-to-end pocket validation harness (esnw).
+//! End-to-end pocket validation harness.
 //!
 //! Runs a real pocket CAM job — 6 mm Ø endmill, single-pass 3 mm
 //! pocket of a 50 × 30 rectangular source on 10 mm stock — through
@@ -99,7 +99,7 @@ fn pocket_rectangle_volume_matches_closed_form() {
         diag.warnings.len()
     );
 
-    // v5az / overcut sentinel: nothing should sit below the stock floor.
+    // Overcut sentinel: nothing should sit below the stock floor.
     let min_h = deepest_z(&hm);
     eprintln!("[esnw] min_h = {min_h:.4} mm (expected ≈ {POCKET_DEPTH})");
     assert!(

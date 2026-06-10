@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::geometry::{Point2, Segment};
 
-// 6yst: cam/offsets.rs decomposed into a directory module. Each cluster is
+// cam/offsets.rs decomposed into a directory module. Each cluster is
 // a submodule, re-exported here so `cam::offsets::X` import sites are
 // unchanged. tabs = tab attachment; winding = cut-direction / approach
 // rotation; parallel = offset primitives + cascade + overcut; pocket_fill =
@@ -268,7 +268,7 @@ mod tests {
         }
     }
 
-    /// hx74: a short (< 3 pts) ring inside the cascade was previously
+    /// A short (< 3 pts) ring inside the cascade was previously
     /// silently dropped, leaving the bridge from the previous ring's
     /// `last_end` to the next ring's first vertex unverified — it could
     /// span the gap of the dropped ring and exit the pocket. The fix
@@ -288,11 +288,11 @@ mod tests {
         );
     }
 
-    /// kqsl + kc86: a spiral pocket with an island in the bridge path
+    /// A spiral pocket with an island in the bridge path
     /// must NOT carve through the island. The bridge-containment guard
     /// rejects bridges that cross any island; on rejection
     /// `stitch_rings_to_polyline` sweeps OTHER candidate start vertices
-    /// on the next ring (kc86), and only when EVERY candidate fails
+    /// on the next ring, and only when EVERY candidate fails
     /// does the stitch return None so the caller falls back to cascade
     /// emission. We construct rings where every vertex of ring 1 sits
     /// on the right side of the island clustered tight against the
@@ -331,7 +331,7 @@ mod tests {
         );
     }
 
-    /// kc86: when the FIRST candidate start vertex would put a bridge
+    /// When the FIRST candidate start vertex would put a bridge
     /// across an island, the stitch must sweep through the other
     /// candidate vertices on that ring and find a safe one before
     /// falling back to None. Pre-fix the function returned None on the
@@ -384,7 +384,7 @@ mod tests {
         }
     }
 
-    /// kqsl helper: `bridge_crosses_any_island` detects a bridge that
+    /// `bridge_crosses_any_island` detects a bridge that
     /// goes straight through an island, and accepts one that goes
     /// around.
     #[test]
@@ -419,7 +419,7 @@ mod tests {
         }
     }
 
-    /// knd4 helper: `inflate_islands_by_tool_radius` produces an
+    /// `inflate_islands_by_tool_radius` produces an
     /// outward Minkowski-sum boundary around each island, i.e. a
     /// polygon every point of which is ≥ `tool_radius` from the original
     /// island wall. The pocket emitters (`pocket_zigzag`, the cascade
@@ -463,7 +463,7 @@ mod tests {
         );
     }
 
-    /// knd4 unit test: the cam-layer `pocket_zigzag` documents its
+    /// The cam-layer `pocket_zigzag` documents its
     /// `islands` input as already-inflated-by-tool-radius and uses each
     /// island's horizontal-crossings interval as-is (the function
     /// would otherwise double-inflate). The pipeline's job is to feed
@@ -479,7 +479,7 @@ mod tests {
         let tool_radius = tool_diameter * 0.5;
         let inflated = inflate_islands_by_tool_radius(&[raw_island.clone()], tool_radius);
 
-        // RAW island fed in (the pre-knd4 broken contract): scanlines
+        // RAW island fed in (the pre-fix broken contract): scanlines
         // run right up to x∈[15, 25] within y∈[15, 25] — the cutter
         // centerline sits at the raw wall.
         let chains_raw = pocket_zigzag(&boundary, &[raw_island.clone()], 1.5, tool_diameter);
@@ -502,7 +502,7 @@ mod tests {
             "RAW-island test must demonstrate the pre-knd4 gouge — centerline should reach the raw island wall"
         );
 
-        // INFLATED island fed in (the post-knd4 fixed contract): no
+        // INFLATED island fed in (the post-fix fixed contract): no
         // centerline endpoint sits within tool_radius - eps of the raw
         // wall. The pocket emitter trims scanlines to a Minkowski-sum
         // boundary that's tool_r outboard of the raw wall.
@@ -512,8 +512,8 @@ mod tests {
         // of the inflated polygon are chord-approximated. A scanline
         // endpoint sampled along a chord between two arc vertices
         // sits up to `arc_tol` inside the true tool_radius circle —
-        // a sub-mm manufacturing approximation, not a knd4 regression.
-        // We allow ~arc_tol of slack. Pre-knd4 the gouge was a full
+        // a sub-mm manufacturing approximation, not a regression.
+        // We allow ~arc_tol of slack. Pre-fix the gouge was a full
         // tool_radius (1.5 mm) — 5× this slack — so the regression
         // still flags the broken contract loudly.
         let chains_safe = pocket_zigzag(&boundary, &inflated, 1.5, tool_diameter);
@@ -726,7 +726,7 @@ mod tests {
         assert_eq!(before, after);
     }
 
-    /// q57s: a left-hand spindle (`Ccw`, M4 mode) flips the geometric
+    /// A left-hand spindle (`Ccw`, M4 mode) flips the geometric
     /// winding picked for any given climb/conventional intent because
     /// the cutting edge rotates the other way. Inner+Climb on a right-
     /// hand spindle picks CW (area<0); on a left-hand spindle the same
@@ -745,7 +745,7 @@ mod tests {
         assert!(offset_signed_area(&o) > 0.0);
     }
 
-    /// q57s symmetric case: outer+conventional on a left-hand spindle
+    /// Symmetric case: outer+conventional on a left-hand spindle
     /// flips to CCW (RH would pick CW).
     #[test]
     fn enforce_winding_outer_conventional_lefthand_keeps_ccw() {
@@ -797,7 +797,7 @@ mod tests {
         }
     }
 
-    /// rt1.9: angled zigzag produces strokes oriented at the given
+    /// Angled zigzag produces strokes oriented at the given
     /// angle. At 90° the strokes are vertical (start.x == end.x); at
     /// 0° they're horizontal (start.y == end.y, the original case).
     /// Span and stride still fit inside the original square boundary.
@@ -839,7 +839,7 @@ mod tests {
         assert!(!diag.is_empty(), "expected strokes for 45°");
     }
 
-    /// gp2a: a 50×50 pocket with a 10×10 island in the centre — the
+    /// A 50×50 pocket with a 10×10 island in the centre — the
     /// zigzag must NOT carve a single continuous polyline through the
     /// island. We expect at least one row whose stroke is split into
     /// left + right sub-strokes by the island band.
@@ -985,7 +985,7 @@ mod tests {
         assert!((o.segments[1].bulge - -0.5).abs() < 1e-12);
     }
 
-    /// dtf1 regression: a circle whose radius sits in the previously-dead
+    /// Regression: a circle whose radius sits in the previously-dead
     /// `[0.95·r, r)` zone now gets a drill substitution rather than
     /// being silently dropped by the empty inward-cascade.
     #[test]
@@ -1031,7 +1031,7 @@ mod tests {
         assert!(drill.segments[0].start.distance(center) < 1e-9);
     }
 
-    /// hnc1 regression: a closed circle whose radius EXACTLY equals the
+    /// Regression: a closed circle whose radius EXACTLY equals the
     /// tool radius (e.g. a 6 mm hole milled with a 6 mm endmill) must
     /// route through the drill substitution — the cascade can't carve
     /// such a hole (inward offset collapses to empty) but the drill
@@ -1077,7 +1077,7 @@ mod tests {
         assert!(drill.segments[0].start.distance(center) < 1e-9);
     }
 
-    /// hnc1 boundary: a circle slightly LARGER than the tool (within
+    /// Boundary: a circle slightly LARGER than the tool (within
     /// the 0.1 % floating-point slop band) still routes to drill — the
     /// cutter fills the hole; we'd rather emit a useful drill plunge
     /// than a silent drop. Above that band (radius > 1.001 *
@@ -1138,7 +1138,7 @@ mod tests {
         assert!(small_circle_drill(&obj, tool_radius).is_none());
     }
 
-    /// axhd regression: a U-shaped pocket's zigzag joiner that would
+    /// Regression: a U-shaped pocket's zigzag joiner that would
     /// span the cross-bar of the U must split the chain instead of
     /// emitting a Line that ploughs through stock.
     #[test]
@@ -1201,7 +1201,7 @@ mod tests {
         }
     }
 
-    /// 5nij regression: an L-shaped boundary with long walls (>= 30mm
+    /// Regression: an L-shaped boundary with long walls (>= 30mm
     /// arms) produces an overcut dip at the reflex corner. Pre-fix the
     /// endpoint-only probe missed the bisector ray entirely on long
     /// walls and skipped the overcut silently.
@@ -1258,7 +1258,7 @@ mod tests {
         );
     }
 
-    /// z4t6 regression: the thread-local panic sink starts empty, and
+    /// Regression: the thread-local panic sink starts empty, and
     /// `take_parallel_offset_panics` returns its contents and clears the
     /// sink. We can't easily synthesise a `cavalier_contours` panic in a
     /// unit test (the assert is internal to the crate's offset
@@ -1278,7 +1278,7 @@ mod tests {
         );
     }
 
-    /// c6ej regression: a polygon whose top edge grazes a scanline at a
+    /// Regression: a polygon whose top edge grazes a scanline at a
     /// vertex (producing 1 odd crossing under the half-open rule) is
     /// coalesced so the count returns to even. We don't lose strokes
     /// when a vertex sits exactly on the sweep.
@@ -1308,7 +1308,7 @@ mod tests {
         assert!((xs[1] - 20.0).abs() < 1e-6, "right crossing: {xs:?}");
     }
 
-    /// 06m5 regression: a Pocket op with `nocontour=true` and the Zigzag
+    /// Regression: a Pocket op with `nocontour=true` and the Zigzag
     /// strategy must NOT leave a tool-radius-wide ribbon of uncut stock
     /// along every wall. Pre-fix the rough boundary was already inset by
     /// `tool_r`, then `pocket_zigzag` self-inset by another `tool_r` —
@@ -1383,7 +1383,7 @@ mod tests {
         );
     }
 
-    /// cpym regression: a fine-finish stride (0.05 mm, well below the
+    /// Regression: a fine-finish stride (0.05 mm, well below the
     /// old 0.1 mm silent clamp) must actually produce rows at the
     /// requested density. Pre-fix the function ran with stride = 0.1
     /// regardless of the user's value, halving the raster density and
@@ -1402,7 +1402,7 @@ mod tests {
         // collapsed onto the 0.1 mm clamp and produced ~the same count.
         assert!(
             fine_strokes >= coarse_strokes * 5,
-            "fine-stride raster ({fine_strokes} strokes at 0.05 mm) should be much denser than coarse ({coarse_strokes} at 0.5 mm) — pre-cpym both clamped to 0.1 mm"
+            "fine-stride raster ({fine_strokes} strokes at 0.05 mm) should be much denser than coarse ({coarse_strokes} at 0.5 mm) — pre-fix both clamped to 0.1 mm"
         );
         // No degeneracy warning at 0.05 mm — that's well above the 1e-6
         // mm floor.
@@ -1412,7 +1412,7 @@ mod tests {
         );
     }
 
-    /// cpym regression: a truly degenerate stride (sub-fp) must record
+    /// Regression: a truly degenerate stride (sub-fp) must record
     /// a `ZigzagStrideDegenerate` event so the pipeline can surface a
     /// `zigzag_stride_clamped_below_minimum` warning instead of
     /// silently emitting no toolpath.
@@ -1431,7 +1431,7 @@ mod tests {
         assert!(drained[0].stride_mm < 1e-6);
     }
 
-    /// a7v4 regression: an island that wholly spans one or more
+    /// Regression: an island that wholly spans one or more
     /// scanlines (so the row emits no strokes) must NOT flip the
     /// serpent parity. Pre-fix the bookkeeping toggled `flip`
     /// unconditionally; the next non-empty row ran in the wrong
@@ -1447,7 +1447,7 @@ mod tests {
     /// rows emit zero strokes (the entire outer-pair gets swallowed by
     /// the island interval).
     ///
-    /// Pre-a7v4: `flip` toggled on every empty row in the band ⇒ the
+    /// Pre-fix: `flip` toggled on every empty row in the band ⇒ the
     /// row at y = 15.5 (first non-empty after the band) ran in the
     /// SAME direction as the row at y = 4.5 (last non-empty before).
     /// Post-fix: the band leaves parity unchanged ⇒ y = 15.5 runs
@@ -1492,18 +1492,18 @@ mod tests {
         // Direction sign: +1 = L→R, -1 = R→L.
         let dir_below = (last_below.2 - last_below.1).signum();
         let dir_above = (first_above.2 - first_above.1).signum();
-        // Post-a7v4: with 9 empty rows in the band (odd count),
-        // pre-fix would flip parity 9 times → next non-empty row
+        // Post-fix: with 9 empty rows in the band (odd count),
+        // the old code would flip parity 9 times → next non-empty row
         // matches dir_below. Post-fix the band is parity-neutral →
         // next non-empty row is OPPOSITE to dir_below (the LAST
         // non-empty row's toggle still applies). Assert opposite.
         assert!(
             (dir_below + dir_above).abs() < 0.5,
-            "a7v4 regression: first row above empty-band must run opposite to last row below — got dir_below={dir_below}, dir_above={dir_above}"
+            "flip-parity regression: first row above empty-band must run opposite to last row below — got dir_below={dir_below}, dir_above={dir_above}"
         );
     }
 
-    /// sbtf regression: at high overlap (`xy_step` < `tool_radius`) the
+    /// Regression: at high overlap (`xy_step` < `tool_radius`) the
     /// pre-fix cascade's first ring around an island sat too close to
     /// the raw island wall — the cutter edge intruded by (`tool_r` −
     /// step) mm. With the over-inflation fix the cutter edge MUST stay
@@ -1521,7 +1521,7 @@ mod tests {
         let knd4_islands = inflate_islands_by_tool_radius(&[raw_island.clone()], tool_r);
         let over_inflated = over_inflate_islands_for_high_overlap(&knd4_islands, tool_r, step);
         // The over-inflated boundary must sit MEASURABLY further from
-        // the raw island wall than the bare knd4 inflation.
+        // the raw island wall than the bare tool-radius inflation.
         let bbox = |pts: &[Point2]| {
             let (mut mnx, mut mxx) = (f64::INFINITY, f64::NEG_INFINITY);
             for p in pts {
@@ -1536,11 +1536,11 @@ mod tests {
         };
         let (kmin, _) = bbox(&knd4_islands[0]);
         let (omin, _) = bbox(&over_inflated[0]);
-        // Raw island bbox min_x = 20. knd4 ≈ 18 (tool_r=2 outward).
-        // sbtf over-inflate ≈ 18 - (tool_r - step) = 16.4.
+        // Raw island bbox min_x = 20. tool-radius inflate ≈ 18 (tool_r=2 outward).
+        // High-overlap over-inflate ≈ 18 - (tool_r - step) = 16.4.
         assert!(
             omin + 0.05 < kmin,
-            "sbtf over-inflate must extend further than knd4 (over={omin:.3} vs knd4={kmin:.3})"
+            "high-overlap over-inflate must extend further than bare tool-radius inflate (over={omin:.3} vs knd4={kmin:.3})"
         );
         // Run the cascade against the over-inflated islands. Every
         // ring's vertex must keep the cutter EDGE outside the raw
@@ -1596,13 +1596,13 @@ mod tests {
         let edge_clearance = nearest - tool_r;
         assert!(
             edge_clearance >= -0.05,
-            "cutter EDGE intrudes into raw island by {:.3} mm (nearest centerline {:.3}, tool_r {tool_r}) — sbtf regression",
+            "cutter EDGE intrudes into raw island by {:.3} mm (nearest centerline {:.3}, tool_r {tool_r}) — high-overlap regression",
             -edge_clearance,
             nearest
         );
     }
 
-    /// fksa regression: at sub-mm scale (5 mm part, 0.3 mm endmill) the
+    /// Regression: at sub-mm scale (5 mm part, 0.3 mm endmill) the
     /// pre-fix overcut's 0.25 mm `perp_tol` was wider than the entire
     /// part bbox, picking the nearest WRONG wall as the overcut probe
     /// target. With the bbox-scaled tolerance the function either picks

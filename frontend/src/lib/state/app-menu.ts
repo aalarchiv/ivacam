@@ -1,4 +1,4 @@
-/// Pure keyboard / menu decision logic extracted from `App.svelte` (tiu6).
+/// Pure keyboard / menu decision logic extracted from `App.svelte`.
 ///
 /// App.svelte stays the reactive shell: it owns the dialog `$state`, the
 /// dynamic-import component slots, and the actual effects (calling
@@ -6,8 +6,7 @@
 /// *decisions* — "which app action does this keystroke map to?" and "which
 /// menu item does this arrow key focus?" — so the shortcut table and the
 /// menubar nav math are unit-testable without standing up the rune
-/// runtime. The audit (tiu6) flagged that this business logic was buried
-/// in a UI file; the genuinely component-coupled part (dialog open/close
+/// runtime. The genuinely component-coupled part (dialog open/close
 /// state) is left in App.svelte because extracting it cleanly would mean a
 /// rune-store rewrite that buys little.
 
@@ -108,7 +107,7 @@ export function nextMenuItemIndex(key: string, currentIdx: number, count: number
 }
 
 /// True when a drag event carries a `Files` payload — the gate for the
-/// window-level drag-and-drop import overlay (dteo).
+/// window-level drag-and-drop import overlay.
 export function dragHasFiles(e: DragEvent): boolean {
   return !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
 }

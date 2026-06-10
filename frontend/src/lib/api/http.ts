@@ -17,8 +17,8 @@ import type {
 
 /**
  * Read a failed Response body and throw an Error whose `.message` carries
- * the structured `ivac_core::Error` shape verbatim when the server sent one
- * (luf1). Frontend `tryParseStructuredError` recognises the JSON string and
+ * the structured `ivac_core::Error` shape verbatim when the server sent one.
+ * Frontend `tryParseStructuredError` recognises the JSON string and
  * extracts kind / recovery_hint / auto_fix / span; otherwise callers see
  * the legacy `<label> returned <status>: <detail>` form.
  */
@@ -131,8 +131,8 @@ export class HttpWiacClient implements WiacClient {
     let buffer = '';
     let result: GenerateResponse | undefined;
     // Raw event-data string from the SSE `error` event. Server emits the
-    // full structured `ivac_core::Error` as the payload (luf1); we rethrow
-    // it as a JSON string so tryParseStructuredError() works downstream.
+    // full structured `ivac_core::Error` as the payload; we rethrow it as
+    // a JSON string so tryParseStructuredError() works downstream.
     let errorPayload: string | undefined;
 
     while (true) {
@@ -288,8 +288,8 @@ export type ApiChoice = { kind: 'tauri' } | { kind: 'wasm' } | { kind: 'http'; u
 ///   2. ?api=… query param at runtime        → that URL (or wasm if =='wasm')
 ///   3. default — no transport configured:
 ///        • production build → the in-browser wasm engine, so a static
-///          deploy works from a bare URL with no backend (5ue0/xeio
-///          browser-trial). Point at a server instead via VITE_IVAC_API.
+///          deploy works from a bare URL with no backend. Point at a
+///          server instead via VITE_IVAC_API.
 ///        • dev → the local ivac-server on :8766 (the documented dev
 ///          workflow runs `cargo run -p ivac-server`).
 export function resolveApiChoice(opts: {
@@ -340,7 +340,7 @@ export function defaultClient(): WiacClient {
 }
 
 /**
- * 5ue0: build the in-browser wasm client. Prefer the Web Worker variant
+ * Build the in-browser wasm client. Prefer the Web Worker variant
  * (non-blocking UI + real cancel); fall back to the main-thread client
  * where module workers aren't available or the worker fails to construct.
  */

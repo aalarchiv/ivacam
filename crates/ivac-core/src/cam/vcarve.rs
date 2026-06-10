@@ -54,7 +54,7 @@ const BOUNDARY_SAMPLE_MM: f64 = 0.1;
 
 /// Default minimum branch length (a fraction of `tool_radius`) below
 /// which a terminal medial-axis chain is considered a spur and pruned.
-/// iqbu: the 0.1 mm boundary sampling produces ~10× too many vertices
+/// The 0.1 mm boundary sampling produces ~10× too many vertices
 /// on curves; without pruning the medial axis is fuzzy with micro
 /// branches pointing at every densified-curve sample. `0.5 *
 /// tool_radius` is a defensible default — anything shorter than half
@@ -94,11 +94,11 @@ fn densify_ring(ring: &[Point2], step: f64) -> Vec<Point2> {
     out
 }
 
-/// l3uk: a chord (p0, p1) "stays in the region" iff every interior
+/// A chord (p0, p1) "stays in the region" iff every interior
 /// sample along the chord is in the region. Endpoints are excluded
 /// (they're circumcenters guaranteed-in-region by `inside[]`).
 ///
-/// no0u: previously this used a fixed 8 strictly-interior samples
+/// Previously this used a fixed 8 strictly-interior samples
 /// (t ∈ {1/8, …, 7/8}). For a 50 mm chord that's a 6.25 mm sample
 /// spacing — a hole or re-entrant notch narrower than ~1/8 of the chord
 /// length could sit ENTIRELY between two consecutive samples and the
@@ -113,7 +113,7 @@ fn densify_ring(ring: &[Point2], step: f64) -> Vec<Point2> {
 /// big region it catches small holes / notches the fixed-count version
 /// missed.
 fn chord_stays_in_region(region: &VcRegion, p0: Point2, p1: Point2) -> bool {
-    /// no0u: target spacing between chord-interior samples in mm.
+    /// Target spacing between chord-interior samples in mm.
     /// 0.5 mm matches the densification used elsewhere in the medial-axis
     /// pipeline (`BOUNDARY_SAMPLE_MM` is the same order) so a hole that
     /// resolves to a few samples on its own ring also resolves to a few
@@ -260,8 +260,8 @@ pub fn medial_axis_cancellable(
         let t0 = e / 3;
         let t1 = twin / 3;
         if inside[t0] && inside[t1] {
-            // l3uk: reject the chord between the two circumcenters when
-            // it leaves the region. The pre-l3uk single-midpoint test
+            // Reject the chord between the two circumcenters when
+            // it leaves the region. The prior single-midpoint test
             // missed thin axis-aligned chords across a slot whose
             // midpoint happened to land inside but whose 25%/75%
             // points lay outside — and rejected legitimate chords in
@@ -306,7 +306,7 @@ pub fn medial_axis_cancellable(
         let mut prev = start;
         let mut cur = nb;
         loop {
-            // wgim: `insert` returns false when the edge was already in
+            // `insert` returns false when the edge was already in
             // the set — guarantee at-most-once segment emission per
             // edge across all chains.
             if !visited_edge.insert(edge_key(prev, cur)) {
@@ -337,7 +337,7 @@ pub fn medial_axis_cancellable(
     // Cycles + leftover branches: any remaining unvisited edge starts a
     // new chain.
     //
-    // wgim: the walk's loop bound is purely edge-visited (`visited_edge`)
+    // The walk's loop bound is purely edge-visited (`visited_edge`)
     // — every iteration consumes at least one fresh edge, so the walk
     // terminates in O(E) total across all chains. We additionally bound
     // each chain by `n_tri` iterations as a belt-and-braces guard against
@@ -365,7 +365,7 @@ pub fn medial_axis_cancellable(
             let mut steps = 0usize;
             loop {
                 if steps > max_chain_len {
-                    // wgim: defensive bail — should never trip on
+                    // Defensive bail — should never trip on
                     // well-formed Voronoi graphs; protects against
                     // pathological multi-edge / self-loop input.
                     break;
@@ -373,12 +373,11 @@ pub fn medial_axis_cancellable(
                 steps += 1;
                 let edge = edge_key(prev, cur);
                 if !visited_edge.insert(edge) {
-                    // wgim: this edge was already walked by a prior
+                    // This edge was already walked by a prior
                     // chain — stop now so we don't emit a duplicate
-                    // segment. Prior to wgim the `nexts` filter handled
-                    // this by excluding visited edges, but if a re-
-                    // entrant chain start landed us on an already-
-                    // walked edge we'd silently emit it twice.
+                    // segment. The `nexts` filter excludes visited edges,
+                    // but a re-entrant chain start could land on an
+                    // already-walked edge and emit it twice without this guard.
                     chain.push(vpts[cur]);
                     break;
                 }
@@ -408,7 +407,7 @@ pub fn medial_axis_cancellable(
     polylines
 }
 
-/// iqbu: prune spurious medial-axis branches that are short / never
+/// Prune spurious medial-axis branches that are short / never
 /// engage the bit past its flat-tip plateau. Without this step the
 /// 0.1 mm boundary sampling produces a fuzzy axis with dozens of
 /// micro-branches pointing at every curved boundary vertex — the
@@ -502,7 +501,7 @@ pub fn region_from_object(outer: &VcObject, holes: &[VcObject]) -> Option<VcRegi
 ///
 /// Returns `(polyline, depth_limited, all_zero)`:
 /// - `depth_limited` — at least one point hit either cap.
-/// - `all_zero` (idne) — every emitted Z is zero, i.e. the chain
+/// - `all_zero` — every emitted Z is zero, i.e. the chain
 ///   walks the surface without cutting anything. Happens when the
 ///   effective r-cap drops at-or-below the V-bit's flat tip
 ///   (`effective_r_cap ≤ tip_radius_mm`), or when every medial-axis
@@ -510,7 +509,7 @@ pub fn region_from_object(outer: &VcObject, holes: &[VcObject]) -> Option<VcRegi
 ///   should skip the chain and surface a `vcarve_below_tip_radius`
 ///   warning rather than emitting a useless Z=0 traversal that
 ///   silently looks like a successful cut.
-// idne: 3-tuple return surfaces `all_zero` alongside the existing
+// The 3-tuple return surfaces `all_zero` alongside the existing
 // `depth_limited` flag so the op driver can suppress no-op chains
 // instead of silently emitting Z=0 traversals. Factoring the return
 // shape into a named type would obscure the (poly, lim, all_zero)
@@ -709,7 +708,7 @@ mod tests {
         );
     }
 
-    /// Regression for the circumradius-vs-inscribed-radius fix (gjk):
+    /// Regression for the circumradius-vs-inscribed-radius fix:
     /// `nearest_boundary_distance` must measure the perpendicular drop
     /// onto each segment, not the distance to the endpoint sample. For
     /// a vertex sitting directly above the middle of a horizontal
@@ -725,7 +724,7 @@ mod tests {
         assert!(d < 5.0);
     }
 
-    /// Regression for gjk: at a re-entrant corner the inscribed-circle
+    /// Regression: at a re-entrant corner the inscribed-circle
     /// radius along the medial axis must drop to ~0, not the
     /// (potentially much larger) circumradius of the witness samples.
     /// A "+"-shaped region with a 4 mm wide cross has four such
@@ -772,7 +771,7 @@ mod tests {
         );
     }
 
-    /// iqbu: a rounded rectangle (20×10 with 2 mm corner radius)
+    /// A rounded rectangle (20×10 with 2 mm corner radius)
     /// produces a fuzzy medial axis from voronator — many micro-spurs
     /// pointing at every densified-corner sample. After pruning with
     /// `tool_radius = 2 mm` (so min branch length = 1 mm) we expect
@@ -829,7 +828,7 @@ mod tests {
         );
     }
 
-    /// iqbu: a chain shorter than `tool_radius * PRUNE_MIN_BRANCH_FACTOR`
+    /// A chain shorter than `tool_radius * PRUNE_MIN_BRANCH_FACTOR`
     /// is dropped.
     #[test]
     fn prune_drops_short_chain() {
@@ -849,7 +848,7 @@ mod tests {
         assert!(pruned.is_empty(), "0.1 mm branch should be pruned");
     }
 
-    /// iqbu: a chain whose max inscribed radius never exceeds the
+    /// A chain whose max inscribed radius never exceeds the
     /// V-bit's flat tip is dropped (would emit an all-zero-Z toolpath).
     #[test]
     fn prune_drops_chain_below_tip_radius() {
@@ -894,7 +893,7 @@ mod tests {
         );
     }
 
-    /// no0u regression: `chord_stays_in_region` must adapt its sample
+    /// Regression: `chord_stays_in_region` must adapt its sample
     /// density to the chord length. A long chord with a narrow hole
     /// sitting between two of the old fixed-8 sample positions used to
     /// pass the in-region check (the hole was invisible to the sampler)
@@ -907,10 +906,10 @@ mod tests {
         //       and 8 fixed samples at t ∈ {1/8 … 7/8}, the samples
         //       sit at x = 12.5, 25, 37.5, 50, 62.5, 75, 87.5. One
         //       sample IS at x=50 (the hole centre) so this hole IS
-        //       caught even at fixed density. To force the no0u
+        //       caught even at fixed density. To force the
         //       regression we offset the hole AWAY from any fixed
         //       sample: centred at x=44, width 0.5 mm. Fixed samples
-        //       miss it entirely; no0u's adaptive density (1 sample
+        //       miss it entirely; adaptive density (1 sample
         //       per 0.5 mm ⇒ 200 samples) catches it.
         let outer = vec![
             Point2::new(0.0, 0.0),
@@ -941,9 +940,9 @@ mod tests {
             "p1 should be in the region (sanity)"
         );
         // The chord runs along y=5, straight through the hole at x≈44.
-        // Pre-no0u with 8 fixed samples (x = 12.25, 24.5, 36.75, 49,
+        // Pre-fix with 8 fixed samples (x = 12.25, 24.5, 36.75, 49,
         // 61.25, 73.5, 85.75) — NONE of these land in [43.75, 44.25].
-        // So the chord was incorrectly declared safe. Post-no0u with
+        // So the chord was incorrectly declared safe. Post-fix with
         // 1 sample per 0.5 mm (~200 samples spaced ~0.5 mm), at least
         // one sample falls inside the hole and the function returns
         // false.

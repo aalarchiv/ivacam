@@ -13,7 +13,7 @@
 ///   • project.error, project.data.dirty, project.loading, project.gen.generating
 ///   • project.gen.simDiagnostics, project.gen.generated, project.toolpath*
 ///
-/// Selection-aware commands (80gv): object selection IS in the undo
+/// Selection-aware commands: object selection IS in the undo
 /// stack so Ctrl+Z reverts to the previous selection set. Commands
 /// with `marksDirty: false` push into history but do NOT mark the
 /// project file dirty — view-only state.
@@ -36,7 +36,7 @@ export interface Command {
   /// to undo a hundred 0.1 mm steps.
   coalesce_key?: string;
   /// Default true — exec() flips `state.dirty = true` after apply so
-  /// the project file shows unsaved changes. Selection commands (80gv)
+  /// the project file shows unsaved changes. Selection commands
   /// pass `false` so the canvas selection enters the undo stack
   /// without falsely flagging the project as edited.
   marksDirty?: boolean;
@@ -60,8 +60,8 @@ export class History {
   /// `$state` counter on the project). Cannot live in this file as a
   /// `$state` rune directly because vitest's node-only test config
   /// (frontend/vitest.config.ts) skips the Svelte plugin — every
-  /// History test would fail with "$state is not defined". jbz1 tracks
-  /// the broader test-config upgrade that would let us drop the mirror.
+  /// History test would fail with "$state is not defined". A planned
+  /// test-config upgrade would let us drop the mirror.
   private _version = 0;
   private listener: (() => void) | null = null;
 

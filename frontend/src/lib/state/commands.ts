@@ -427,7 +427,7 @@ function coalesceKeyForTextPatch(id: number, patch: Partial<TextLayer>): string 
   return `text:${id}:${keys[0]}`;
 }
 
-// ── relief sources (f60x) ────────────────────────────────────────────
+// ── relief sources ───────────────────────────────────────────────────
 
 export function addReliefSourceCommand(source: ReliefSource): Command {
   return {
@@ -491,7 +491,7 @@ export function updateReliefSourceCommand(id: number, patch: Partial<ReliefSourc
       t.reliefSources = t.reliefSources.map((rs) => (rs.id === id ? { ...rs, ...prevPatch } : rs));
       t.dirty = true;
     },
-    // rt1.12 (j7b4): single-field edits (e.g. live origin drag on the 2D
+    // Single-field edits (e.g. live origin drag on the 2D
     // canvas) coalesce so a drag is one undo entry, not one per frame.
     coalesce_key: coalesceKeyForReliefPatch(id, patch),
   };
@@ -503,7 +503,7 @@ function coalesceKeyForReliefPatch(id: number, patch: Partial<ReliefSource>): st
   return `reliefSource:${id}:${keys[0]}`;
 }
 
-// ── tabs (rt1.10) ─────────────────────────────────────────────────────
+// ── tabs ──────────────────────────────────────────────────────────────
 //
 // Tab placements are now per-op fields (`op.tabMode`, `op.tabPlacements`).
 // Add / remove / toggle go through `updateOperationCommand` with a new
@@ -589,7 +589,7 @@ export function setMachineCommand(next: MachineSettings): Command {
   };
 }
 
-/// Apply a partial WorkOffset patch (audit abdk). The X/Y/Z spinners
+/// Apply a partial WorkOffset patch. The X/Y/Z spinners
 /// + WCS picker in StockPanel route through this so each edit is
 /// undoable and the coalesce key collapses rapid spinner mashing into
 /// one history entry — same UX as the stock-dim spinners.
@@ -641,7 +641,7 @@ export function setStockCommand(patch: Partial<StockConfig>): Command {
   };
 }
 
-/// 7iej.8: undoable toggle of the program-level "group ops by tool"
+/// Undoable toggle of the program-level "group ops by tool"
 /// reorder. Mirrors setStockCommand — the wrapper (`setGroupOpsByTool`)
 /// invalidates the cached toolpath separately, since `generated` is
 /// view-only state excluded from history. No coalesce key: a checkbox
@@ -666,7 +666,7 @@ export function setGroupOpsByToolCommand(value: boolean): Command {
 
 // ── imported geometry ────────────────────────────────────────────────
 
-/// Whole-imports-array swap (wrsu). Every undoable mutation of the
+/// Whole-imports-array swap. Every undoable mutation of the
 /// imports list — add/remove a drawing, edit a per-import fileTransform,
 /// delete a layer across all imports, append text segments to imports[0]
 /// — goes through this single command. The whole-array swap is
@@ -698,7 +698,7 @@ export function setImportsCommand(
   };
 }
 
-// ── selection (80gv: view-only, marksDirty=false) ────────────────────
+// ── selection (view-only, marksDirty=false) ───────────────────────────
 
 /// Minimum view of a SelectionState the selection commands touch.
 /// Carving this out lets commands.ts stay decoupled from the
@@ -708,7 +708,7 @@ export interface SelectionTarget {
   selectionAnchorObjectId: number | null;
 }
 
-/// Selection-update command (80gv). Captures the BEFORE selection
+/// Selection-update command. Captures the BEFORE selection
 /// + anchor and the AFTER selection + anchor; apply restores AFTER,
 /// revert restores BEFORE. `marksDirty: false` so undo-able selection
 /// changes don't flag the project file as edited. `coalesce_key`
@@ -836,7 +836,7 @@ export function changeProfileOffsetCommand(opId: number, offset: ProfileOffset):
 /// Note: `settings` is per-installation (ivac.settings localStorage,
 /// outside the project snapshot). Don't flip `t.dirty` — accepting the
 /// auto-fix shouldn't mark the project file as having unsaved changes
-/// (audit zxee). The setting still persists via `project.saveSettings()`
+/// The setting still persists via `project.saveSettings()`
 /// which the ErrorToast call site fires explicitly.
 export function lowerSimResolutionCommand(suggestedCellMm: number): Command {
   let prev: { mode: 'auto' | 'manual'; cellMm: number } | null = null;

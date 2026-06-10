@@ -172,7 +172,7 @@ mod tests {
 
     /// Linear pattern: 3 instances translated dx=20. Drilled positions
     /// span all three X bands and the X range covers all three
-    /// instances. (kbx5: patterns only on `OpKind::Drill` — tests use
+    /// instances. (Patterns only on `OpKind::Drill` — tests use
     /// a tiny closed circle that the drill driver accepts.)
     #[test]
     fn linear_pattern_emits_translated_copies() {
@@ -381,12 +381,12 @@ mod tests {
         );
     }
 
-    /// 1ztc: a Polar pattern at 180° must reflect each tab/lead
+    /// A Polar pattern at 180° must reflect each tab/lead
     /// anchor point through the rotation center — the rotated instance
     /// must NOT share the original tab's world position. This is the
     /// load-bearing guarantee for re-anchoring leads/tabs under
     /// rotation: when patterns extend to Profile/Pocket (currently
-    /// Drill-only by kbx5), the tab transform must follow geometry,
+    /// Drill-only), the tab transform must follow geometry,
     /// not stay at the original world XY.
     #[test]
     fn polar_180deg_reflects_tab_anchor_through_center() {
@@ -454,7 +454,7 @@ mod tests {
             vec![profile_op(1, 1, ToolOffset::Outside)],
             vec![endmill(1, 3.0)],
         );
-        // Profile ops no longer carry a pattern (kbx5: only OpKind::Drill
+        // Profile ops no longer carry a pattern (only OpKind::Drill
         // does), so this `op_b` lands without a pattern by construction.
         let op_b = profile_op(1, 1, ToolOffset::Outside);
         let project_b = project_with(vec![op_b], vec![endmill(1, 3.0)]);

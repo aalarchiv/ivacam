@@ -72,7 +72,7 @@ pub fn fit_arc_run(points: &[Point2], tolerance_mm: f64) -> FitOutput {
     if arcs.is_empty() {
         return FitOutput::Lines(points.to_vec());
     }
-    // Last arc must end on the run's final point. nxmq: the snap
+    // Last arc must end on the run's final point. The snap
     // threshold here used to be `tolerance_mm` itself — i.e. each arc
     // chain could drift by up to one `tol` per emitted arc, and N
     // chained chains drift up to N·tol cumulatively. Use a quarter of
@@ -86,7 +86,7 @@ pub fn fit_arc_run(points: &[Point2], tolerance_mm: f64) -> FitOutput {
     let last_pt = points.last().copied();
     match (last_arc_end, last_pt) {
         (Some(a), Some(p)) if (a.x - p.x).hypot(a.y - p.y) <= snap_tol => FitOutput::Arcs(arcs),
-        // 7iej.19: the arc chain must reach the run's final point — there
+        // The arc chain must reach the run's final point — there
         // is no mixed "arcs + trailing line" output. A near-π run too short
         // to split (notably a 4-point run whose full sweep exceeds the
         // π·0.999 cap: the first arc covers 3 points, leaving 2 that can't
@@ -113,7 +113,7 @@ fn greedy_fit_from(points: &[Point2], tolerance_mm: f64) -> (usize, Option<Fitte
     // Initial 3-point fit must itself stay within tolerance (cheap sanity
     // check — the 3 points are ON the circle by construction, but radius
     // ≈ 0 or huge would already fail above).
-    // knm0: pick the CCW/CW direction from the SIGNED enclosed area of
+    // Pick the CCW/CW direction from the SIGNED enclosed area of
     // the run-so-far, not just one chord. A noisy polyline can have a
     // single chord that crosses the chord direction without the overall
     // run reversing direction; majority-by-area is the robust signal.
@@ -148,14 +148,14 @@ fn greedy_fit_from(points: &[Point2], tolerance_mm: f64) -> (usize, Option<Fitte
         }
         // Direction stability — the OVERALL signed area of the chord
         // run around the new center must preserve the CCW/CW
-        // orientation of the arc. knm0: inspecting only the last chord
+        // orientation of the arc. Inspecting only the last chord
         // misclassifies noisy inputs where a single chord direction
         // briefly flips even though the run remains monotonic.
         let new_ccw = run_direction_ccw(&points[..=j], nc);
         if new_ccw != ccw {
             break;
         }
-        // 85mj: cap total sweep STRICTLY below π. Single-arc emission
+        // Cap total sweep STRICTLY below π. Single-arc emission
         // of an exact 180° sweep has ambiguous direction — both G2 and
         // G3 with the same I/J trace the same chord/center pair on a
         // 180° arc but opposite tool paths. Force such arcs to split

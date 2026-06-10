@@ -68,7 +68,7 @@
           value={op.leadIn ?? 5}
           onchange={(e) => {
             const v = parseFloat((e.currentTarget as HTMLInputElement).value);
-            // Don't write negative values back (audit 08zk): the prior
+            // Don't write negative values back: the prior
             // silent-clamp-to-0 looked broken to users who typed -1
             // expecting either an error or a bounce. Refuse the change
             // and the visible input snaps back to the stored value.

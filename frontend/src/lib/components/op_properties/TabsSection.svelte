@@ -26,8 +26,8 @@
   let { op, patch }: Props = $props();
 
   /// Invalid-feedback flags for Width / Height — surface the user's
-  /// typo with a red border instead of silently rejecting the change
-  /// (audit 08zk). Reset on a successful commit.
+  /// typo with a red border instead of silently rejecting the change.
+  /// Reset on a successful commit.
   let tabWidthInvalid = $state(false);
   let tabHeightInvalid = $state(false);
 

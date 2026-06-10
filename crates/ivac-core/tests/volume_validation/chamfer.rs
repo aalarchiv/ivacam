@@ -1,5 +1,5 @@
-//! End-to-end chamfer validation harness (7krz; refactored onto
-//! `common::` scaffolding by esnw).
+//! End-to-end chamfer validation harness (refactored onto
+//! `common::` scaffolding).
 //!
 //! Runs a real chamfer CAM job — 8 mm Ø 90° v-bit, 5 mm requested
 //! chamfer width on one side of a rectangle, 10 mm stock — through the
@@ -26,9 +26,8 @@
 //! 2. [`chamfer_open_edge_emits_lateral_cut_at_each_pass`] — chamfer
 //!    a single open edge (the user-requested "chamfer one side"
 //!    case). FAILS because of the open-polyline `multi_pass` cascade
-//!    bug (oulh) — pass 1 cuts at Z=-1, pass 2/3/4 plunge to -4 at
-//!    the end position without ever walking back. Will pass once
-//!    oulh is fixed; left in as a regression pin.
+//!    bug — pass 1 cuts at Z=-1, pass 2/3/4 plunge to -4 at
+//!    the end position without ever walking back. Left in as a regression pin.
 
 // Test crosses f64 (geometry) ↔ f32 (heightmap/STL) at a few cast
 // sites; allowed at file scope same as the common harness.
@@ -170,13 +169,13 @@ fn chamfer_closed_rectangle_volume_matches_closed_form() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Test 2: single open edge — REGRESSION PIN for oulh
+// Test 2: single open edge — REGRESSION PIN (open-edge pass direction)
 // ─────────────────────────────────────────────────────────────────────
 
 /// Chamfer one edge of the rectangle as an OPEN line segment. With
 /// `step = -1 mm` (the default) and a 4 mm cone-tip depth, the
 /// pipeline emits a lateral cut at each of the four scheduled Z
-/// levels (-1, -2, -3, -4). Before oulh's fix, only the first pass
+/// levels (-1, -2, -3, -4). Before the fix, only the first pass
 /// at Z=-1 cut laterally; passes 2-4 plunged at the segment's
 /// trailing endpoint without ever walking back. The fix has
 /// `multi_pass` alternate walk direction between passes for open
@@ -206,7 +205,7 @@ fn chamfer_open_edge_emits_lateral_cut_at_each_pass() {
 
     // Dump the STL early so the mesh lands on disk even when the
     // assertions below panic — `--ignored` against this test is the
-    // hands-on repro path for oulh / v5az.
+    // hands-on repro path for the open-edge / stock-floor regressions.
     let n_bytes = dump_stl(&hm, "/tmp/ivac_chamfer_open.stl", -(STOCK_THICK as f32));
     eprintln!("[7krz/open] STL → /tmp/ivac_chamfer_open.stl ({n_bytes} bytes)");
 

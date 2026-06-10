@@ -55,7 +55,7 @@
     return set;
   });
 
-  /// eb8.7: orphan-source diagnostics for an op. Returns the object ids
+  /// Orphan-source diagnostics for an op. Returns the object ids
   /// or layer names that the op points at but that the current import
   /// doesn't carry. Used by both the status chip and the inline
   /// 'Re-pick' shortcut on the row.
@@ -78,16 +78,14 @@
   }
 
   function statusFor(op: OpEntry): { label: string; tone: 'ok' | 'warn' | 'bad'; reason: string } {
-    // gseb: program-only ops (Pause, Homing, Probe, CycleMarker,
+    // Program-only ops (Pause, Homing, Probe, CycleMarker,
     // GcodeInclude) carry no tool / source / geometry by design.
     // They emit a small fixed gcode sequence (M0, G28, G38.2, a
     // comment marker, or an included file) and never touch a
     // spindle / cutter. The standard validation chain below would
     // mark them red for 'Tool #0 missing'. Short-circuit to OK so
     // the row reads as a deliberate program-flow building block
-    // instead of a config error. Pre-gseb only the Pause branch
-    // short-circuited; the other four kinds incorrectly tripped
-    // the missing-tool red X (rt1.34 / 8n4k / rxm9 follow-up).
+    // instead of a config error.
     if (op.kind === 'pause') {
       return {
         label: '✓',
@@ -187,7 +185,7 @@
     return { label: '✓', tone: 'ok', reason: 'Up to date with the last Generate.' };
   }
 
-  /// 4kzy: true when this op has at least one warning that's listed in
+  /// True when this op has at least one warning that's listed in
   /// the warnings panel (pipeline `generated.warnings` keyed by op_id),
   /// so the status badge can act as a "show it in the panel" button.
   /// Status tones from non-panel reasons (missing tool, orphan source)
@@ -200,7 +198,7 @@
     const wasSelected = project.sel.selectedOpId === id;
     project.sel.selectedOpId = wasSelected ? null : id;
     if (!wasSelected) {
-      // gucf: highlight the op's source objects on the canvas so the
+      // Highlight the op's source objects on the canvas so the
       // user can see what this op will cut. Only act when sourceObjects
       // is explicitly set — when undefined the op runs over "all" or
       // "all in these layers", and overwriting the canvas selection
@@ -283,7 +281,7 @@
   }
 
   /// Listbox arrow-key nav with Alt-Up/Down to reorder rows (the
-  /// drag-grip's mouse-only counterpart, audit xc3a). Roving tabindex
+  /// drag-grip's mouse-only counterpart). Roving tabindex
   /// on each row: only the selected op is in the tab order.
   function onListKey(e: KeyboardEvent) {
     const ops = project.data.operations;
@@ -322,19 +320,19 @@
 </script>
 
 <div class="ops" class:collapsed={!active}>
-  <!-- audit xc3a: dropped nested `role="button" tabindex="0"` on the
+  <!-- Dropped nested `role="button" tabindex="0"` on the
        header — the caret + add buttons inside are already focusable, so
        the wrapper-button created duplicate Tab stops + an Enter shortcut
        that overlapped with the caret's own activate behavior.
-       audit o1od: shape now matches TextList/Stock .group-head — grid
+       Shape matches TextList/Stock .group-head — grid
        layout with accent-tinted bg + border so the three accordion
        panels read as one design language. -->
-  <!-- a11y note (hmrc): the wrapper div is a mouse-convenience click
+  <!-- a11y note: the wrapper div is a mouse-convenience click
        area for the whole header row. Keyboard activation lives on the
        inner .caret-btn (focusable <button> that calls onActivate); this
-       wrapper is intentionally not in the Tab sequence — per the audit-
-       xc3a comment above — so it doesn't create a duplicate Tab stop or
-       Enter shortcut that overlaps with the caret's own activation. -->
+       wrapper is intentionally not in the Tab sequence so it doesn't
+       create a duplicate Tab stop or Enter shortcut that overlaps with
+       the caret's own activation. -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="group-head" onclick={onActivate}>
@@ -373,7 +371,7 @@
     {/if}
 
     {#if project.data.operations.length > 1}
-      <!-- l8lk: project-level tool-change-order optimization. Groups
+      <!-- Project-level tool-change-order optimization. Groups
            consecutive same-tool ops so a T1/T2/T1 program emits one
            tool change instead of two. Pin individual ops (in the op
            panel) to lock a stability-critical order. -->
@@ -454,7 +452,7 @@
               <span class="name">{op.name}</span>
               <span class="tool"
                 >{#if isProgramOnlyOp(op.kind)}
-                  <!-- gseb: program-only ops carry no cutter. Render
+                  <!-- Program-only ops carry no cutter. Render
                        a dash with the kind label so the row reads as
                        a deliberate program-flow building block instead
                        of an unconfigured cutting op. -->
@@ -525,7 +523,7 @@
 </div>
 
 <style>
-  /* l8lk: project-level tool-grouping toggle above the ops list. */
+  /* Project-level tool-grouping toggle above the ops list. */
   .group-by-tool {
     display: flex;
     align-items: center;
@@ -725,7 +723,7 @@
   .status.bad {
     color: var(--error);
   }
-  /* 4kzy: status badge as a button when it links to a panel warning. */
+  /* Status badge as a button when it links to a panel warning. */
   .status-btn {
     background: transparent;
     border: 0;
@@ -766,7 +764,7 @@
     color: var(--error);
     background: color-mix(in srgb, var(--error) 12%, transparent);
   }
-  /* eb8.7: inline Re-pick shortcut on rows whose source references
+  /* Inline Re-pick shortcut on rows whose source references
      objects / layers that no longer exist in the current import.
      Disabled state surfaces a tooltip telling the user to select
      objects first. */

@@ -1,4 +1,4 @@
-//! Chamfer / edge break (rt1.18 — Estlcam `Prog_Fasen`).
+//! Chamfer / edge break.
 //!
 //! A chamfer op walks a V-bit along the source contour at a single
 //! constant Z below the workpiece surface. The cone of the V-bit
@@ -31,7 +31,7 @@
 //!     D     = (width - tip_radius) / tan(α)
 //! ```
 //!
-//! **e63q**: the pre-fix formula was `D = width / tan(α)` — ignoring
+//! **Bug fix**: the pre-fix formula was `D = width / tan(α)` — ignoring
 //! the tip flat, the cone was lowered by `tip_radius / tan(α)` too
 //! much, producing a chamfer width of `width + tip_radius` instead of
 //! `width`. For a 0.3mm-tip 60° V-bit cutting a 1mm chamfer, the
@@ -44,11 +44,11 @@
 //! a pinned final Z. The cone tip's vertical descent from the work
 //! surface down to that Z, however, is a plunge into solid stock —
 //! it has to follow the tool's normal stepdown schedule like any
-//! other op (00ia: forcing single-pass snapped V-bits on deep
+//! other op (forcing single-pass snapped V-bits on deep
 //! chamfers). The constant-Z claim only applies to the contour
 //! traversal, not to the initial descent.
 //!
-//! ## Physical reach cap (uo1t)
+//! ## Physical reach cap
 //!
 //! A V-bit can only engage the workpiece as long as the cone is the
 //! thing touching it. Past the cone the cutter has shank — engaging
@@ -70,7 +70,7 @@
 /// perfectly pointed bit; commonly 0.1–1 mm for engraving / sign-
 /// making cutters). The flat means the chamfer width at z=0 is
 /// `tip_radius + D * tan(α)` rather than `D * tan(α)` — solving for
-/// D gives `(width - tip_radius) / tan(α)`. (e63q)
+/// D gives `(width - tip_radius) / tan(α)`.
 ///
 /// Pure cone math with no tool-reach awareness — callers that have
 /// the tool geometry should prefer [`chamfer_depth_capped`].
@@ -176,7 +176,7 @@ mod tests {
         let _ = chamfer_depth(1.0, -5.0, 0.0);
     }
 
-    /// e63q: 60° V-bit with a 0.3mm tip flat cutting a 1mm chamfer
+    /// 60° V-bit with a 0.3mm tip flat cutting a 1mm chamfer
     /// must produce a chamfer width of EXACTLY 1mm at z=0 — the cone
     /// math must subtract the tip radius before dividing by tan(half).
     /// Pre-fix the formula was D = 1/tan(30°) = -1.732 → actual
@@ -201,7 +201,7 @@ mod tests {
         );
     }
 
-    /// e63q: a width <= `tip_radius` is impossible — the cutter is
+    /// A width <= `tip_radius` is impossible — the cutter is
     /// already wider than the requested chamfer at z=0. The function
     /// saturates at z=0 rather than emitting an upward (positive) Z.
     #[test]
@@ -211,7 +211,7 @@ mod tests {
         assert!(z.abs() < 1e-9, "expected 0.0 (no cut), got {z}");
     }
 
-    /// uo1t: width cap = (diameter - `tip_diameter`) / 2. A 6mm V-bit
+    /// Width cap = (diameter - `tip_diameter`) / 2. A 6mm V-bit
     /// with 0mm tip can cut a max chamfer width of 3mm.
     #[test]
     fn width_cap_uses_cone_span() {
@@ -224,7 +224,7 @@ mod tests {
         assert_eq!(chamfer_width_cap_mm(2.0, 5.0), 0.0);
     }
 
-    /// uo1t acceptance: `chamfer_depth_capped(10`, 60) on a 6mm V-bit
+    /// Acceptance test: `chamfer_depth_capped(10`, 60) on a 6mm V-bit
     /// emits a warning (clamped=true) and returns Z clamped to the
     /// physical reach (= cone span / tan(30°) = 3 / 0.5773 ≈ 5.196).
     #[test]
@@ -241,9 +241,9 @@ mod tests {
     }
 
     /// In-range widths pass through unchanged (no clamp, no warning).
-    /// e63q: with `tip_diameter=0.1` (`tip_radius=0.05`) and a 60° V-bit,
+    /// With `tip_diameter=0.1` (`tip_radius=0.05`) and a 60° V-bit,
     /// chamfering a 1mm width gives `D = (1 - 0.05) / tan(30°) ≈
-    /// -1.645 mm` (NOT -1.732, which was the pre-e63q bug). The
+    /// -1.645 mm` (NOT -1.732, which was the pre-fix bug). The
     /// `effective_width_mm` field still reflects the user's requested
     /// width (1.0) — that's what actually got carved at z=0.
     #[test]

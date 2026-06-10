@@ -39,9 +39,8 @@ export type LineOwner = { kind: 'object'; objectId: number } | { kind: 'toolpath
 
 /// A builder that renders fat lines (Line2 / LineSegments2). The host
 /// iterates these for the cross-cutting material effects — preview line
-/// width (68ab), the live canvas `resolution` uniform (must track canvas
-/// size or the lines render wrong), and wireframe visibility (preview
-/// mode).
+/// width, the live canvas `resolution` uniform (must track canvas size
+/// or the lines render wrong), and wireframe visibility (preview mode).
 export interface LineBuilder extends Builder {
   setLineWidth(lw: number): void;
   setResolution(w: number, h: number): void;

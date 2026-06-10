@@ -33,7 +33,7 @@
   import ProbeSection from './op_properties/ProbeSection.svelte';
   import GcodeIncludeSection from './op_properties/GcodeIncludeSection.svelte';
   import CycleMarkerSection from './op_properties/CycleMarkerSection.svelte';
-  // d0mr: shared op-property styling lives in a plain CSS module so we
+  // Shared op-property styling lives in a plain CSS module so we
   // don't need 53 :global(.props X) rules in the scoped style block
   // below. Vite static-imports this once; the .props prefix keeps the
   // selectors namespaced.
@@ -87,7 +87,7 @@
     op == null ? null : (project.data.tools.find((t) => t.id === op.toolId)?.defaultStep ?? null),
   );
   /// Tool defaults that the per-op feed / plunge fields inherit when
-  /// unset. Placeholders below show these as concrete numbers (audit-bv6).
+  /// unset. Placeholders below show these as concrete numbers.
   const toolFeedRate = $derived<number | null>(
     op == null ? null : (project.data.tools.find((t) => t.id === op.toolId)?.feedRate ?? null),
   );
@@ -189,7 +189,7 @@
   {#if !op}
     <p class="empty" class:embedded-empty={embedded}>Select an operation in the list to edit it.</p>
   {:else if op.kind === 'pause'}
-    <!-- zt1p: program-only kinds delegate to a dedicated *Section, same as
+    <!-- Program-only kinds delegate to a dedicated *Section, same as
          the geometry kinds — one rule for where a kind's panel lives. -->
     <PauseSection {op} {patch} />
   {:else if op.kind === 'homing'}
@@ -201,7 +201,7 @@
   {:else if op.kind === 'cycle_marker'}
     <CycleMarkerSection {op} {patch} />
   {:else if op.kind === 'relief_mill'}
-    <!-- f60x: relief surfacing follows an image-derived Z-surface, not
+    <!-- Relief surfacing follows an image-derived Z-surface, not
          source geometry — name + tool + the relief section only. -->
     <label class="row">
       <span>Name</span>
@@ -251,7 +251,7 @@
     </label>
     <ReliefMillSection {op} {patch} />
   {:else if op.kind === 'raster_engrave'}
-    <!-- rt1.12: laser raster engraving follows an image-derived power
+    <!-- Laser raster engraving follows an image-derived power
          field, not source geometry — name + tool + the raster section. -->
     <label class="row">
       <span>Name</span>
@@ -421,7 +421,7 @@
                 <option value={layer.name}>"{layer.name}"</option>
               {/each}
             {/if}
-            <!-- y8wv: text layers are selectable sources too. Each
+            <!-- Text layers are selectable sources too. Each
                  TextLayer's rendered geometry lives on the synthetic
                  layer `__text_<id>` (the same value AddTextDialog seeds
                  the engrave op with), so listing it here makes the text
@@ -1039,13 +1039,13 @@
       <ThreadSection {op} {patch} />
     {/if}
 
-    <!-- Standalone helix op was removed (audit-sue): users get helical
+    <!-- Standalone helix op was removed: users get helical
          plunge by adding a Pocket and setting Plunge → Helix in the
          Cut section. The OpKind 'helix' value is no longer in the
          union so this branch is unreachable; kept as a comment for
          the eventual standalone-helix-emitter feature reintroduction. -->
 
-    <!-- dp6b: group label. Consecutive enabled ops sharing the same
+    <!-- Group label. Consecutive enabled ops sharing the same
          value emit `; === GROUP: <name> ===` only ONCE at the entry —
          useful for marking rough / finish / drill / chamfer phases in
          the G-code stream. Collapsed by default; empty = no group. -->
@@ -1066,7 +1066,7 @@
           oninput={(e) => patch('group', (e.currentTarget as HTMLInputElement).value)}
         />
       </label>
-      <!-- l8lk: pin this op's position when the project-level "Group ops
+      <!-- Pin this op's position when the project-level "Group ops
            by tool" reorder is on. A pinned op is a fixed barrier. -->
       <label
         class="row"

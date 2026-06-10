@@ -1,5 +1,5 @@
 //! Cut-direction / winding enforcement and approach-point rotation. Split
-//! out of `offsets.rs` (6yst). Owns the approach-point far-rotation
+//! out of `offsets.rs`. Owns the approach-point far-rotation
 //! diagnostic sink (drained by the parent's `OffsetDiagnostics`).
 
 use super::{offset_signed_area, reverse_offset, PolylineOffset};
@@ -34,12 +34,12 @@ pub enum CutContext {
 /// around an island inside a pocket = Outer (the cutter is outside the
 /// island).
 ///
-/// q57s: for a LEFT-hand spindle (`SpindleDirection::Ccw`, M4 mode — left-
-/// hand cutter, mirror tooling), climb and conventional are physically
-/// flipped because the cutting edge rotates the other way. The truth table
-/// above is XOR'd with the spindle bit so that the requested intent
-/// ("climb" / "conventional") matches the physical cut on either spindle.
-/// Pre-q57s, climb-vs-conventional was silently inverted on M4 spindles —
+/// For a LEFT-hand spindle (`SpindleDirection::Ccw`, M4 mode — left-hand
+/// cutter, mirror tooling), climb and conventional are physically flipped
+/// because the cutting edge rotates the other way. The truth table above is
+/// XOR'd with the spindle bit so that the requested intent ("climb" /
+/// "conventional") matches the physical cut on either spindle.
+/// Previously, climb-vs-conventional was silently inverted on M4 spindles —
 /// "climb" picked CCW geometry on inner-pocket regardless of which way
 /// the cutter was rotating.
 pub fn enforce_winding(
@@ -65,7 +65,7 @@ pub fn enforce_winding(
         (CutContext::Outer, CutDirection::Climb) => true,
         (CutContext::Skip, _) => return,
     };
-    // q57s: flip the geometric winding for left-hand spindles so the
+    // Flip the geometric winding for left-hand spindles so the
     // physical chipload direction matches the user's climb/conventional
     // intent regardless of M3/M4.
     let want_ccw = match spindle {
@@ -78,7 +78,7 @@ pub fn enforce_winding(
     }
 }
 
-/// kzz9: any closed offset whose nearest segment-start lands more than
+/// Any closed offset whose nearest segment-start lands more than
 /// [`APPROACH_POINT_WARN_MM`] from the user-picked approach point gets
 /// rotated anyway (preserving the prior behaviour), but the distance is
 /// recorded in this thread-local so the per-op driver can surface a
@@ -102,7 +102,7 @@ pub(super) fn take_approach_point_far_rotations() -> Vec<ApproachPointFarRotatio
     APPROACH_POINT_FAR.with(|s| std::mem::take(&mut *s.borrow_mut()))
 }
 
-/// kzz9: distance threshold (mm) above which [`rotate_offsets_to_approach_point`]
+/// Distance threshold (mm) above which [`rotate_offsets_to_approach_point`]
 /// records a far-rotation event. The chosen value is a rule-of-thumb
 /// — most users place the approach point right on the boundary, so any
 /// hit > 10 mm is almost certainly stale geometry (the user moved the
@@ -110,12 +110,12 @@ pub(super) fn take_approach_point_far_rotations() -> Vec<ApproachPointFarRotatio
 pub const APPROACH_POINT_WARN_MM: f64 = 10.0;
 
 /// Rotate each CLOSED offset's segment list so the first segment's
-/// start is closest to `ap` (rt1.26 / Estlcam Anfahrpunkt). Open
+/// start is closest to `ap` (the user-picked entry XY / approach point). Open
 /// offsets (zigzag / spiral / trochoidal strokes) are left alone —
 /// their winding has no rotational symmetry to exploit. The cutter's
 /// plunge / lead-in then happens at the user-picked entry XY.
 ///
-/// kzz9: when the chosen `ap` ends up farther than
+/// When the chosen `ap` ends up farther than
 /// [`APPROACH_POINT_WARN_MM`] from EVERY closed offset's nearest vertex
 /// the rotation still falls back to the nearest start, but a record is
 /// stashed in the thread-local drained by
@@ -176,7 +176,7 @@ pub fn apply_cut_direction(
     use crate::project::OpKind;
     use crate::project::ToolOffset;
     let _ = finish_default_for_outside_profile_only; // currently unused; kept for future hook
-                                                     // kbx5 step 2: cut directions live on ContourParams. Non-contour
+                                                     // Cut directions live on ContourParams. Non-contour
                                                      // ops fall back to Conventional (the existing default).
     let (main, finish) = op.contour_params().map_or(
         (
@@ -208,7 +208,7 @@ pub fn apply_cut_direction(
             | OpKind::Thread { .. }
             | OpKind::Chamfer { .. }
             | OpKind::Helix
-            // 8n4k / rxm9: program-only kinds (Pause / Homing /
+            // Program-only kinds (Pause / Homing /
             // Probe / CycleMarker / GcodeInclude) never reach this
             // winding pass — they emit inline above run_per_op's
             // body marker — but list them explicitly so a future
@@ -219,14 +219,14 @@ pub fn apply_cut_direction(
             | OpKind::CycleMarker { .. }
             | OpKind::GcodeInclude { .. }
             | OpKind::VCarve { .. }
-            // 3g6u/b7qz: T-slot and dovetail ride the centerline (no
+            // T-slot and dovetail ride the centerline (no
             // inside/outside winding to enforce) just like Engrave.
             | OpKind::TSlot { .. }
             | OpKind::Dovetail { .. }
-            // f60x: relief surfacing has its own drop-cutter driver and
+            // Relief surfacing has its own drop-cutter driver and
             // never enters the offset cascade — no winding to enforce.
             | OpKind::ReliefMill { .. }
-            // rt1.12: raster engrave has its own scanline driver; no
+            // Raster engrave has its own scanline driver; no
             // vector winding to enforce.
             | OpKind::RasterEngrave { .. } => CutContext::Skip,
         }

@@ -21,7 +21,7 @@ pub struct HolderProfile {
 }
 
 impl HolderProfile {
-    // WHY: 3oly — T-slot cutters need an extra narrow neck segment
+    // WHY: T-slot cutters need an extra narrow neck segment
     // between the head (the flutes) and the shank/holder above. The
     // neck is the part that sits *inside* the cut slot while the head
     // rotates: it must be modelled separately so the collision check
@@ -30,7 +30,7 @@ impl HolderProfile {
     /// neither a holder nor a shank diameter is set: there's nothing
     /// above the cutting flutes to check against.
     ///
-    /// ityc: `LaserBeam` tools have no physical body — the "tool" is a
+    /// `LaserBeam` tools have no physical body — the "tool" is a
     /// focused beam, not a cutter / shank. Even when the user sets a
     /// shank/holder (because the laser shares a tool table with mill
     /// tools), there's no shaft to drag through tall walls. Return
@@ -44,7 +44,7 @@ impl HolderProfile {
         if tool.holder.is_none() && tool.shank_diameter_mm.is_none() {
             return None;
         }
-        // 8g4w: ToolProfile::radius() reports the LARGEST cross-section
+        // ToolProfile::radius() reports the LARGEST cross-section
         // along the cutter (max of segments for FormProfile, head radius
         // for TSlot, etc). Pulling `cutting_r` from `tool.diameter * 0.5`
         // is fine for cylindrically-uniform cutters but loses the wide-
@@ -57,7 +57,7 @@ impl HolderProfile {
         // HolderCollision warnings on form cutters).
         let cutting_r =
             form_profile_max_radius(tool).unwrap_or_else(|| (tool.diameter * 0.5).max(0.0));
-        // ityc: drills with no `flute_length_mm` set previously left the
+        // Drills with no `flute_length_mm` set previously left the
         // shank starting at z=0 above the tip — so any wall above the
         // tip plane within the shank radius alarmed as a collision.
         // Real twist drills have a flute (helix) running the full body
@@ -79,7 +79,7 @@ impl HolderProfile {
 
         // Sample list anchored at the tip: bottom of flutes, top of
         // flutes / start of shank, then holder transitions.
-        // (z5yw: the former T-slot neck segment is gone — a folded-in
+        // (The former T-slot neck segment is gone — a folded-in
         // T-slot is a FormProfile whose neck lives in its (z, r) cut
         // profile; this holder/shank model covers the stock above the
         // flutes generically.)
@@ -96,7 +96,7 @@ impl HolderProfile {
         // that walk it.
         points.push((z_cursor, shank_r));
 
-        // q0kc: explicit shank length (stickout) between top of flutes
+        // Explicit shank length (stickout) between top of flutes
         // and bottom of the holder. Defaults to 0 (legacy) so the
         // holder sits on the flutes directly. The shank segment is
         // emitted at `shank_r` from `z_cursor` to `z_cursor + stickout`
@@ -112,7 +112,7 @@ impl HolderProfile {
 
         // Holder bottom now sits at `z_cursor` (flute_top + neck +
         // stickout). Old code assumed stickout = 0, which silently
-        // pulled the holder envelope down onto the flutes — see q0kc.
+        // pulled the holder envelope down onto the flutes.
         if let Some(holder) = tool.holder {
             match holder {
                 HolderShape::Cylinder {
@@ -210,7 +210,7 @@ impl HolderProfile {
     }
 
     /// Cutting (flute) radius at the very tip — `points[0].1` by
-    /// construction. Used by `holder_check` (hrex) to distinguish the
+    /// construction. Used by `holder_check` to distinguish the
     /// cutter envelope (where material *is meant* to be removed) from
     /// the shank/holder envelope above the flutes.
     #[must_use]
@@ -232,7 +232,7 @@ impl HolderProfile {
         &self.points
     }
 
-    /// 7iej.11: lowest `z_above_tip` where the envelope radius first
+    /// Lowest `z_above_tip` where the envelope radius first
     /// reaches `r`, linearly interpolating across the crossing segment.
     /// `Some(0.0)` for `r <= 0` (the tip covers any non-positive radius);
     /// `None` when the profile never reaches `r`. Walks the sample list
@@ -275,7 +275,7 @@ impl HolderProfile {
     }
 }
 
-/// 8g4w: max profile radius for a form cutter, mirroring the same fallback
+/// Max profile radius for a form cutter, mirroring the same fallback
 /// the `ToolProfile::FormProfile` builder uses (`tip_diameter` and diameter,
 /// whichever is larger, capped at zero). Returns `None` for non-form tools
 /// so the regular `tool.diameter * 0.5` path keeps owning those cases.
@@ -285,7 +285,7 @@ fn form_profile_max_radius(tool: &ToolEntry) -> Option<f64> {
     }
     let base_r = (tool.diameter * 0.5).max(0.0);
     let tip_r = tool.tip_diameter.map_or(base_r, |d| (d * 0.5).max(0.0));
-    // 1wit: when a real profile is entered, the widest sample radius is
+    // When a real profile is entered, the widest sample radius is
     // the footprint the holder check must clear (the same value
     // `ToolProfile::FormProfile` reports via `radius()`).
     let sample_max = tool
@@ -417,7 +417,7 @@ mod tests {
 
     #[test]
     fn stickout_pushes_holder_up_above_flutes() {
-        // q0kc: a 6 mm endmill with 15 mm flutes + 20 mm stickout +
+        // A 6 mm endmill with 15 mm flutes + 20 mm stickout +
         // 30 mm cylinder holder. Without stickout the holder bottom
         // sat at z=15; with stickout=20 it now sits at z=35.
         let mut t = tool_with(
@@ -455,7 +455,7 @@ mod tests {
 
     #[test]
     fn no_stickout_field_is_legacy_zero() {
-        // q0kc back-compat: a tool with `stickout_length_mm = None`
+        // Back-compat: a tool with `stickout_length_mm = None`
         // produces the same envelope as before — holder right above
         // the flutes.
         let t = tool_with(
@@ -471,13 +471,13 @@ mod tests {
         assert!((p.total_length() - 45.0).abs() < 1e-9);
     }
 
-    /// 8g4w: a form cutter whose `tool.diameter` advertises the *tip*
+    /// A form cutter whose `tool.diameter` advertises the *tip*
     /// diameter but whose actual envelope grows past the tip along the
     /// flute (large-base form bit) was previously reporting
     /// `cutting_radius() = tip_diameter * 0.5`. The carve sweep, on the
     /// other hand, uses `ToolProfile::radius()` = max of segments. The
     /// mismatch flagged carved cells `tip_r < r ≤ max_r` as wall
-    /// collisions in the holder check. After 8g4w the holder's cutting
+    /// collisions in the holder check. After the fix the holder's cutting
     /// envelope mirrors the carve envelope (the max profile radius) so
     /// `holder_check` skips the same cells the sweep just lowered.
     #[test]

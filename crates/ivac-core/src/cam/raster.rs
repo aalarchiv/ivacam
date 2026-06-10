@@ -1,4 +1,4 @@
-//! Laser raster engraving — per-pixel power mapping (rt1.12, phase 1).
+//! Laser raster engraving — per-pixel power mapping (phase 1).
 //!
 //! Pure brightness-grid → laser-power (`S`) mapping. It operates on the
 //! same normalized-brightness `[0, 1]` row-major grid that
@@ -115,7 +115,7 @@ impl PowerCurve {
 
 /// Power at brightness `b ∈ [0, 1]`: `max` at black (0), `min` at white
 /// (1). Linear in between, rounded to the nearest integer `S`.
-// iynx: rounded + floored at 0.0 and bounded above by max(min, max) (both
+// Rounded + floored at 0.0 and bounded above by max(min, max) (both
 // u32), so the f32→u32 cast is intentional and in-range.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn lerp_power(min: u32, max: u32, b: f32) -> u32 {

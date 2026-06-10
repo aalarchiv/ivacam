@@ -1,4 +1,4 @@
-//! rt1.12 laser raster-engrave driver (phase 3).
+//! Laser raster-engrave driver (phase 3).
 //!
 //! Resolves the op's [`crate::project::ReliefSource`] brightness grid,
 //! maps it through [`crate::cam::raster::PowerCurve`] to a per-pixel
@@ -25,7 +25,7 @@ use crate::project::{Op, OpKind, Project, ReliefSource};
 
 /// Hard ceiling on resampled pixel count — beyond this the line-buffered
 /// post would balloon memory. A real >16 Mpx engrave wants the streaming
-/// emit (rt1.12 follow-up); until then we warn and skip rather than OOM.
+/// emit (streaming follow-up); until then we warn and skip rather than OOM.
 const MAX_RASTER_PIXELS: usize = 16_000_000;
 
 fn find_source(project: &Project, id: u32) -> Option<&ReliefSource> {
@@ -91,7 +91,7 @@ fn resample(
 /// Emit a laser raster-engrave op. No-op when the source is missing /
 /// empty or the machine isn't a laser (the `would_emit` gate normally
 /// screens those out); over-large grids warn and skip.
-// iynx: `unnecessary_wraps` — the Result<(), _> return is never an Err
+// `unnecessary_wraps` — the Result<(), _> return is never an Err
 // today, but the uniform op-driver signature (sibling run_*_op fns all
 // return Result, dispatched polymorphically) keeps the wrapper.
 #[allow(

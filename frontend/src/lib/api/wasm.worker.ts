@@ -1,4 +1,4 @@
-// 5ue0: Web Worker host for the wasm CAM client. Runs the blocking
+// Web Worker host for the wasm CAM client. Runs the blocking
 // pipeline OFF the main thread so the UI stays responsive, and streams
 // per-op events back via postMessage as they are produced — postMessage
 // enqueues fine even while this worker is synchronously busy inside the

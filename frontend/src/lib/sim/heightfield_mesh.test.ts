@@ -1,7 +1,7 @@
 /// Pure-logic tests for the heightfield-mesh helpers that don't need
 /// a WebGL context. The HeightfieldMesh / HeightfieldMeshPyramid
 /// classes themselves are exercised by the e2e + integration runs;
-/// here we cover the budget-driven LOD selection knob (9tba) so the
+/// here we cover the budget-driven LOD selection knob so the
 /// state-machine math is locked down independently of Three.js.
 
 import { describe, expect, it } from 'vitest';

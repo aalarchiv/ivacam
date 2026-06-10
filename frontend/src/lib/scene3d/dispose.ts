@@ -3,7 +3,7 @@
 /// `renderer.dispose()` frees the GL context but does NOT walk the scene
 /// graph, so every builder that owns a `THREE.Group` must free its
 /// children's geometry + materials explicitly or they leak on every
-/// rebuild / pane swap (audit 7iej.4). Extracted from Scene3D.svelte so
+/// rebuild / pane swap. Extracted from Scene3D.svelte so
 /// each builder class can reuse one implementation.
 
 import * as THREE from 'three';

@@ -6,7 +6,7 @@
 /// The mesh is cached by a shape key so the 60×/sec playhead ticks only
 /// move + retint it instead of churning a fresh BufferGeometry per frame.
 ///
-/// Extracted from Scene3D.svelte (4w2f). Owns its THREE.Group.
+/// Extracted from Scene3D.svelte. Owns its THREE.Group.
 
 import * as THREE from 'three';
 import type { GenerateResponse } from '../api/types';

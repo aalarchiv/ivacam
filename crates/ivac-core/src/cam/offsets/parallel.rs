@@ -1,6 +1,6 @@
 //! Offset primitives — the cavalier_contours parallel offset for
 //! polylines-with-arcs and the clipper2 inward pocket cascade, plus overcut
-//! and the VcObject<->Polyline adapters. Split out of `offsets.rs` (6yst).
+//! and the VcObject<->Polyline adapters. Split out of `offsets.rs`.
 //! Owns the parallel-offset / cascade-truncation / nocontour diagnostic
 //! sinks (drained by the parent's `OffsetDiagnostics`).
 
@@ -22,7 +22,7 @@ use clipper2_rust::{inflate_paths_d, EndType, JoinType, PathD, PathsD, Point as 
 /// which silently flips the inward/outward sign for CW-encoded
 /// circles and gives wrong-side profile offsets.
 ///
-/// **Precondition (jz8l):** the bow term `½r²(θ − sinθ)` is the *minor*
+/// **Precondition:** the bow term `½r²(θ − sinθ)` is the *minor*
 /// circular-segment area, exact only for included angles θ ≤ 180°
 /// (`|bulge| ≤ 1`). For a major arc (`|bulge| > 1`, θ > 180°) the true
 /// enclosed region is the complement (circle minus minor segment), so the
@@ -111,7 +111,7 @@ pub fn parallel_offset_object(obj: &VcObject, delta: f64) -> Vec<PolylineOffset>
     // taking down the whole pipeline — the user gets a partial result
     // plus a warning instead of a 500.
     //
-    // z4t6: previously the catch_unwind path only emitted a `tracing::warn`,
+    // Previously the catch_unwind path only emitted a `tracing::warn`,
     // which is invisible to the UI — the operation silently produced
     // empty offsets and the user shipped gcode missing the contour. We
     // now stash a structured `ParallelOffsetPanic` record into a
@@ -217,7 +217,7 @@ pub(super) fn take_parallel_offset_panics() -> Vec<ParallelOffsetPanic> {
     PARALLEL_OFFSET_PANICS.with(|s| std::mem::take(&mut *s.borrow_mut()))
 }
 
-/// mdpo: `pocket_cascade_with_islands` hits a hard ring cap (see
+/// `pocket_cascade_with_islands` hits a hard ring cap (see
 /// [`POCKET_CASCADE_RING_CAP`]) to keep adversarial / very-large pockets
 /// from blowing the budget. When the cap fires, the cascade stops short
 /// of carving out the entire pocket — the user sees a hollow ring near
@@ -245,7 +245,7 @@ pub(super) fn take_pocket_cascade_truncations() -> Vec<PocketCascadeTruncation> 
 }
 
 /// Hard cap on the number of rings the cascade can emit before bailing
-/// (mdpo). Was 1024 — raised to 4096 to cover larger pockets at fine
+/// Was 1024 — raised to 4096 to cover larger pockets at fine
 /// steps (e.g. a 400×400 mm sign cascaded at 0.5 mm step needs ~800
 /// rings, easily fitting the new budget; the old 1024 cap silently
 /// truncated some real projects). The cap exists as a runaway / OOM
@@ -263,7 +263,7 @@ pub fn pocket_cascade(boundary: &[Point2], delta: f64) -> Vec<Vec<Point2>> {
     pocket_cascade_with_islands(boundary, &[], delta)
 }
 
-/// knd4: inflate each raw island polygon outward by `tool_radius` so the
+/// Inflate each raw island polygon outward by `tool_radius` so the
 /// cutter centerline keeps a tool-radius clearance from the raw island
 /// wall. The pocket emitters (`pocket_zigzag`, `pocket_cascade_with_islands`,
 /// `stitch_rings_to_polyline`) all document islands as
@@ -286,7 +286,7 @@ pub fn inflate_islands_by_tool_radius(
 
 /// Internal Minkowski-sum inflation by an arbitrary positive delta.
 /// Shared by [`inflate_islands_by_tool_radius`] and the cascade's
-/// over-inflate path (sbtf). Negative / non-finite deltas pass islands
+/// over-inflate path. Negative / non-finite deltas pass islands
 /// through unchanged.
 fn inflate_islands_by_delta(islands: &[Vec<Point2>], delta: f64) -> Vec<Vec<Point2>> {
     if !delta.is_finite() || delta <= 1e-9 {
@@ -327,10 +327,10 @@ fn inflate_islands_by_delta(islands: &[Vec<Point2>], delta: f64) -> Vec<Vec<Poin
     out
 }
 
-/// sbtf: extra island inflation needed for the inward cascade when the
+/// Extra island inflation needed for the inward cascade when the
 /// per-pass `step` is smaller than `tool_radius` (high overlap, e.g. 80%
 /// engagement ⇒ step ≈ `0.2·tool_radius`). Callers pass islands that are
-/// ALREADY pre-inflated by `tool_radius` (the knd4 contract); the
+/// ALREADY pre-inflated by `tool_radius` (the pre-inflation contract); the
 /// cascade's first ring then offsets boundary+islands inward by `-step`.
 /// When `step < tool_radius`, the cutter centerline lands at `step` mm
 /// from the raw island wall — `tool_r − step` short of full clearance.
@@ -344,9 +344,9 @@ fn inflate_islands_by_delta(islands: &[Vec<Point2>], delta: f64) -> Vec<Vec<Poin
 /// wall when step < `tool_r`; the cutter edge keeps a clean
 /// `tool_r − step` clearance from the raw wall (no intrusion). When
 /// step ≥ `tool_r` the extra inflation is zero and behaviour matches the
-/// pre-sbtf path.
+/// non-over-inflate path.
 ///
-/// `islands` MUST already be the knd4-inflated polygons (the cascade /
+/// `islands` MUST already be pre-inflated by `tool_radius` (the cascade /
 /// zigzag / spiral contract). `step` is the per-ring cascade inward
 /// delta — same value passed as the third argument to
 /// [`pocket_cascade_with_islands`].
@@ -363,7 +363,7 @@ pub fn over_inflate_islands_for_high_overlap(
     inflate_islands_by_delta(islands, extra)
 }
 
-/// Single-step inward offset of a boundary + holes by `delta` (r8ut).
+/// Single-step inward offset of a boundary + holes by `delta`.
 /// Unlike [`pocket_cascade_with_islands`], stops after ONE inflate so
 /// callers that only want the level-0 ring (V-Carve perimeter mode)
 /// don't pay for the rest of the cascade. Holes are NOT pre-inflated
@@ -435,12 +435,12 @@ pub fn pocket_cascade_with_islands(
         }
         current = next;
         if rings.len() > POCKET_CASCADE_RING_CAP {
-            // mdpo: cap the cascade and stash a thread-local record so
+            // Cap the cascade and stash a thread-local record so
             // the per-op driver can attribute the event to the user's op
             // (drained via `take_pocket_cascade_truncations`). Large
             // pockets at fine steps used to silently lose interior rings
             // here — leaving a hollow doughnut that looked machined but
-            // wasn't. The cap was 1024 pre-mdpo; we raise to 4096 (an
+            // wasn't. The cap was 1024 before; we raise to 4096 (an
             // OOM/runaway guard, not a project setting).
             POCKET_CASCADE_TRUNCATIONS.with(|s| {
                 s.borrow_mut().push(PocketCascadeTruncation {
@@ -535,7 +535,7 @@ fn pline_to_segments(pl: &Polyline<f64>, layer: &str, color: i32) -> Vec<Segment
         let start = Point2::new(v0.x, v0.y);
         let end = Point2::new(v1.x, v1.y);
         if v0.bulge.abs() > 1e-12 {
-            // bt65: populate the arc center at emit time. The offsetter
+            // Populate the arc center at emit time. The offsetter
             // already has everything needed to derive it; carrying it on the
             // Segment spares every downstream consumer (leads, chaining,
             // tabs) from re-deriving it via bulge_to_arc on each access.
@@ -559,14 +559,14 @@ fn pline_to_segments(pl: &Polyline<f64>, layer: &str, color: i32) -> Vec<Segment
 /// drill-only offset whose single segment is a zero-length POINT at the
 /// circle's center. The gcode emitter handles this as plunge + retract.
 ///
-/// dtf1: the prior threshold `r < 0.95 * tool_radius` left a dead zone
+/// The prior threshold `r < 0.95 * tool_radius` left a dead zone
 /// for circles whose radius sat in `[0.95·r, r)` — too narrow for the
 /// inward-offset cascade (which collapsed to empty geometry) but too wide
 /// to drill under the strict bound. Result: such holes were silently
 /// dropped. The threshold was extended to `r < 0.999 * tool_radius` so
 /// any circle that won't pocket gets a drill substitution at its centre.
 ///
-/// hnc1: the previous strict `<` left an exact-fit case `r == tool_radius`
+/// The previous strict `<` left an exact-fit case `r == tool_radius`
 /// (think a 6 mm hole milled with a 6 mm endmill) where the cascade
 /// returned empty geometry AND the drill substitution was rejected — the
 /// hole was silently dropped. The cascade can't carve a hole that exactly
@@ -633,7 +633,7 @@ pub fn apply_overcut_to_offsets(
 /// outward bisector and stop at the first boundary endpoint that lies on the
 /// ray. The dip length is `dist_to_boundary - tool_radius`; the inserted
 /// vertex pattern is `corner, dip, corner` so the cutter swings out and back.
-// juvx: linear reflex-corner walk; splitting into helpers would force a
+// Linear reflex-corner walk; splitting into helpers would force a
 // shared mutable cursor + parallel index lookups across them. Read
 // top-to-bottom as one state machine.
 #[allow(clippy::too_many_lines)]
@@ -646,12 +646,12 @@ pub fn apply_overcut(offset: &mut PolylineOffset, boundary_segments: &[Segment],
     let n = offset.segments.len();
     let pts: Vec<(Point2, f64)> = offset.segments.iter().map(|s| (s.start, s.bulge)).collect();
 
-    // fksa: derive an adaptive `perp_tol` from the boundary's bbox
+    // Derive an adaptive `perp_tol` from the boundary's bbox
     // diagonal. The prior fixed 0.25 mm tolerance was tuned for desktop
     // CNC scales (cm/dm); at sub-mm jewelry / engraving scales (5 mm
     // object with a 0.3 mm endmill) it was wider than the entire
     // workpiece, picking the nearest WRONG wall as the dip target.
-    // Pattern: max(1e-3 mm, 1e-3 × bbox_diag) — same shape as the sj4t
+    // Pattern: max(1e-3 mm, 1e-3 × bbox_diag) — same shape as the
     // chaining fuzzy fix. A 5 mm object gets 5e-3 mm; a 500 mm sign
     // gets 0.5 mm (looser than the old 0.25, which is fine — long
     // walls and far endpoints want extra slack).
@@ -738,14 +738,14 @@ pub fn apply_overcut(offset: &mut PolylineOffset, boundary_segments: &[Segment],
         let out = (-bx / blen, -by / blen);
 
         // Probe boundary segments along the outward ray.
-        // 5nij: prior implementation only tested vertex ENDPOINTS — fine
+        // Prior implementation only tested vertex ENDPOINTS — fine
         // for tiny test geometries where every wall is short enough that
         // a vertex lands near the bisector ray, but real CAD parts have
         // long flat walls whose endpoints sit far from the ray. We now
         // intersect each boundary segment as a line-segment-vs-ray test
         // so long-wall reflex corners get their dip too.
         //
-        // fksa: perp_tol is now derived ONCE from the boundary bbox
+        // `perp_tol` is derived ONCE from the boundary bbox
         // diagonal (see top of fn) so sub-mm jewelry and metre-scale
         // signs both get a tolerance proportional to the working scale.
         // The endpoint loop below still uses `perp_tol` directly — long

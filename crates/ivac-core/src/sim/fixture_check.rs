@@ -41,7 +41,7 @@ pub enum FixtureCheck {
     },
 }
 
-// WHY: w84n — the Z gate used to look only at the tip Z range, so a
+// WHY: the Z gate used to look only at the tip Z range, so a
 // clamp/jaw sitting *above* the tip Z but inside the path of the shank
 // or holder was invisible. The tool body (tip → flutes → shank → holder
 // top) extends upward by `holder.total_length()`, and the XY inflation
@@ -60,7 +60,7 @@ pub fn check_segment_against_fixtures(
     let mut out = Vec::with_capacity(fixtures.len());
     let seg_z_min = segment.from.z.min(segment.to.z);
     let seg_z_max = segment.from.z.max(segment.to.z);
-    // w84n: the tool body extends `holder.total_length()` above the tip;
+    // The tool body extends `holder.total_length()` above the tip;
     // anything above the flutes sweeps a wider envelope (the holder /
     // shank radius). Fixtures *above* the tip Z but inside that band
     // were previously invisible.
@@ -610,7 +610,7 @@ mod tests {
 
     #[test]
     fn shank_strikes_fixture_above_tip() {
-        // w84n: clamp box at z_top=30 sitting above the un-cut stock.
+        // Clamp box at z_top=30 sitting above the un-cut stock.
         // Tool tip is at z=-10 cutting through the stock; flute+shank+
         // holder extend ~60 mm above the tip — so the body sweeps
         // [-10, 50] in Z and hits the clamp at z=0..30. Also confirm

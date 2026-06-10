@@ -1,4 +1,4 @@
-// 5v1b: detect the in-browser wasm trial transport (`?api=wasm`) without
+// Detect the in-browser wasm trial transport (`?api=wasm`) without
 // pulling the full client module graph (http.ts + the transport classes)
 // into whatever imports this. Kept tiny on purpose: the sim driver uses
 // it to dial fidelity down so the single-threaded in-browser sim stays

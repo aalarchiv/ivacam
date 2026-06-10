@@ -44,7 +44,7 @@ export interface HeightfieldOptions {
 /// cost. Only the active wall discontinuities consume fill — the same
 /// triangle count as the old PlaneGeometry for the smooth case, half
 /// of the boxes-per-cell InstancedMesh for the dense case, and
-/// vertical (not interpolated) for the so70 cylindrical-tool fix.
+/// vertical (not interpolated) for the cylindrical-tool fix.
 ///
 /// `updateHeights(view, aabb?)` rewrites only the dirty AABB's
 /// vertex Z values + the wall Z values on the immediate −X and −Y
@@ -80,13 +80,13 @@ export class HeightfieldMesh {
   private readonly UP_BASE: number; // 4 * N
   private readonly LEFT_BASE: number; // 4 * rows
   private readonly BOTTOM_BASE: number; // 4 * cols
-  /// v0no: per-cell floor quad. 4 verts per cell; on carve-through
+  /// Per-cell floor quad. 4 verts per cell; on carve-through
   /// (cell.z ≤ floorZ + ε) the quad collapses to a degenerate point
   /// so the user looking from underneath sees empty space where the
-  /// material is gone. Was a single big quad pre-v0no (4 static
-  /// verts, fix euxi); the per-cell layout lets us punch true holes
+  /// material is gone. Was a single big quad (4 static verts) before
+  /// this redesign; the per-cell layout lets us punch true holes
   /// through the underside while keeping the darker-floor material
-  /// treatment for non-cut cells (k94n).
+  /// treatment for non-cut cells.
   private readonly FLOOR_BASE: number; // 4 * N
   private readonly TOTAL_VERTS: number;
 
@@ -147,9 +147,8 @@ export class HeightfieldMesh {
     // Per cell: top(2) + right(2) + up(2) + floor(2) = 8 triangles ×
     // 3 indices = 24 indices. Per fringe wall: 2 triangles = 6
     // indices. The floor used to be a single big quad (6 indices);
-    // v0no replaces it with per-cell quads so cut-through cells can
-    // collapse their underside and the user sees through the stock
-    // from below.
+    // Per-cell quads let cut-through cells collapse their underside
+    // so the user sees through the stock from below.
     const indices = new Uint32Array(24 * n + 6 * this.rows + 6 * this.cols);
 
     this.initStaticBuffers(normals, indices);
@@ -161,7 +160,7 @@ export class HeightfieldMesh {
     this.geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
     this.geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     // Split into two material groups: cells (top + walls + fringes)
-    // use the main stock material; per-cell floor quads (v0no) use
+    // use the main stock material; per-cell floor quads use
     // a darker floor material so cut-through cells expose a visibly
     // different surface. Index offsets must match the
     // initStaticBuffers emit order (cells, LEFT fringe, BOTTOM
@@ -298,7 +297,7 @@ export class HeightfieldMesh {
       this.positions[p + 2] = this.floorZ;
       this.positions[p + 5] = this.floorZ;
     }
-    // Per-cell floor quads (v0no) sit slightly BELOW floorZ. The
+    // Per-cell floor quads sit slightly BELOW floorZ. The
     // 0.05 mm offset prevents Z-fighting against a cell whose top
     // happens to land at exactly floorZ (clamped from below) — the
     // cell's top wins the depthTest from above, the per-cell floor
@@ -429,7 +428,7 @@ export class HeightfieldMesh {
       pushQuad(indexOff, bBase + 0, bBase + 1, bBase + 2, bBase + 3);
       indexOff += 6;
     }
-    // PER-CELL FLOOR (v0no): one quad per cell at floorZ, normal
+    // PER-CELL FLOOR: one quad per cell at floorZ, normal
     // -Z. On carve-through, `writeCellFloor` collapses the quad to
     // a degenerate point so the user sees empty space from below.
     // CCW winding from BELOW = (v0, v3, v1) + (v1, v3, v2), matching
@@ -533,7 +532,7 @@ export class HeightfieldMesh {
     this.positions[p + 11] = zA;
   }
 
-  /// v0no: per-cell floor quad. When the cell's height `z` is at
+  /// Per-cell floor quad. When the cell's height `z` is at
   /// (or below) the stock bottom, collapse the quad to a degenerate
   /// point — the four verts all land at the cell center at floorZ,
   /// triangles drop in the rasterizer, the user sees through the
@@ -598,7 +597,7 @@ export class HeightfieldMesh {
           !aabb || (ix >= aabb.ix0 && ix < aabb.ix1 && iy >= aabb.iy0 && iy < aabb.iy1);
         if (inOriginal) {
           this.writeTop(ix, iy, z);
-          // v0no: refresh the per-cell floor too so cut-through
+          // Refresh the per-cell floor too so cut-through
           // cells collapse and non-cut cells stay closed. Skipped
           // on the −X/−Y expansion rows because neighbours' floors
           // don't depend on this cell's value.
@@ -613,7 +612,7 @@ export class HeightfieldMesh {
       }
     }
 
-    // Partial buffer upload (audit-6tmz): tell Three.js to upload
+    // Partial buffer upload: tell Three.js to upload
     // only the float ranges we touched, not the whole buffer. For
     // typical per-segment AABBs this is tens of kB instead of MBs.
     // Three.js's `addUpdateRange(start, count)` (>= r158) lets us
@@ -631,7 +630,7 @@ export class HeightfieldMesh {
     if (iy0 === 0) {
       this.positionAttr.addUpdateRange((this.BOTTOM_BASE + ix0 * 4) * 3, (ix1 - ix0) * 4 * 3);
     }
-    // v0no: per-cell floor region. Same dirty AABB as TOP / RIGHT /
+    // Per-cell floor region. Same dirty AABB as TOP / RIGHT /
     // UP — one range over the same low→high cell span.
     const floorMinVert = this.FLOOR_BASE + lowCellIdx * 4;
     const floorMaxVert = this.FLOOR_BASE + highCellIdx * 4 + 4;
@@ -718,7 +717,7 @@ export class HeightfieldMesh {
   }
 }
 
-/// LOD pyramid of HeightfieldMesh instances (9tba). Builds N parallel
+/// LOD pyramid of HeightfieldMesh instances. Builds N parallel
 /// meshes at successively coarser resolution (L0 = full, L1 = 2×2-pooled,
 /// L2 = 4×4, …) and exposes the same `updateHeights` surface as a single
 /// HeightfieldMesh so the driver can swap in a pyramid without touching
@@ -1011,7 +1010,7 @@ export class HeightfieldMeshPyramid {
   }
 }
 
-/// 9tba helper: smallest LOD level `k ∈ [0, maxLevel]` whose mesh fits
+/// Smallest LOD level `k ∈ [0, maxLevel]` whose mesh fits
 /// the render-triangle budget for a `cols × rows` source heightmap.
 /// Used by callers to decide the pyramid's `minLevel` BEFORE the
 /// constructor allocates any HeightfieldMesh — skipping unaffordable

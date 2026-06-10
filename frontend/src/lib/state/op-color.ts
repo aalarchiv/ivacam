@@ -1,7 +1,7 @@
 /// Per-op color, shared by the 2D canvas source-assignment overlay, the
 /// 3D wireframe source tint, and the 3D toolpath — so an op's source
 /// objects and its toolpath read as the SAME hue across both views
-/// (source-assignment visibility, issue w5wx follow-up).
+/// (source-assignment visibility follow-up).
 ///
 /// Hue is a golden-ratio walk of the color wheel keyed by op id, so even
 /// adjacent ids land far apart and stay distinguishable. The `emphasis`

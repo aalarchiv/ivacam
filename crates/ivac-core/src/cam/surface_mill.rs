@@ -1,6 +1,6 @@
-//! Drop-cutter ball-nose raster surfacing engine (f60x-B).
+//! Drop-cutter ball-nose raster surfacing engine.
 //!
-//! Given a target [`SurfaceField`] (the surface we want to cut, f60x-A), a
+//! Given a target [`SurfaceField`] (the surface we want to cut), a
 //! ball-nose radius, and a stepover, produce gouge-free XYZ tool paths that
 //! a ball end-mill can follow to finish the relief.
 //!
@@ -61,7 +61,7 @@ pub enum ScanDirection {
     AlongY,
 }
 
-/// Inputs to [`surface_mill`]. The caller (the op driver, f60x-C) resolves
+/// Inputs to [`surface_mill`]. The caller (the op driver) resolves
 /// these from the op + tool: `z_floor_mm` is the deepest tip Z allowed
 /// (`max(op.depth, -flute_reach)`), `z_top_mm` the ceiling (stock top, 0).
 #[derive(Debug, Clone, Copy)]
@@ -69,7 +69,7 @@ pub struct SurfaceMillParams {
     /// Cutting radius (mm). Must be > 0.
     pub tool_radius_mm: f64,
     /// Tip corner radius (mm) — `tool_radius_mm` for a ball-nose, smaller
-    /// for a bull-nose, 0 for a flat endmill (izvd). Drives the tip drop
+    /// for a bull-nose, 0 for a flat endmill. Drives the tip drop
     /// profile and the scallop stepover. Clamped to `[0, tool_radius_mm]`.
     pub corner_radius_mm: f64,
     /// Target scallop height between adjacent passes (mm). Drives the
@@ -92,7 +92,7 @@ pub struct SurfaceMillParams {
 }
 
 /// A bull-nose / ball-nose tip's surface height above its lowest point at
-/// radial offset `d_mm` (izvd). The tip is flat across the center out to
+/// radial offset `d_mm`. The tip is flat across the center out to
 /// `radius − corner`, then a quarter-arc fillet of radius `corner` up to the
 /// full `radius`; beyond `radius` it saturates at `corner` (the fillet's
 /// equator). `corner` is clamped to `[0, radius]`, so:
@@ -206,7 +206,7 @@ pub fn drop_cutter(
 fn effective_stepover(field: &SurfaceField, p: &SurfaceMillParams) -> f64 {
     let s = match p.stepover_mm {
         Some(v) if v > 0.0 => v,
-        // izvd: the cusp left between adjacent passes on a sloped relief is
+        // The cusp left between adjacent passes on a sloped relief is
         // governed by the tip's CURVATURE — the corner radius for a bull-
         // nose (= full radius for a ball-nose), not the flat diameter.
         _ => {
@@ -327,7 +327,7 @@ mod tests {
         approx(ball_drop_offset(3.0, 1.5), 3.0 - 6.75_f64.sqrt(), 1e-12);
     }
 
-    /// izvd: the bull-nose tip is flat across the center, then a corner arc.
+    /// The bull-nose tip is flat across the center, then a corner arc.
     /// R = 4, corner = 1 ⇒ flat out to d = 3, arc from 3..4.
     #[test]
     fn tip_drop_offset_bull_nose_flat_center_then_corner_arc() {

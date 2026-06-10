@@ -1,5 +1,5 @@
 //! Consolidated integration-test binary for the volume-validation
-//! harness (l7a8).
+//! harness.
 //!
 //! Cargo treats every `.rs` file directly under `tests/` as its own
 //! integration-test binary — each gets its own link step. On the

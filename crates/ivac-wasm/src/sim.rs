@@ -14,7 +14,7 @@
 //! Perf: the toolpath is deserialized ONCE per Generate via
 //! `set_toolpath(...)` and cached on the Simulator. `advance(from, to,
 //! tool)` then indexes into the cached vec — no per-frame serde of the
-//! full segment array (audit-9l52). Tool stays as an `advance()` arg
+//! full segment array. Tool stays as an `advance()` arg
 //! because it's tiny and may change between ops.
 
 // # CAM/sim pedantic-lint exemptions
@@ -54,10 +54,10 @@ pub struct Simulator {
     fixtures: Vec<Fixture>,
     /// Toolpath cached at Generate time so subsequent `advance()`
     /// calls don't re-deserialize the whole array per frame
-    /// (audit-9l52). Refreshed via `set_toolpath(...)` whenever a
+    /// Refreshed via `set_toolpath(...)` whenever a
     /// new toolpath replaces the previous one.
     toolpath: Vec<ToolpathSegment>,
-    /// wpzm: sticky setup-time warnings (e.g. cell_size coarsening)
+    /// Sticky setup-time warnings (e.g. cell_size coarsening)
     /// that survive across `advance()` resets of `last_diagnostics`.
     /// Merged into `last_diagnostics` on every advance so the JS
     /// driver's `take_diagnostics()` keeps seeing them.
@@ -114,7 +114,7 @@ impl Simulator {
         self.toolpath.len() as u32
     }
 
-    /// wpzm: record that the driver coarsened cell_size to fit the
+    /// Record that the driver coarsened cell_size to fit the
     /// user's `maxSimulationCells` budget. The driver should call this
     /// once at `Simulator::new`-time when it coarsens, passing the
     /// originally-requested cell size and the coarsened one. The
@@ -155,7 +155,7 @@ impl Simulator {
 
     /// Pull and clear the diagnostics collected by the most recent
     /// `advance()` call. Returns a JSON-shaped `SimDiagnostics`.
-    /// wpzm: sticky warnings (cell-size coarsening) are merged in so
+    /// Sticky warnings (cell-size coarsening) are merged in so
     /// the UI keeps seeing them across playhead movements.
     pub fn take_diagnostics(&mut self) -> Result<JsValue, JsValue> {
         let mut taken = std::mem::take(&mut self.last_diagnostics);
@@ -180,7 +180,7 @@ impl Simulator {
         to_idx: u32,
     ) -> Result<Vec<u32>, JsValue> {
         let tool_entry: ToolEntry = from_tool_value(tool)?;
-        // mg77: guard the sweep with catch_unwind so a panic inside the
+        // Guard the sweep with catch_unwind so a panic inside the
         // per-frame carve surfaces as a structured JS error rather than
         // trapping (aborting) the whole wasm instance mid-playback —
         // mirrors the pipeline `generate()` envelope.
@@ -203,7 +203,7 @@ impl Simulator {
                 holder.as_ref(),
                 &mut self.last_diagnostics,
             );
-            // 03zx: emit a single tracing::info line per advance so the
+            // Emit a single tracing::info line per advance so the
             // frontend (and post-mortem tooling) have a stable telemetry
             // record of cells_carved + per-kind warning
             // counts. `total_seconds` is left 0 here because advance()
@@ -224,7 +224,7 @@ impl Simulator {
     /// empty when no cells changed. Used by the per-frame driver so the
     /// 3D-sim destruction visually tracks the cutter inside long
     /// segments (drill plunges, long cuts) instead of popping in at
-    /// segment-start (pi8r). Fixture / holder / rapid warnings fire only
+    /// segment-start. Fixture / holder / rapid warnings fire only
     /// on the first slice of the segment (`t_start ≈ 0`) so 60 fps
     /// driver frames don't duplicate diagnostics.
     pub fn partial_advance(
@@ -241,7 +241,7 @@ impl Simulator {
                 "partial_advance: seg_idx out of range for cached toolpath",
             ));
         }
-        // mg77: same catch_unwind guard as advance() — a sweep panic in
+        // Same catch_unwind guard as advance() — a sweep panic in
         // the per-frame partial carve must not trap the wasm module.
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.heightmap.clear_dirty();
@@ -303,7 +303,7 @@ impl Simulator {
         self.heightmap.top_z
     }
 
-    /// 9c34: serialize the carved heightfield as a binary STL. The mesh
+    /// Serialize the carved heightfield as a binary STL. The mesh
     /// drops to `stock_bottom_z` at every perimeter sample so the result
     /// is watertight. Wired up via the File menu's "Export simulated
     /// stock as STL..." entry.
@@ -413,7 +413,7 @@ fn from_tool_value(value: JsValue) -> Result<ToolEntry, JsValue> {
     ToolEntry::deserialize(de).map_err(into_js_error)
 }
 
-/// mg77: convert a caught sweep panic into the same structured JS error
+/// Convert a caught sweep panic into the same structured JS error
 /// shape the pipeline `generate()` envelope produces, so the frontend's
 /// `ErrorToast` renders it instead of the wasm instance trapping.
 fn sweep_panic_to_js(panic: &Box<dyn std::any::Any + Send>) -> JsValue {
@@ -472,11 +472,11 @@ mod tests {
             shank_diameter_mm: None,
             stickout_length_mm: None,
             holder: None,
-            // chgd: spindle_direction landed on ToolEntry — mirror the
+            // spindle_direction was added to ToolEntry — mirror the
             // core test fixture (sim/heightmap.rs) so WASM tests still
             // compile. Default is Cw, matches pre-spindle behavior.
             spindle_direction: SpindleDirection::default(),
-            // zpuk/r2af specialty fields — plasma pierce/cut heights +
+            // Specialty fields — plasma pierce/cut heights +
             // vcarve lead-in. None = inactive, matches a plain endmill.
             pierce_height_mm: None,
             cut_height_mm: None,

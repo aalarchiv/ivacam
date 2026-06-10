@@ -14,13 +14,13 @@ import { tryParseStructuredError } from '../api/client';
 import { migrateLegacyToolTerms } from '../state/tool-migration';
 // `pushRecent` (from ../recent) was a parallel store the UI never read
 // — the File menu draws Recent Projects from workspace.recent_projects.
-// The two stores could diverge silently (audit zxee). Dropped; the
+// The two stores could diverge silently. Dropped; the
 // `ivac.recent` localStorage key is harmlessly orphaned.
 import type { ImportResponse } from '../api/types';
 import type { MachineSettings, ToolEntry } from '../state/project.svelte';
 import { migrateMachineSettings } from '../state/project-types';
 
-/// eu2b: clear the Rust-side process-global pipeline cache when a
+/// Clear the Rust-side process-global pipeline cache when a
 /// project replace flow runs (open file, open project, load sample,
 /// load project from disk). The cache key already encodes the
 /// machine + tool fingerprints, so this is purely a hygiene step —
@@ -71,7 +71,7 @@ export function pathToLoadingMessage(path: string): string {
 
 /// Same-origin samples bundled in `public/samples/`. The labels
 /// surface in the File ▸ Samples submenu.
-// ujs2: the `*-rust.json` variants are gitignored (no generator ships
+// The `*-rust.json` variants are gitignored (no generator ships
 // them) and the py/rs split is vestigial now that the backend is
 // Rust-only — both now come from the same importer. Keep just the two
 // tracked, selectable fixtures so a clean checkout / static deploy never
@@ -114,7 +114,7 @@ export async function openFile() {
 /// destructive load (open file, open project, recent, drag-drop).
 /// Returns `true` to proceed with the load, `false` to bail.
 ///
-/// Three-way prompt (ed67): Save & continue / Don't save / Cancel — so
+/// Three-way prompt: Save & continue / Don't save / Cancel — so
 /// the user can keep their work without having to cancel, dig out Save,
 /// and retry. Picking Save runs `saveProject()` first and only proceeds
 /// if the save actually lands (see below).
@@ -124,7 +124,7 @@ export async function openFile() {
 /// blocks the renderer and never returns). Exported so every
 /// destructive-load entry point (including App.svelte's Recent click)
 /// shares ONE confirmation dialog instead of a second native
-/// `window.confirm` (npig).
+/// `window.confirm`.
 export async function confirmDiscardIfDirty(action: string): Promise<boolean> {
   // hasUnsavedWork (not just `dirty`) so a freshly imported drawing that
   // was never saved as a project still prompts — `dirty` is reset to
@@ -339,7 +339,7 @@ export async function saveProject() {
     if (typeof path === 'string') {
       try {
         await writeTextFile(path, snapshot);
-        // amwo: the file now matches disk — clear dirty to match the
+        // The file now matches disk — clear dirty to match the
         // contract every load path upholds. Otherwise the quit-confirm
         // dialog, the confirmDiscardIfDirty prompt on a later Open, and
         // the stale-gcode indicators all fire right after a save.
@@ -360,13 +360,13 @@ export async function saveProject() {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
-  // amwo: the browser download IS the save; mirror the desktop branch and
+  // The browser download IS the save; mirror the desktop branch and
   // clear dirty so the snapshot just written to disk isn't reported unsaved.
   project.data.dirty = false;
   project.savedToProject = true;
 }
 
-/// Save a project report as a Markdown file (vh6e). Desktop = native
+/// Save a project report as a Markdown file. Desktop = native
 /// save dialog (.md); browser = anchor-tag download. Mirrors
 /// `saveProject`'s transport split.
 export async function saveReportMarkdown(markdown: string, baseName: string) {
@@ -457,7 +457,7 @@ export async function exportGeneratedGcode(
   URL.revokeObjectURL(url);
 }
 
-/// 9c34: export the live simulated stock as a binary STL — exactly the
+/// Export the live simulated stock as a binary STL — exactly the
 /// carved heightfield the 3D scene is rendering, serialized to a mesh
 /// you can open in any STL viewer or diff against a reference. Walls
 /// drop to the stock's underside (top minus thickness) for a watertight
@@ -526,7 +526,7 @@ export async function loadSampleWithGenerate(sampleUrl: string, generatedUrl: st
 }
 
 // ───────────────────────────────────────────────────────────────────
-// h0tx: toolset + machine save/load files.
+// Toolset + machine save/load files.
 //
 // Two side-files independent of the .ivac-project.json: a toolset
 // snapshot the user can share across projects, and a machine config
@@ -657,7 +657,7 @@ export async function loadToolset(mode: 'replace' | 'add') {
     // Re-number ids 1..N so the new tools have a clean monotonic
     // sequence the project file can reference.
     const next = incoming.map((t, idx) => ({ ...t, id: idx + 1 }));
-    // eu2b: the cache key folds in every ToolEntry field, so swapping
+    // The cache key folds in every ToolEntry field, so swapping
     // the library mid-session would force a miss-and-recompute on every
     // op anyway. Clear up front so the old entries stop occupying LRU
     // slots that will never hit again.
@@ -724,12 +724,12 @@ export async function loadMachine() {
     project.setError('machine load: not a .ivac-machine.json file');
     return;
   }
-  // eu2b: machine swap invalidates the cache the same way as a tool
+  // Machine swap invalidates the cache the same way as a tool
   // library swap — hash_machine folds every relevant field, so the
   // post-swap Generate will miss-and-recompute. Drop the old entries
   // proactively.
   await clearPipelineCacheOnReplace();
-  // cb5y: an older .ivac-machine.json carries `supportsToolchange` instead
+  // An older .ivac-machine.json carries `supportsToolchange` instead
   // of `toolchangeStrategy` — migrate before applying.
   project.setMachine(migrateMachineSettings(env.payload));
 }

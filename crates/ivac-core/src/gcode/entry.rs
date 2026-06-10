@@ -205,7 +205,7 @@ pub(super) fn plan_helix_entry(
     // can push the helix circle into a wall on small or
     // sharply-cornered pockets, which is exactly the failure mode we
     // need helical entry to avoid. The post-helix walk to the path
-    // start is NOT cut at depth (audit lja0) — the emitter lifts to
+    // start is NOT cut at depth — the emitter lifts to
     // fast_move_z, rapids to the contour start, then plunges at
     // rate_v. This costs one retract per pass but avoids the
     // full-immersion straight-line load that broke small-diameter

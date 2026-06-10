@@ -26,7 +26,7 @@
   import { LONG_PRESS_MS, LONG_PRESS_MOVE_TOL_PX } from '../canvas/touch-gestures';
 
   interface Props {
-    /// w5wx: mirrors EntityCanvas2D — after the right-click menu creates
+    /// Mirrors EntityCanvas2D — after the right-click menu creates
     /// an op from the selection, bounce the sidebar to Operations so the
     /// new row is visible.
     onActivateSidebarPane?: (pane: 'stock' | 'layers' | 'text' | 'operations') => void;
@@ -50,7 +50,7 @@
   /// RAF gating: stop the loop entirely when the page is hidden OR the
   /// host element is fully off-screen. Pane swaps unmount Scene3D
   /// already (so onDestroy stops RAF), but minimised windows / tabbed-
-  /// away IDEs still left the loop running pre-9js.
+  /// away IDEs still left the loop running.
   let pageVisible = true;
   let hostVisible = true;
 
@@ -64,7 +64,7 @@
   /// Bumped by applyTheme to re-trigger the line-buffer build effects (so a
   /// theme switch re-emits the imported + toolpath wireframes in the new
   /// tokens) WITHOUT making tabs/stock/fixtures/tool re-skin — matching the
-  /// pre-4w2f behavior where applyTheme rebuilt only those two buffers.
+  /// the behavior where applyTheme rebuilt only those two buffers.
   let themeVersion = $state(0);
   function requestRender() {
     needsRender = true;
@@ -93,14 +93,14 @@
         },
       });
     }, 500);
-    // 9tba: re-evaluate the heightfield LOD level whenever the camera
+    // Re-evaluate the heightfield LOD level whenever the camera
     // moves. setLodHint is a no-op when the recommended level matches
     // the current one (the common case during smooth orbiting), so the
     // per-event cost is just a few divisions.
     updateHeightfieldLod();
   }
 
-  /// 9tba: ask the heightfield driver to pick an LOD level for the
+  /// Ask the heightfield driver to pick an LOD level for the
   /// current camera distance + the user's render-triangle budget.
   /// Cheap; safe to call on every camera-change tick.
   function updateHeightfieldLod() {
@@ -140,7 +140,7 @@
     // is renderer.render — we gate it on needsRender.
     controls?.update();
     if (needsRender && renderer && scene && camera) {
-      // 68ab: refresh fat-line resolution from the LIVE renderer size
+      // Refresh fat-line resolution from the LIVE renderer size
       // before every render. The 3D pane is `display:none` while the 2D
       // tab is active, so geometry built then has clientWidth 0 and bakes
       // a (1,1) resolution → hairline lines. Re-deriving it here makes the
@@ -176,7 +176,7 @@
   }
 
   // The imported wireframe + the generated toolpath wireframe each live in
-  // their own builder (ImportedGeometryBuilder / ToolpathBuilder, 4w2f);
+  // their own builder (ImportedGeometryBuilder / ToolpathBuilder);
   // both expose a pickable LineSegments2 + owner array for handlePick and a
   // bounding sphere for fit-to-view.
   let sceneRadius = 100;
@@ -193,14 +193,14 @@
   // pointerup as a click when the user barely moved the cursor between
   // down and up. 3px / 400ms is the same threshold the 2D pane uses.
   let pointerStart: { x: number; y: number; t: number } | null = null;
-  // w5wx: right-click context menu. `rightStart` records the right-button
+  // Right-click context menu. `rightStart` records the right-button
   // press so the `contextmenu` handler can tell a tap (open the menu)
   // from an OrbitControls right-drag pan (don't). `ctxMenu` is the menu's
   // host-relative position when open.
   let rightStart: { x: number; y: number } | null = null;
   let ctxMenu = $state<{ x: number; y: number } | null>(null);
 
-  /// bwt7: touch long-press → context menu (parity with the 2D pane and
+  /// Touch long-press → context menu (parity with the 2D pane and
   /// with mouse right-click). OrbitControls already handles one-finger
   /// rotate / two-finger pan+zoom on touch; this only adds the
   /// hold-to-open-menu path. `lpPointers` counts live touches so a
@@ -299,7 +299,7 @@
     dir.position.set(100, -100, 200);
     scene.add(dir);
 
-    // Builders own their own groups inside the scene (4w2f). The host's
+    // Builders own their own groups inside the scene. The host's
     // $effects read project fields and call builder.build(...).
     const builderCtx: BuilderContext = { scene, requestRender };
     const css: CssColor = cssColor;
@@ -420,7 +420,7 @@
       simRebuildTimer = null;
     }
     controls?.dispose();
-    // Builders own + free their groups (4w2f).
+    // Builders own + free their groups.
     toolGlyphBuilder?.dispose();
     stockBuilder?.dispose();
     workAreaBuilder?.dispose();
@@ -428,7 +428,7 @@
     approachBuilder?.dispose();
     warningMarkersBuilder?.dispose();
     fixturesBuilder?.dispose();
-    // 7iej.4: renderer.dispose() frees the GL context but does NOT walk the
+    // renderer.dispose() frees the GL context but does NOT walk the
     // scene graph, so each builder frees its own group's geometry/material
     // (the largest buffers — imported wireframe + toolpath lines + arrows)
     // or they leak a full toolpath on every 2D↔3D pane swap (Scene3D
@@ -465,7 +465,7 @@
   // Mirror imported geometry into the 3D scene as flat polylines on Z=0.
   // When a /generate response is also available, draw the 3D toolpath on
   // top with depth + color coded by move kind (rapid/cut/plunge/retract).
-  // Per-concern effects (audit gk8). The previous mega-effect read
+  // Per-concern effects. The previous mega-effect read
   // seven project.* fields and rebuilt geometry+tabs+stock+fixtures
   // on every change — toggling a fixture's color used to rebuild the
   // toolpath wireframe. Split so each builder only refires when its
@@ -484,12 +484,12 @@
   // changing any output (the cache stays stale until the debounced render
   // bumps `previewVersion`). Keying on the id set instead of the raw array
   // stops a full imported-geometry teardown/rebuild on every pointermove
-  // of a text-origin drag (k9cz).
+  // of a text-origin drag.
   const textLayerIdKey = $derived(project.data.textLayers.map((l) => l.id).join(','));
 
   // Imported drawing + text-layer previews. textLayerIdKey (not the raw
   // textLayers array) keys the text-layer dep so a text-origin drag doesn't
-  // teardown/rebuild the whole buffer every pointermove (k9cz). themeVersion
+  // teardown/rebuild the whole buffer every pointermove. themeVersion
   // re-runs this on theme switch.
   $effect(() => {
     void textLayerIdKey;
@@ -520,7 +520,7 @@
   // re-runs it on a theme switch.
   $effect(() => {
     void themeVersion;
-    // ek5r: build() seeds the playhead fade on the freshly-baked colors,
+    // build() seeds the playhead fade on the freshly-baked colors,
     // but the fade-seed (playhead + the arc-length tables it maps through)
     // must NOT make this build effect depend on the playhead — otherwise
     // every scrub/playback tick rebuilds the entire toolpath geometry,
@@ -533,7 +533,7 @@
       cumLen: project.gen.toolpathCumLen,
       totalLen: project.gen.toolpathTotalLen,
     }));
-    // rt1.12 (nrob): the raster heatmap re-derives S from the source
+    // The raster heatmap re-derives S from the source
     // brightness + placement, so refresh when a source changes.
     toolpathBuilder?.build({
       generated: project.gen.generated,
@@ -552,7 +552,7 @@
     requestRender();
   });
 
-  // Fat-line thickness (68ab): update the live materials in place rather
+  // Fat-line thickness: update the live materials in place rather
   // than rebuilding geometry, so dragging the slider is cheap.
   $effect(() => {
     const lw = Math.max(0.5, project.data.settings.previewLineWidth);
@@ -578,7 +578,7 @@
     requestRender();
   });
 
-  // n79: approach-point needle for the currently selected op. The
+  // Approach-point needle for the currently selected op. The
   // marker shows up only when the user is looking at the op that
   // carries it (driven by selectedOpId) — otherwise the 3D view
   // stays uncluttered.
@@ -826,7 +826,7 @@
             project.gen.toolpathCumLen,
             project.gen.toolpathTotalLen,
           );
-          // 9tba: select the right LOD level for the current camera
+          // Select the right LOD level for the current camera
           // distance once the new pyramid exists, so the first paint
           // uses the affordable level instead of L0.
           updateHeightfieldLod();
@@ -852,7 +852,7 @@
       toolForSegment(generated.toolpath),
       project.gen.toolpathCumLen,
       project.gen.toolpathTotalLen,
-      // 27ng: pass the user's exact-rewind preference through to the
+      // Pass the user's exact-rewind preference through to the
       // driver. Default false leaves the heightfield untouched on
       // backstep (deepest-ever state retained); true triggers the
       // reset + forward-replay path.
@@ -900,7 +900,7 @@
     requestRender();
   });
 
-  // Marker builders (4w2f): each owns its THREE.Group and rebuilds from
+  // Marker builders: each owns its THREE.Group and rebuilds from
   // plain data the effects below hand it. Instantiated in onMount once the
   // scene exists.
   let stockBuilder: StockBoxBuilder | undefined;
@@ -978,7 +978,7 @@
     if (sphere) sceneRadius = Math.max(sphere.radius, 1);
   }
 
-  /// Manual "Fit view" entry point (1ei2). Resets the one-shot workspace
+  /// Manual "Fit view" entry point. Resets the one-shot workspace
   /// restore so the auto-fit isn't immediately overruled, then refits.
   /// Called by the toolbar button and (planned) the numpad-'.' shortcut.
   function requestFitView() {
@@ -1013,7 +1013,7 @@
   }
 
   function onPointerDown(e: PointerEvent) {
-    // bwt7: touch long-press arming. A single finger held still opens
+    // Touch long-press arming. A single finger held still opens
     // the context menu; a second finger (pinch) cancels it and lets
     // OrbitControls zoom/pan.
     if (e.pointerType === 'touch') {
@@ -1032,7 +1032,7 @@
         }, LONG_PRESS_MS);
       }
     }
-    // w5wx: remember the right-button press position so `onContextMenu`
+    // Remember the right-button press position so `onContextMenu`
     // can distinguish a tap (open the menu) from a right-drag pan.
     if (e.button === 2) {
       rightStart = { x: e.clientX, y: e.clientY };
@@ -1044,7 +1044,7 @@
     pointerStart = { x: e.clientX, y: e.clientY, t: performance.now() };
   }
 
-  /// bwt7: cancel a pending long-press once the finger wanders (a
+  /// Cancel a pending long-press once the finger wanders (a
   /// one-finger rotate is a drag, not a hold). Registered as a passive
   /// pointermove listener alongside OrbitControls' own.
   function onPointerMoveLongPress(e: PointerEvent) {
@@ -1056,7 +1056,7 @@
     }
   }
 
-  /// bwt7: a cancelled pointer (e.g. the OS captured the gesture) just
+  /// A cancelled pointer (e.g. the OS captured the gesture) just
   /// tears down transient press state — no pick, no menu.
   function onPointerCancel(e: PointerEvent) {
     if (e.pointerType === 'touch') lpPointers.delete(e.pointerId);
@@ -1065,7 +1065,7 @@
     rightStart = null;
   }
 
-  /// w5wx: right-click → "New operation from selection" menu (parity with
+  /// Right-click → "New operation from selection" menu (parity with
   /// the 2D pane). Only opens on a right-click TAP; a right-drag (which
   /// OrbitControls uses to pan) moves past the 3px threshold and is left
   /// to pan without popping the menu. Always preventDefault so the
@@ -1130,7 +1130,7 @@
   }
 
   function onPointerUp(e: PointerEvent) {
-    // bwt7: release touch tracking + cancel a pending long-press (a
+    // Release touch tracking + cancel a pending long-press (a
     // quick tap is not a hold).
     if (e.pointerType === 'touch') {
       lpPointers.delete(e.pointerId);
@@ -1251,7 +1251,7 @@
     overflow: hidden;
     background: var(--bg-app);
   }
-  /* w5wx: right-click "New operation from selection" menu — visual twin
+  /* Right-click "New operation from selection" menu — visual twin
      of EntityCanvas2D's .ctx-menu so the two panes match. */
   .ctx-menu {
     position: absolute;
@@ -1294,7 +1294,7 @@
     font-size: 0.74rem;
     cursor: pointer;
   }
-  /* 1ei2: manual fit-view trigger. Same overlay style as EntityCanvas2D's
+  /* Manual fit-view trigger. Same overlay style as EntityCanvas2D's
      help-btn so the two stack visually consistently across the 2D / 3D
      panes. */
   .fit-btn {

@@ -14,7 +14,6 @@ use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-
 // ─── HTTP envelope types ──────────────────────────────────────────────────
 //
 // These mirror the JSON the ivac-server crate sends. Keeping them here
@@ -63,11 +62,11 @@ pub struct ErrorResponse {
 #[must_use]
 pub fn components_schemas() -> Value {
     let mut schemas = serde_json::Map::new();
-    // kb1y: each module registers its own wire types next to their
+    // Each module registers its own wire types next to their
     // definitions; this function just composes them. Adding a type is a
     // same-file edit in the module that owns it. Output order is
     // independent of call order (serde_json::Map is sorted), and the
-    // izup collision assert + schema drift guard still protect renames.
+    // collision assert + schema drift guard still protect renames.
     crate::geometry::register_schemas(&mut schemas);
     crate::input::register_schemas(&mut schemas);
     crate::cam::register_schemas(&mut schemas);
@@ -89,7 +88,7 @@ pub fn components_schemas() -> Value {
 }
 
 /// The components/schemas accumulator each module's `register_schemas`
-/// writes into (kb1y).
+/// writes into.
 pub(crate) type SchemaMap = serde_json::Map<String, Value>;
 
 pub(crate) fn insert<T: schemars::JsonSchema>(map: &mut SchemaMap, name: &str) {
@@ -104,7 +103,7 @@ pub(crate) fn insert<T: schemars::JsonSchema>(map: &mut SchemaMap, name: &str) {
             }
         }
     }
-    // izup: catch silent registry overwrites. A previous entry under
+    // Catch silent registry overwrites. A previous entry under
     // this name with a DIFFERENT schema shape means two distinct Rust
     // types both want to publish as `<name>` — only the second would
     // appear in the output, and the frontend codegen would silently
@@ -200,7 +199,7 @@ mod tests {
         }
     }
 
-    /// izup: every `$ref` in the generated schema tree must resolve to a
+    /// Every `$ref` in the generated schema tree must resolve to a
     /// registered type name in `components/schemas`. The common silent
     /// failure mode is "added a new pub `JsonSchema`-deriving type,
     /// inlined it in some other type's field, forgot to call `insert::<T>`

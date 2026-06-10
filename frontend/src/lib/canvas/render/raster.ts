@@ -5,7 +5,7 @@ import type { ProjectFn } from './types';
 /// Cache of the decoded brightness image per relief source, keyed by
 /// source id. Invalidated when the source's `brightness` array
 /// reference changes (origin / cell edits keep the same array, so a
-/// drag never rebuilds the 256² ImageData). (rt1.12 / j7b4)
+/// drag never rebuilds the 256² ImageData).
 export class RasterImageCache {
   private cache = new Map<number, { brightness: readonly number[]; canvas: HTMLCanvasElement }>();
 

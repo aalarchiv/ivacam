@@ -1,6 +1,6 @@
 <script lang="ts">
-  /// rxm9 GcodeInclude op-properties: file-picker + path display + content
-  /// textarea, plus the variable cheat-sheet hint and the xi2g verbose
+  /// GcodeInclude op-properties: file-picker + path display + content
+  /// textarea, plus the variable cheat-sheet hint and the verbose
   /// unsim-warning toggle.
   /// Styles inherited from OpPropertiesPanel's :global(.props ...) rules.
   import type { GcodeIncludeOp, OpField, OpFieldValue } from '../../state/project.svelte';
@@ -69,7 +69,7 @@
   a warning. The sim carves G0/G1/G2/G3 and canned cycles G73/G81/G82/G83; anything else fires a counted
   "lines skipped" warning so you know what the heightmap won't show.
 </p>
-<!-- xi2g: verbose per-line warning toggle. Off by default; users
+<!-- Verbose per-line warning toggle. Off by default; users
      debugging an exotic block flip it on to see exactly which
      lines were skipped and why. -->
 <label

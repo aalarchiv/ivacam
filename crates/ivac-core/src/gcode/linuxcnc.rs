@@ -43,7 +43,7 @@ impl Post {
         fmt_num_dp(v, self.state.decimal_separator, self.state.decimals())
     }
 
-    /// nxn0: render a dwell value in the active post's time unit.
+    /// Render a dwell value in the active post's time unit.
     /// Pipeline always passes seconds; LinuxCNC/Smoothie keep them as
     /// seconds, Mach3/Mach4/Centroid (and any profile that opts in)
     /// emit milliseconds = seconds * 1000. Integer-rendered when the
@@ -71,7 +71,7 @@ impl Post {
         self.fmt(v)
     }
 
-    /// Same as `fmt` but converts mm → emit units (w9hd). Used for
+    /// Same as `fmt` but converts mm → emit units. Used for
     /// every value that represents a length / position in pipeline
     /// (mm) coordinates — X/Y/Z/I/J/R/Q + `machine_offsets` + Z-shift.
     /// Coordinates already in emit units (e.g. dwell seconds) keep
@@ -85,12 +85,12 @@ impl Post {
     }
 
     /// Format a single axis word. Consults the profile's per-axis
-    /// config (hev) when set: disabled axes return None so the caller
+    /// config when set: disabled axes return None so the caller
     /// drops the word; renamed / reformatted / scaled axes are rendered
     /// per the user's spec, with the configured decimal separator
     /// applied last so `,`-locales keep working.
     ///
-    /// w9hd: the input `v` is in mm (pipeline units). When
+    /// The input `v` is in mm (pipeline units). When
     /// `state.unit_scale != 1.0` (Inch project), the multiplication
     /// happens here at the boundary so the number that lands in the
     /// gcode text matches the G20 pragma.
@@ -145,8 +145,8 @@ impl Post {
     }
 
     /// Emit a single G2/G3 line (no full-circle splitting). The
-    /// public `arc_cw` / `arc_ccw` wrap this with the split-detection
-    /// for 3p7v.
+    /// public `arc_cw` / `arc_ccw` wrap this with full-circle
+    /// split-detection.
     fn emit_arc_raw(
         &mut self,
         g: &str,
@@ -195,14 +195,14 @@ impl Post {
     }
 }
 
-/// 3p7v: detect a full-circle arc (start XY ≈ target XY, with a
+/// Detect a full-circle arc (start XY ≈ target XY, with a
 /// non-trivial I/J vector to the center) and return the midpoint XY
 /// (diametrically opposite the start across the center) so the
 /// caller can split the arc into two halves. Returns None when the
 /// arc is a normal partial sweep, or when start / target / center
 /// aren't well-defined (no prior position, missing target / I / J,
 /// or a degenerate zero-radius circle).
-// juvx: local `const EPS` lives near its use; hoisting would split
+// Local `const EPS` lives near its use; hoisting would split
 // the same-point-check block that documents the tolerance choice.
 #[allow(clippy::items_after_statements)]
 fn full_circle_midpoint(
@@ -245,7 +245,7 @@ fn full_circle_midpoint(
 /// because the call sites hold `&self.state` and we need to release
 /// it before calling `self.fmt(v)`.
 ///
-/// r164: I/J offsets are tied to the X/Y plane respectively. When the
+/// I/J offsets are tied to the X/Y plane respectively. When the
 /// user renames X (e.g. X → A for a rotary-as-linear setup) and leaves
 /// the I axis at its built-in default name "I", auto-track the X
 /// rename so the offset letter follows the coordinate letter — most
@@ -276,7 +276,7 @@ fn axis_for(letter: char, axes: &crate::gcode::post_profile::AxesConfig) -> Axis
 
 impl PostProcessor for Post {
     fn fmt_dwell_post(&self, seconds: f64) -> String {
-        // pxyt: honour the active profile's dwell_unit when the
+        // Honour the active profile's dwell_unit when the
         // trait-default drill_simple / drill_peck / drill_chip_break
         // dispatch through here. LinuxCNC's own drill overrides go
         // through `fmt_dwell_p` directly; this method exists so a
@@ -309,7 +309,7 @@ impl PostProcessor for Post {
         }
     }
     fn feedrate(&mut self, rate: u32) {
-        // 4nj6: never emit F0. LinuxCNC raises "negative or zero feed
+        // Never emit F0. LinuxCNC raises "negative or zero feed
         // rate" and halts; GRBL returns error:11. A default-constructed
         // or misconfigured tool with rate_v=0 or rate_h=0 can reach
         // this path even when pipeline validation tries to catch it.
@@ -321,7 +321,7 @@ impl PostProcessor for Post {
             return;
         }
         if self.state.last_rate != Some(rate) {
-            // w9hd: feedrate is mm/min in pipeline; emit-units = mm/min × unit_scale.
+            // Feedrate is mm/min in pipeline; emit-units = mm/min × unit_scale.
             // For Inch projects that's in/min — matches G20 mode (controllers
             // interpret F in the current unit system).
             let rate_emit = f64::from(rate) * self.state.unit_scale;
@@ -420,7 +420,7 @@ impl PostProcessor for Post {
         ));
     }
     fn coolant_mist(&mut self) {
-        // f78z: dedupe — the per-offset cut-block calls coolant_mist
+        // Dedupe — the per-offset cut-block calls coolant_mist
         // unconditionally before each cut, but the controller only
         // wants the M7 on a state CHANGE. Suppress when we already
         // commanded Mist.
@@ -442,7 +442,7 @@ impl PostProcessor for Post {
         self.state.last_coolant = CoolantState::Mist;
     }
     fn coolant_flood(&mut self) {
-        // f78z: same dedupe as coolant_mist — only emit M8 on a state
+        // Same dedupe as coolant_mist — only emit M8 on a state
         // change.
         if self.state.last_coolant == CoolantState::Flood {
             return;
@@ -462,7 +462,7 @@ impl PostProcessor for Post {
         self.state.last_coolant = CoolantState::Flood;
     }
     fn coolant_off(&mut self) {
-        // f78z: skip when coolant is already off. The Unknown initial
+        // Skip when coolant is already off. The Unknown initial
         // state still emits — a defensive M9 at program-end ensures
         // the spindle/pump shuts down even if no on-line was emitted
         // (e.g. tool with coolant=Off followed by an explicit
@@ -490,13 +490,13 @@ impl PostProcessor for Post {
     fn spindle_off(&mut self) {
         self.write("M5");
         self.state.last_speed = None;
-        // sulg: clear the tracked direction so the next spindle_on
+        // Clear the tracked direction so the next spindle_on
         // (M3 / M4) re-asserts it explicitly — matches the cache
         // semantics in CapturedPostState.last_spindle_dir.
         self.state.last_spindle_dir = None;
     }
     fn spindle_cw(&mut self, speed: u32, pause: u32) {
-        // sulg: re-emit M3 when EITHER the speed changed OR the
+        // Re-emit M3 when EITHER the speed changed OR the
         // direction differs from what's tracked. Otherwise a prior
         // Ccw op (M4) followed by a same-speed Cw op would silently
         // leave the spindle running backward.
@@ -513,7 +513,7 @@ impl PostProcessor for Post {
         }
     }
     fn spindle_ccw(&mut self, speed: u32, pause: u32) {
-        // sulg: same direction-aware dedupe as spindle_cw.
+        // Same direction-aware dedupe as spindle_cw.
         let need_emit = self.state.last_speed != Some(speed)
             || self.state.last_spindle_dir != Some(SpindleDirection::Ccw);
         if need_emit {
@@ -527,7 +527,7 @@ impl PostProcessor for Post {
         }
     }
     fn laser_on(&mut self, power: u32) {
-        // 20y5: fire the laser at the configured power. Emit `M3 S<power>`
+        // Fire the laser at the configured power. Emit `M3 S<power>`
         // — `M3` matches what Lightburn / T2Laser / Estlcam laser emit
         // by default. GRBL's dynamic-laser `M4` is an alternative, but
         // `M3` works in both GRBL `$32=1` (laser-mode) and standard
@@ -546,7 +546,7 @@ impl PostProcessor for Post {
         }
     }
     fn laser_arm(&mut self) {
-        // xkvv: arm the laser at zero power before the rapid traverse.
+        // Arm the laser at zero power before the rapid traverse.
         // Same M3 modal as `laser_on` but S0 — the controller carries
         // the laser-on state through the rapid (so spindle-bound axes
         // and `$32=1` GRBL modes don't fight) while no power means no
@@ -560,7 +560,7 @@ impl PostProcessor for Post {
         }
     }
     fn laser_off(&mut self) {
-        // 20y5: emit M5 to drop the beam before rapid traversal.
+        // Emit M5 to drop the beam before rapid traversal.
         // Clear last_speed so the next laser_on re-emits M3 S<power>
         // — otherwise the delta-encoded state would suppress the
         // re-arm and the beam would stay off through subsequent cuts.
@@ -574,7 +574,7 @@ impl PostProcessor for Post {
         }
     }
     fn rapid_machine_xy(&mut self, x_mm: f64, y_mm: f64) {
-        // ad0v: machine-coords rapid to the tool-change station. Build
+        // Machine-coords rapid to the tool-change station. Build
         // the X/Y words through `fmt_axis` so they honor the configured
         // decimal separator, inch scale, and any per-axis profile
         // rename/disable — exactly like a normal rapid. Unlike `coords`,
@@ -606,7 +606,7 @@ impl PostProcessor for Post {
         self.state.last_z = None;
     }
     fn rapid_machine_z(&mut self, z_mm: f64) {
-        // hat3: machine-coords Z rapid (G53 G0 Z<z>) — the safe approach
+        // Machine-coords Z rapid (G53 G0 Z<z>) — the safe approach
         // height above a fixed sensor. Same fmt_axis path + position-
         // cache invalidation as `rapid_machine_xy`.
         if let Some(w) = self.fmt_axis('Z', z_mm) {
@@ -617,8 +617,8 @@ impl PostProcessor for Post {
         self.state.last_z = None;
     }
     fn probe_toward_z(&mut self, distance_mm: f64, feed_mm_min: u32) {
-        // hat3: probing-feed move; controller halts at the trigger.
-        // w9hd: distance is a length (mm) — fmt_len applies the inch
+        // Probing-feed move; controller halts at the trigger.
+        // Distance is a length (mm) — fmt_len applies the inch
         // scale. Feed stays integer mm/min, matching the Probe op.
         let d = self.fmt_len(distance_mm);
         self.write(format!("G38.2 Z{d} F{feed_mm_min}"));
@@ -629,7 +629,7 @@ impl PostProcessor for Post {
         self.state.last_z = None;
     }
     fn apply_probed_tool_length(&mut self) {
-        // hat3: LinuxCNC stores the probed Z in #5063. G43.1 applies it
+        // LinuxCNC stores the probed Z in #5063. G43.1 applies it
         // as a dynamic tool-length offset; combined with the reference
         // tool's WCS Z0 this re-establishes the new tool's tip. The
         // difference math is the controller's — we just wire the
@@ -652,7 +652,7 @@ impl PostProcessor for Post {
         j: Option<f64>,
     ) {
         if let Some((mid_x, mid_y)) = full_circle_midpoint(&self.state, x, y, i, j) {
-            // 3p7v: split a start==end arc into two halves around the
+            // Split a start==end arc into two halves around the
             // shared center. GRBL rejects full-circles outright
             // (error:33); LinuxCNC accepts them in some configs but
             // splitting is universally safe.
@@ -684,9 +684,9 @@ impl PostProcessor for Post {
         // LinuxCNC G81 / G82 (G82 is the dwell variant). Use G82 when dwell > 0,
         // G81 otherwise, so machinists who watch the canned cycle code see what
         // they expect.
-        // w9hd: R is a length (retract plane in pipeline mm) — `fmt_len`
+        // R is a length (retract plane in pipeline mm) — `fmt_len`
         // applies the inch scale.
-        // nxn0: Dwell is in seconds at the pipeline boundary; the post
+        // Dwell is in seconds at the pipeline boundary; the post
         // converts to milliseconds when the active profile asks for it
         // (Mach3/Mach4/Centroid). LinuxCNC default keeps seconds.
         let dwell = if dwell_sec > 0.0 {
@@ -703,8 +703,8 @@ impl PostProcessor for Post {
         self.state.last_z = Some(r);
     }
     fn drill_peck(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, _rate_v: u32, dwell_sec: f64) {
-        // w9hd: R + Q (peck step) are lengths — scale via `fmt_len`.
-        // nxn0: P (dwell) follows the profile's dwell_unit.
+        // R + Q (peck step) are lengths — scale via `fmt_len`.
+        // P (dwell) follows the profile's dwell_unit.
         let dwell = if dwell_sec > 0.0 {
             format!(" P{}", self.fmt_dwell_p(dwell_sec))
         } else {
@@ -728,8 +728,8 @@ impl PostProcessor for Post {
         _rate_v: u32,
         dwell_sec: f64,
     ) {
-        // w9hd: R + Q (peck step) are lengths — scale via `fmt_len`.
-        // nxn0: P (dwell) follows the profile's dwell_unit.
+        // R + Q (peck step) are lengths — scale via `fmt_len`.
+        // P (dwell) follows the profile's dwell_unit.
         let dwell = if dwell_sec > 0.0 {
             format!(" P{}", self.fmt_dwell_p(dwell_sec))
         } else {
@@ -765,7 +765,7 @@ impl PostProcessor for Post {
         self.state.last_z = None;
         self.state.last_rate = None;
         self.state.last_speed = None;
-        // sulg: a reset forces the next motion to re-emit X/Y/Z/F/S
+        // A reset forces the next motion to re-emit X/Y/Z/F/S
         // explicitly. The same applies to the spindle direction —
         // the pipeline's Pause handler at pipeline.rs:748 relies on
         // this so the next op's spindle_on (whether M3 or M4)
@@ -781,7 +781,7 @@ impl PostProcessor for Post {
             last_z: self.state.last_z,
             last_rate: self.state.last_rate,
             last_speed: self.state.last_speed,
-            // sulg: ferry the live coolant + spindle-direction modal
+            // Ferry the live coolant + spindle-direction modal
             // state across the cache boundary. Without this, a
             // cached op N+1 would replay against a stale "Unknown"
             // initial state and either re-emit a redundant M7/M8/M3
@@ -816,7 +816,7 @@ impl PostProcessor for Post {
         // to the configured shift so the new tool's tip lines up with
         // the reference tool's Z=0. The `;` comment is bracketed so
         // grep'ing for the offset is easy in CAM-review.
-        // w9hd: shift comes in as mm; emit in machine units (inch on G20).
+        // Shift comes in as mm; emit in machine units (inch on G20).
         let s = self.fmt_len(shift_mm);
         self.write(format!("(z-shift: {s})"));
         self.write(format!("G92 Z{s}"));
@@ -826,7 +826,7 @@ impl PostProcessor for Post {
         self.state.last_z = None;
     }
     fn set_work_z_here(&mut self, z_mm: f64) {
-        // hat3: same G92-Z mechanism as `tool_z_shift`, but always
+        // Same G92-Z mechanism as `tool_z_shift`, but always
         // emitted (a 0 mm touch plate still needs Z re-zeroed here).
         let s = self.fmt_len(z_mm);
         self.write(format!("(set work Z: {s})"));
@@ -834,14 +834,14 @@ impl PostProcessor for Post {
         self.state.last_z = None;
     }
     fn tool_length_offset(&mut self, h: u32) {
-        // llkf: apply tool-table length offset H<h>. G43 shifts the
+        // Apply tool-table length offset H<h>. G43 shifts the
         // active Z offset frame, so flush tracked Z — the next move
         // re-emits explicitly rather than eliding against a stale frame.
         self.write(format!("G43 H{h}"));
         self.state.last_z = None;
     }
     fn tool_length_offset_off(&mut self) {
-        // llkf: cancel tool-length comp at program end.
+        // Cancel tool-length comp at program end.
         self.write("G49");
         self.state.last_z = None;
     }
@@ -849,7 +849,7 @@ impl PostProcessor for Post {
         if seconds <= 0.0 {
             return;
         }
-        // nxn0: honor profile's dwell_unit for G4 P as well — same
+        // Honor profile's dwell_unit for G4 P as well — same
         // controller will read the dwell word with the same unit
         // semantics whether it sits on a G4 line or a canned cycle.
         let s = self.fmt_dwell_p(seconds);
@@ -871,7 +871,7 @@ impl PostProcessor for Post {
         // that's still accurate after G80, so we don't touch state.
     }
     fn select_wcs(&mut self, wcs: crate::project::Wcs) {
-        // e2mq: pin the active WCS in the prologue. Emit the explicit
+        // Pin the active WCS in the prologue. Emit the explicit
         // `G54..G59` word so the controller doesn't run against a
         // stale modal left by a prior program. Pin into `PostState.wcs`
         // so `tool_z_shift` can build its `G10 L20 P<n>` against the

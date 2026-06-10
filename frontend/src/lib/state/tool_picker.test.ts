@@ -1,4 +1,4 @@
-/// Pure-logic tests for the dx8p best-fit tool picker.
+/// Pure-logic tests for the best-fit tool picker.
 
 import { describe, expect, it } from 'vitest';
 import { pickBestToolForOp, pickBestDrillTool, inferDrillDiameterMm } from './tool_picker';

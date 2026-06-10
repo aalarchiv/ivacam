@@ -247,7 +247,7 @@ struct ImportCtx<'a> {
     /// `ImportOutput.text_entities` so the frontend can turn each into
     /// an editable `TextLayer` instead of consuming pre-rendered glyphs.
     text_entities: Vec<crate::input::ImportedTextEntity>,
-    /// Per-import layer-name cache (mieu). Interned once per resolved
+    /// Per-import layer-name cache. Interned once per resolved
     /// layer string; every Segment on that layer reuses the cached
     /// Arc<str> instead of allocating a fresh one.
     layer_intern: crate::input::intern::LayerIntern,
@@ -291,7 +291,7 @@ impl ImportCtx<'_> {
         if !self.layer_selected(&layer) {
             return;
         }
-        // mieu: intern once per entity. Every Segment this emit_* fans out
+        // Intern once per entity. Every Segment this emit_* fans out
         // to clones the cached Arc<str> instead of allocating its own.
         let layer_arc = self.layer_intern.intern(&layer);
         match &entity.specific {
@@ -862,7 +862,7 @@ impl Transform2D {
         // Effective isotropic scale (sqrt of det). Used to scale circle/arc
         // radii through INSERT transforms.
         //
-        // pq8s: this collapses both axis scales to their geometric mean, so a
+        // This collapses both axis scales to their geometric mean, so a
         // CIRCLE/ARC inside an INSERT with a non-uniform block scale (sx != sy)
         // comes out circular at the mean radius rather than as the true
         // ellipse. Deliberate approximation — the bulge encoding can't

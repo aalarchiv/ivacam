@@ -1,4 +1,4 @@
-/// File-transform engine tests (bww). Covers the geometry pipeline that
+/// File-transform engine tests. Covers the geometry pipeline that
 /// projects an imported ImportResponse through a FileTransform.
 
 import { describe, expect, it } from 'vitest';

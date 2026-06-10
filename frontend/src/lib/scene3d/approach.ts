@@ -1,9 +1,9 @@
-/// n79: approach-point needle for the currently selected op. A vertical
+/// Approach-point needle for the currently selected op. A vertical
 /// line from z=0 up to `fastMoveZ` at the op's `approachPoint`, plus a tiny
 /// base dot so the marker reads even when the camera is top-down. Shown
 /// only when the selected op carries one — same data the 2D canvas paints.
 ///
-/// Extracted from Scene3D.svelte (4w2f). Owns its THREE.Group.
+/// Extracted from Scene3D.svelte. Owns its THREE.Group.
 
 import * as THREE from 'three';
 import type { OpEntry } from '../state/project.svelte';
@@ -27,7 +27,7 @@ export class ApproachBuilder implements Builder {
   }
 
   build(input: ApproachInput) {
-    // 7iej.4: dispose the previous needle + dot geom/material — `.clear()`
+    // Dispose the previous needle + dot geom/material — `.clear()`
     // alone leaks them on every approach-point drag / op selection.
     disposeGroup(this.group);
     const opId = input.selectedOpId;

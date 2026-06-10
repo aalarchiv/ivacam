@@ -162,7 +162,7 @@ describe('planAdvance', () => {
   });
 });
 
-// Regression: 8njb missed this second wire seam. The sim driver also
+// Regression: the sim driver also
 // ships a tool spec to the WASM `Simulator`, which deserializes through
 // the SAME Rust `ToolKind` enum that expects the German `kegel` for the
 // cone variant. Without this mapping, picking a cone tool for any op

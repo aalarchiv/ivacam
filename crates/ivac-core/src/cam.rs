@@ -202,7 +202,7 @@ pub fn segment_to_points(seg: &Segment, interpolate: usize) -> Vec<Point2> {
     out
 }
 
-// ─── Object transforms (rov.15) ────────────────────────────────────────────
+// ─── Object transforms ─────────────────────────────────────────────────────
 //
 // Pure helpers that mutate a `VcObject` (or any `&mut [Segment]`). They
 // keep the segment list shape — bulges, kinds, layers — intact, only
@@ -430,7 +430,7 @@ mod tests {
 }
 
 /// Register this module's wire types in the OpenAPI components map.
-/// Co-located with the type definitions (kb1y) so adding a wire type is
+/// Co-located with the type definitions so adding a wire type is
 /// a same-file edit; `crate::schema::components_schemas` composes these.
 pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
     crate::schema::insert::<VcObject>(map, "VcObject");

@@ -60,7 +60,7 @@ pub fn sweep_segment(
     holder: Option<&HolderProfile>,
     diagnostics: &mut SimDiagnostics,
 ) -> u32 {
-    // t1ru: drag-knife blade trails the spindle by `dragoff` in the
+    // Drag-knife blade trails the spindle by `dragoff` in the
     // direction of travel, so fixture / holder / rapid checks must run
     // against the SHIFTED chord — the spindle path is in air; only the
     // trailing blade is in material. Build the shifted segment once and
@@ -83,7 +83,7 @@ pub fn sweep_segment(
 /// of the segment (parametric position along the chord). The full-segment
 /// fixture / holder / rapid checks fire only when `t_start ≈ 0` so a
 /// driver that issues many partial slices per second doesn't emit the
-/// same warning every frame (pi8r).
+/// same warning every frame.
 ///
 /// `t_start` and `t_end` are clamped to `[0, 1]`; an inverted or empty
 /// interval is a no-op. The internally constructed synthetic chord has
@@ -107,7 +107,7 @@ pub fn sweep_segment_partial(
     if hi <= lo {
         return 0;
     }
-    // f1z3 / 9epy: fire the once-per-segment diagnostic pass at the start
+    // Fire the once-per-segment diagnostic pass at the start
     // of a segment (`lo <= 1e-9`). Each `partial_advance` resets the shared
     // `SimDiagnostics` and sweeps exactly one segment slice, and the driver
     // issues a single `t_start ≈ 0` slice per segment, so this gate already
@@ -115,7 +115,7 @@ pub fn sweep_segment_partial(
     // (A finer sub-`t=0` subdivision would re-fire, but nothing in the
     // pipeline does that; revisit if a driver ever sub-slices near zero.)
     if lo <= 1e-9 {
-        // t1ru: same dragoff-shift as `sweep_segment` — diagnostics
+        // Same dragoff-shift as `sweep_segment` — diagnostics
         // must see the trailing-blade chord, not the spindle axis.
         let shifted = apply_dragoff_offset(segment, profile);
         let effective = shifted.as_ref().unwrap_or(segment);
@@ -132,7 +132,7 @@ pub fn sweep_segment_partial(
     if matches!(segment.kind, MoveKind::Rapid) {
         return 0;
     }
-    // xf5m: previously this built a synthetic chord via
+    // Previously this built a synthetic chord via
     // `lerp_pose3(from, to, t)` and routed it through
     // `sweep_chord_carve`. Even for flat-bottom profiles that proved
     // wrong: a cell at radial offset r < r_tool whose closest-point on
@@ -208,7 +208,7 @@ fn run_segment_warnings(
             subkind,
         } = check_rapid_against_stock(heightmap, segment, profile, holder)
         {
-            // 50eq: map the rapid_check subkind (Tip vs Shank) onto the
+            // Map the rapid_check subkind (Tip vs Shank) onto the
             // serialized warning so the user knows whether to lower
             // the cut depth or raise the rapid Z / use a longer tool.
             use crate::sim::diagnostics::RapidCollisionSubkind as DSub;
@@ -243,7 +243,7 @@ fn sweep_chord_carve(
     if r_tool <= 0.0 {
         return 0;
     }
-    // w8q7: drag-knife blade trails the spindle by `dragoff` in the
+    // Drag-knife blade trails the spindle by `dragoff` in the
     // direction of travel, so the actual cut happens at
     // `spindle - dragoff * unit_dir`. Shift the chord before carving.
     let shifted = apply_dragoff_offset(segment, profile);
@@ -256,7 +256,7 @@ fn sweep_chord_carve(
         return 0;
     }
 
-    // 4mp1: engagement-depth clamp. Profiles that expose a
+    // Engagement-depth clamp. Profiles that expose a
     // `max_engagement_depth` (Engraver) refuse to carve more than
     // `top_z - max_engagement_depth` below the stock-top plane: deeper
     // toolpaths would snap the bit in reality, so we refuse to model
@@ -267,7 +267,7 @@ fn sweep_chord_carve(
     let mut touched = 0u32;
     // `for_each_swept_cell` clamps (ix, iy) to the heightmap's cell
     // rectangle, so the safe `lower_at`'s bounds branch is redundant
-    // every frame — use the unchecked path here (audit-5el3).
+    // every frame — use the unchecked path here.
     for_each_swept_cell(&layout, segment, profile, |ix, iy, _r, cutter_pz, dz| {
         let clamped_pz = depth_floor_z.map_or(cutter_pz, |floor| cutter_pz.max(floor));
         let surface_z = clamped_pz as f32 + dz;
@@ -277,7 +277,7 @@ fn sweep_chord_carve(
     touched
 }
 
-/// w8q7: shift a drag-knife segment by `-dragoff * unit_dir` so the
+/// Shift a drag-knife segment by `-dragoff * unit_dir` so the
 /// carved chord tracks the trailing blade tip instead of the spindle
 /// axis. Returns `None` for non-DragKnife profiles, a profile with
 /// `dragoff <= 0`, or a pure-plunge segment (zero XY travel — no
@@ -307,7 +307,7 @@ fn apply_dragoff_offset(
     Some(shifted)
 }
 
-/// Partial carve for non-flat profiles (xf5m): walk the same cells the
+/// Partial carve for non-flat profiles: walk the same cells the
 /// full segment would touch, compute `(r, t_real)` against the real
 /// chord, and lower the cell only when `t_real ∈ [t_start, t_end]`.
 /// This preserves bitwise-identical final state across
@@ -329,7 +329,7 @@ fn sweep_chord_carve_partial(
     if r_tool <= 0.0 {
         return 0;
     }
-    // w8q7: same dragoff-shift as `sweep_chord_carve`. The partial
+    // Same dragoff-shift as `sweep_chord_carve`. The partial
     // version must use the same shifted geometry so split slices
     // line up bit-for-bit with the full sweep.
     let shifted = apply_dragoff_offset(segment, profile);
@@ -382,12 +382,12 @@ fn sweep_chord_carve_partial(
 
     let cell = layout.cell;
     let r_tool_sq = r_tool * r_tool;
-    // 4mp1: engagement-depth clamp — same semantics as `sweep_chord_carve`.
+    // Engagement-depth clamp — same semantics as `sweep_chord_carve`.
     let depth_floor_z = profile.max_engagement_depth().map(|d| top_z - f64::from(d));
     let mut touched = 0u32;
     for iy in iy0..=iy1 {
         let cy = layout.origin_y + (iy as f64 + 0.5) * cell;
-        // 7iej.9: clip the row to the full segment's stadium x-extent.
+        // Clip the row to the full segment's stadium x-extent.
         // Every cell this partial carves (interior chunk + any owned end
         // cap) is within r_tool of the full [from, to] segment, so the
         // full-segment stadium is a valid superset; the per-cell t-range
@@ -484,7 +484,7 @@ impl HeightmapLayout {
     }
 }
 
-/// 7iej.9: clip one scanline (`cy`, a fixed cell-row center) to the
+/// Clip one scanline (`cy`, a fixed cell-row center) to the
 /// swept *stadium*'s x-extent, returning the inclusive `[ix_lo, ix_hi]`
 /// cell range (clamped to `[ix0, ix1]`) or `None` when the row misses the
 /// footprint entirely. Walking the full AABB width per row is ~L×L cells
@@ -632,13 +632,13 @@ pub(super) fn for_each_swept_cell<F>(
     // Flat-bottom profiles (Endmill / Drill / Laser / DragKnife) have
     // `eval(r) = Some(0.0)` for every `r ≤ r_tool` — which is already
     // implied by `r_sq ≤ r_tool_sq`. Skip both the sqrt and the
-    // per-cell eval branch for those (audit-xnmp). The compiler can
+    // per-cell eval branch for those. The compiler can
     // also hoist this constant decision out of the inner loop.
     let flat_bottom = profile.is_flat_bottom();
 
     for iy in iy0..=iy1 {
         let cy = layout.origin_y + (iy as f64 + 0.5) * cell;
-        // 7iej.9: clip this row to the stadium's x-extent instead of
+        // Clip this row to the stadium's x-extent instead of
         // walking the full AABB width. The per-cell `r_sq > r_tool_sq`
         // check below is unchanged and remains the correctness gate.
         let Some((rx0, rx1)) = swept_row_cell_range(
@@ -1137,7 +1137,7 @@ mod tests {
 
     #[test]
     fn ball_nose_arc_heightmap_within_chord_error() {
-        // biot: A 90° arc carved by a ball-nose must produce a smooth
+        // A 90° arc carved by a ball-nose must produce a smooth
         // heightmap — no visible chord-tessellation scallop along the
         // arc's centerline. Earlier 10° tessellation produced 0.04 mm
         // scallop teeth on a 10 mm arc (sim artifact, not a real
@@ -1218,7 +1218,7 @@ mod tests {
 
     #[test]
     fn partial_advance_non_flat_no_drift() {
-        // xf5m: ball-nose carving a segment in two halves should
+        // Ball-nose carving a segment in two halves should
         // produce an identical heightmap to carving the full segment
         // in one shot. Earlier code routed both halves through a
         // synthetic chord whose endpoint clamp left false-deep marks
@@ -1282,7 +1282,7 @@ mod tests {
         }
     }
 
-    /// w8q7: drag-knife with a positive dragoff carves the segment
+    /// Drag-knife with a positive dragoff carves the segment
     /// offset BEHIND the spindle in the direction of travel. A
     /// horizontal X-axis cut from x=10 to x=20 with dragoff=2 should
     /// carve cells from x≈8 (start cap) to x≈19 (end cap clamps at
@@ -1348,7 +1348,7 @@ mod tests {
         );
     }
 
-    /// w8q7: dragoff = 0 collapses to the legacy endmill carve.
+    /// Dragoff = 0 collapses to the legacy endmill carve.
     /// Zero / missing dragoff must NOT shift the chord.
     #[test]
     fn dragknife_dragoff_zero_matches_endmill_carve() {
@@ -1390,7 +1390,7 @@ mod tests {
         }
     }
 
-    /// w8q7: pure plunge (zero XY length) on a drag-knife has no
+    /// Pure plunge (zero XY length) on a drag-knife has no
     /// direction of travel — the dragoff offset is undefined, so the
     /// sim falls back to the spindle position. Cells under the
     /// plunge point are carved as if dragoff = 0.
@@ -1454,7 +1454,7 @@ mod tests {
         assert_eq!(d.count("fixture_collision"), 0);
     }
 
-    /// 4mp1: Engraver refuses to carve more than `max_engagement_depth`
+    /// Engraver refuses to carve more than `max_engagement_depth`
     /// below the stock-top plane. Drive a plunge well past the
     /// configured depth and confirm the cell under the tip clamps to
     /// `top_z - max_engagement_depth`, not the toolpath Z.
@@ -1499,7 +1499,7 @@ mod tests {
         );
     }
 
-    /// 4mp1: the engagement-depth clamp survives partial-advance carves
+    /// The engagement-depth clamp survives partial-advance carves
     /// — splitting the segment in half must produce the same clamped
     /// surface as a full sweep.
     #[test]
@@ -1533,7 +1533,7 @@ mod tests {
         assert!((cell(&full, 20, 20) - -1.5).abs() < 1e-5);
     }
 
-    /// t1ru: drag-knife fixture / holder / rapid diagnostics must run
+    /// Drag-knife fixture / holder / rapid diagnostics must run
     /// against the trailing-blade chord, NOT the spindle path. A
     /// fixture sitting behind the spindle endpoint (in the blade's
     /// shifted path) was previously missed.
@@ -1575,7 +1575,7 @@ mod tests {
         );
     }
 
-    /// t1ru companion: with dragoff = 0, the diagnostics see the same
+    /// Companion test: with dragoff = 0, the diagnostics see the same
     /// chord as the carve — no false-negative regression for the legacy
     /// path.
     #[test]
@@ -1657,7 +1657,7 @@ mod tests {
         assert!(z0 < -2.0, "axis cell should be near tip depth -3, got {z0}");
     }
 
-    /// 7iej.9 safety net: the per-row stadium clip must visit EXACTLY the
+    /// Safety net: the per-row stadium clip must visit EXACTLY the
     /// same cells (and produce the same per-cell values) as a brute-force
     /// walk of the full AABB. The clip only tightens loop bounds; if it
     /// ever drops an in-stadium cell the sim would under-carve / miss a

@@ -92,7 +92,7 @@ pub fn severity(w: &SimWarning) -> Severity {
         SimWarning::RapidThroughMaterial { .. }
         | SimWarning::FixtureCollision { .. }
         | SimWarning::HolderCollision { .. } => Severity::Critical,
-        // wpzm: coarsening is purely informational — the sim still runs,
+        // Coarsening is purely informational — the sim still runs,
         // just at coarser resolution. Surface it so the user knows what
         // happened, but don't escalate to warning/critical.
         SimWarning::CellSizeCoarsened { .. } => Severity::Info,
@@ -109,12 +109,11 @@ pub fn kind_str(w: &SimWarning) -> &'static str {
     }
 }
 
-/// 03zx: end-of-run telemetry for a single sim invocation. Captured at
+/// End-of-run telemetry for a single sim invocation. Captured at
 /// the close of each sim run (driver hook) and logged via
 /// `tracing::info`. The frontend can later persist these alongside
 /// the actual machine-side time so the user has a quantitative basis
-/// for trusting the next prediction (the audit's "sim agrees with
-/// reality" gap).
+/// for trusting the next prediction.
 ///
 /// The shape is deliberately minimal — counts only — so it
 /// survives JSON round-trip without dragging in the heightmap data.
@@ -314,7 +313,7 @@ mod tests {
         );
     }
 
-    /// 03zx: sim-run summary aggregates from a `SimDiagnostics`
+    /// Sim-run summary aggregates from a `SimDiagnostics`
     /// snapshot. Counts every kind correctly and passes through
     /// `cells_carved` + `total_seconds` from the caller-tracked aggregates.
     #[test]

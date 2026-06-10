@@ -24,7 +24,7 @@ export interface TabColors {
   auto: string;
   /// Marker outline — the canvas bg color so markers read as cutouts.
   stroke: string;
-  /// Snap-indicator dot accent (1q3).
+  /// Snap-indicator dot accent.
   accent: string;
 }
 
@@ -121,7 +121,7 @@ export function drawTabs(
         colors.stroke,
       );
       ctx.restore();
-      // Snap indicator (1q3): a small accent dot next to the
+      // Snap indicator: a small accent dot next to the
       // ghost when the cursor caught a secondary snap target
       // (vertex / midpoint / existing tab).
       if (ghost.tab.snap !== 'contour') {

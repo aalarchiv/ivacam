@@ -88,7 +88,7 @@ pub(super) fn build_z_schedule(
 mod tests {
     use super::*;
 
-    /// Regression for `hsb` (audit): `build_z_schedule` used to drop the
+    /// Regression: `build_z_schedule` used to drop the
     /// pre-finish pass on single-pass ops because of an `!out.is_empty()`
     /// guard. With step >= depth (one pass at `total_depth`), the user's
     /// `finish_step` was silently lost.
@@ -123,7 +123,7 @@ mod tests {
         assert_eq!(s, vec![-3.0]);
     }
 
-    /// 580k: negative `finish_step` normalizes to positive magnitude.
+    /// Negative `finish_step` normalizes to positive magnitude.
     /// The caller (`multi_pass`) abs()-and-filters before reaching us,
     /// but the schedule builder itself must also be robust against a
     /// negative slipping through — otherwise a stale serialized

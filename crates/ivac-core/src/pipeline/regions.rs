@@ -21,12 +21,12 @@ pub(super) fn build_region_previews(project: &Project, objects: &[VcObject]) -> 
         if !matches!(op.kind, OpKind::Pocket { .. }) {
             continue;
         }
-        // Pocket-Outside (rt1.3) preview: when the op declares a frame,
+        // Pocket-Outside preview: when the op declares a frame,
         // synthesize the frame + ordered-ids the same way the toolpath
         // driver does (`synthesize_pocket_outside_objects`) so preview
         // and emit stay in lockstep.
         //
-        // nahx: route through `frame_preview_regions` so the difference
+        // Route through `frame_preview_regions` so the difference
         // pass that emits the frame's outer + selection holes is
         // shape-agnostic — Rectangle, RoundedRectangle, and any future
         // frame shape (circle / polygon / hull) all surface the same
@@ -60,7 +60,7 @@ pub(super) fn build_region_previews(project: &Project, objects: &[VcObject]) -> 
     out
 }
 
-/// nahx: build a hole-preserving region preview for a frame op given a
+/// Build a hole-preserving region preview for a frame op given a
 /// pre-built ordered selection `[frame_idx, ...selection_idxs]`. The
 /// frame op's preview is `frame - selection`, which always produces an
 /// outer (the frame's footprint) plus N holes (each selection object
@@ -147,7 +147,7 @@ mod tests {
         }
     }
 
-    /// nahx: a Rectangle-frame Pocket-Outside op produces a preview
+    /// A Rectangle-frame Pocket-Outside op produces a preview
     /// whose outer is the (padded) bbox and whose holes contain the
     /// selection's geometry. Without the hole, the frontend's filled-
     /// area paint covers the selection — wrong.
@@ -169,7 +169,7 @@ mod tests {
         );
     }
 
-    /// nahx: same guarantee under a `RoundedRectangle` frame. The audit
+    /// Same guarantee under a `RoundedRectangle` frame. The audit
     /// flagged this case because the difference call previously could
     /// have lost the hole boundary if the rounded outer collapsed or
     /// the polytree-to-region conversion ignored children.

@@ -1,6 +1,6 @@
 //! Pocket fill — zigzag / spiral raster fills and the per-object pocket
 //! orchestrator `pocket_for_object`, plus the segment-intersection and
-//! ring-stitch / bridge helpers they use. Split out of `offsets.rs` (6yst).
+//! ring-stitch / bridge helpers they use. Split out of `offsets.rs`.
 //! Owns the zigzag-stride and nocontour-allowance diagnostic sinks (drained
 //! by the parent's `OffsetDiagnostics`). Offset primitives it builds on
 //! (parallel_offset_object, pocket_cascade_with_islands, …) live in the
@@ -13,7 +13,7 @@ use super::{
 use crate::cam::{segments_to_points, VcObject};
 use crate::geometry::{point_in_polygon, Point2, Segment};
 
-/// 0tsy: `pocket_for_object` records this when the caller sets
+/// `pocket_for_object` records this when the caller sets
 /// `nocontour=true` together with a non-zero `xy_allowance`. Those flags
 /// are mutually exclusive in practice: no wall ring means there's no
 /// dedicated finish pass to consume the allowance, so the rough cascade
@@ -38,11 +38,11 @@ pub(super) fn take_nocontour_allowance_ignored() -> Vec<NocontourAllowanceIgnore
     NOCONTOUR_ALLOWANCE_IGNORED.with(|s| std::mem::take(&mut *s.borrow_mut()))
 }
 
-/// cpym: recorded when [`pocket_zigzag`] bails because the requested
+/// Recorded when [`pocket_zigzag`] bails because the requested
 /// stride is degenerate (≤ 1e-6 mm, non-finite, or NaN). The pipeline
 /// drains this via [`take_zigzag_stride_degenerate`] and emits a
 /// `zigzag_stride_clamped_below_minimum` warning attributed to the op.
-/// Pre-cpym the stride was silently clamped to 0.1 mm and the user got
+/// Previously the stride was silently clamped to 0.1 mm and the user got
 /// coarser scallops than requested with no signal.
 #[derive(Debug, Clone, Copy)]
 pub struct ZigzagStrideDegenerate {
@@ -71,13 +71,13 @@ pub(super) fn take_zigzag_stride_degenerate() -> Vec<ZigzagStrideDegenerate> {
 /// tool diameter from the polygon edges so the cutter doesn't carve
 /// past the boundary.
 ///
-/// rt1.9: angled raster wrapper around `pocket_zigzag` (see below).
+/// Angled raster wrapper around `pocket_zigzag` (see below).
 /// Rotates the boundary by `-angle_deg` around its bbox centre, runs
 /// the axis-aligned zigzag, then rotates the emitted segments back by
 /// `+angle_deg`. Identity short-circuits when `angle_deg.abs() < 1e-9`
 /// so the 0° case has no additional cost.
 ///
-/// gp2a: `islands` are closed contours pre-inflated by `tool_radius`
+/// `islands` are closed contours pre-inflated by `tool_radius`
 /// (matches the `pocket_cascade_with_islands` contract). Every scanline
 /// is split at island crossings so the cutter lifts over raised
 /// features instead of ploughing straight through them. Returns
@@ -135,10 +135,10 @@ pub fn pocket_zigzag_angled(
 /// each scanline stroke at every `island` crossing so raised features
 /// are left uncut.
 ///
-/// gp2a: prior to this fix the function ignored islands entirely and
+/// Prior to this fix the function ignored islands entirely and
 /// the cutter ploughed straight through any island that fell across a
-/// scanline (a P1 correctness bug — the user's "leave this raised"
-/// feature was silently gouged out). Each scanline's even-odd crossings
+/// scanline (the user's "leave this raised" feature was silently gouged
+/// out). Each scanline's even-odd crossings
 /// against the outer boundary are intersected with each island's
 /// crossings to produce "in-pocket but outside-every-island"
 /// sub-strokes. Whenever the cutter would have to skip across an
@@ -160,7 +160,7 @@ pub fn pocket_zigzag(
     if boundary.len() < 3 || stride <= 0.0 {
         return Vec::new();
     }
-    // cpym: previously clamped stride.max(0.1) silently, so a 0.05 mm
+    // Previously clamped stride.max(0.1) silently, so a 0.05 mm
     // mirror-finish raster was bumped to 0.1 mm — user-set scallop
     // bounds went unenforced and the only diagnosis was measuring the
     // finished part. The zigzag algorithm tolerates arbitrarily small
@@ -281,7 +281,7 @@ pub fn pocket_zigzag(
                 std::mem::swap(&mut s.0, &mut s.1);
             }
         }
-        // a7v4: only flip parity if the current row actually emitted a
+        // Only flip parity if the current row actually emitted a
         // stroke. Empty rows (single-vertex polygon point, scanline
         // tangent to a corner, every interval swallowed by an island)
         // used to flip anyway — when the next non-empty row arrived it
@@ -297,7 +297,7 @@ pub fn pocket_zigzag(
             // Cross-row bridge sanity: when prev_end is on one side of
             // an island and `a` is on the other side, joining them with
             // a straight cut would cross the island. Break instead.
-            // axhd: also break when the joiner LEAVES the outer pocket
+            // Also break when the joiner LEAVES the outer pocket
             // boundary — non-convex outer shapes (U, +, donut) can put
             // two strokes on the same scanline that belong to disjoint
             // arms; a straight line between them ploughs across uncut
@@ -416,7 +416,7 @@ pub(super) fn horizontal_crossings(poly: &[Point2], y: f64, min_x: f64, max_x: f
         }
     }
     xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    // c6ej: collapse coincident crossings whose x values are within a
+    // Collapse coincident crossings whose x values are within a
     // FUZZY-equivalent tolerance. A scanline that just grazes a vertex
     // produces TWO crossings at the same x (one per adjacent edge) when
     // both edges share that vertex as their lower endpoint — a local-min
@@ -486,7 +486,7 @@ pub(super) fn horizontal_crossings(poly: &[Point2], y: f64, min_x: f64, max_x: f
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PocketEmit {
     Cascade,
-    /// Raster fill. rt1.9: `angle_deg` rotates the sweep direction — 0 =
+    /// Raster fill. `angle_deg` rotates the sweep direction — 0 =
     /// horizontal sweeps (original behaviour), 90 = vertical, 45 =
     /// diagonal, etc. Wrap-around is at 180° (the algorithm is
     /// direction-symmetric).
@@ -506,7 +506,7 @@ pub enum PocketEmit {
 // VcObject: parametrisation passes through depth / step / tabs / overcut /
 // finish-radius / dual-tool. The geometric pipeline reads linearly.
 //
-// q57s: `spindle` is forwarded into `pocket_trochoidal` so the loop
+// `spindle` is forwarded into `pocket_trochoidal` so the loop
 // winding flips on left-hand spindles. Cascade / Spiral / Zigzag are
 // unaffected — their winding is fixed up later by `enforce_winding`,
 // which gets the spindle direction via `apply_cut_direction`.
@@ -535,20 +535,20 @@ pub fn pocket_for_object(
     // because positive delta = LEFT of tangent for cavc, which is
     // outward on CW polygons. parallel_offset_inward picks the sign.
     //
-    // Schlichtzugabe / xy_allowance (rt1.24): when > 0, the rough
+    // Schlichtzugabe / xy_allowance: when > 0, the rough
     // cascade walks an INSET boundary at (tool_radius + allowance)
     // — that leaves `allowance` mm of stock at the wall — and a
     // dedicated finish ring at tool_radius removes it. allowance == 0
     // collapses both rings onto the tool_radius offset (current
     // behavior).
     //
-    // Dual-tool / finish_ring_radius (rt1.33): when Some(r), the
+    // Dual-tool / finish_ring_radius: when Some(r), the
     // dedicated finish wall ring is emitted at radius `r` (the FINISH
     // tool's radius) instead of `tool_radius`. The pipeline op-driver
     // splits the offsets list by is_finish and emits the finish block
     // with the finish tool's setup after an auto toolchange. When None,
     // the finish ring (if any — see allowance) uses `tool_radius`.
-    // 0tsy: `nocontour=true` means there will be no wall ring — neither
+    // `nocontour=true` means there will be no wall ring — neither
     // the rough boundary (skipped below) nor the dedicated finish ring
     // (gated on `!nocontour && needs_finish_ring`). A non-zero XY
     // allowance is therefore meaningless: the rough cascade would walk
@@ -581,7 +581,7 @@ pub fn pocket_for_object(
     // The caller passes the step (typically tool_diameter * (1 - overlap));
     // we clamp to a safe minimum so a 100% overlap doesn't loop forever.
     let step = xy_step.max(tool_radius * 0.05);
-    // sbtf: islands handed in are already knd4-inflated by tool_radius
+    // Islands handed in are already inflated by tool_radius
     // (cutter-centerline safe boundary). When the cascade per-pass step
     // is SMALLER than tool_radius (high overlap, e.g. 80% engagement ⇒
     // step ≈ 0.2·tool_r), the cascade's first inward step around the
@@ -589,7 +589,7 @@ pub fn pocket_for_object(
     // island wall — the cutter edge intrudes by `tool_r − step`. Apply
     // an EXTRA outward inflation of `max(0, tool_r − step)` for the
     // cascade / spiral paths so the first ring keeps clearance. Zigzag
-    // /trochoidal stay on the bare knd4 inflation; zigzag's per-row
+    // /trochoidal stay on the bare inflation; zigzag's per-row
     // inset is already tool_r and trochoidal's loop disc enforces its
     // own engagement bound.
     let cascade_islands = over_inflate_islands_for_high_overlap(islands, tool_radius, step);
@@ -598,7 +598,7 @@ pub fn pocket_for_object(
             // When there's no XY allowance AND no dual-tool finish,
             // the rough boundary IS the wall — tag it as finish so
             // emit_offset swaps in the tool's finish-set rates
-            // (rt1.27). When allowance > 0 OR dual-tool, a dedicated
+            // When allowance > 0 OR dual-tool, a dedicated
             // finish ring is emitted below and the rough boundary
             // stays rough.
             let mut wall = offset.clone();
@@ -611,19 +611,19 @@ pub fn pocket_for_object(
             PocketEmit::Zigzag { angle_deg } => {
                 // Zigzag stride is the same step semantics — distance
                 // between raster lines. Default ~50% overlap.
-                // rt1.9: angle_deg rotates the raster direction. We
+                // angle_deg rotates the raster direction. We
                 // implement it by rotating the boundary into a frame
                 // where the sweep is horizontal, running the existing
                 // pocket_zigzag, then rotating the output back. Pivot is
                 // the boundary's bbox centre — keeps the result on the
                 // same canvas.
-                // gp2a: pocket_zigzag now respects islands and returns
+                // pocket_zigzag respects islands and returns
                 // one chain per connected sub-region (a chain ends
                 // wherever a row gets chopped by an island). Each chain
                 // becomes a separate PolylineOffset so the gcode emitter
                 // lifts to clearance and re-plunges between sub-chains
                 // — instead of cutting straight through the island.
-                // 06m5: when nocontour=true there's no wall ring laid down,
+                // When nocontour=true there's no wall ring laid down,
                 // so pocket_zigzag's self-inset by tool_r would leave a
                 // tool_radius-wide ribbon of uncut stock along every wall
                 // (the boundary `pts` is already inset by tool_r — a
@@ -634,7 +634,7 @@ pub fn pocket_for_object(
                 // strokes should sit a tool_r inboard so they don't
                 // overlap the wall.
                 let zigzag_tool_d = if nocontour { 0.0 } else { tool_radius * 2.0 };
-                // cpym: pre-fix this wrapper clamped step to 0.1 mm
+                // Previously this wrapper clamped step to 0.1 mm
                 // before handing to pocket_zigzag, defeating fine-finish
                 // strides (e.g. 0.05 mm mirror finish). pocket_zigzag now
                 // tolerates arbitrarily small finite strides and records
@@ -668,7 +668,7 @@ pub fn pocket_for_object(
                 // the path a natural "spiral inward" shape. Approximates
                 // an Archimedean spiral well enough for pocket clearing.
                 //
-                // sbtf: pass the over-inflated islands so the first ring
+                // Pass the over-inflated islands so the first ring
                 // doesn't intrude when step < tool_radius (high overlap).
                 let rings = crate::cam::geometry_cache::pocket_cascade_with_islands_cached(
                     &pts,
@@ -678,7 +678,7 @@ pub fn pocket_for_object(
                 if rings.is_empty() {
                     continue;
                 }
-                // Containment guard (bd w91): straight bridges between
+                // Containment guard: straight bridges between
                 // consecutive cascade rings can cross a re-entrant pocket
                 // wall on non-convex shapes (L / U / +). The outer ring
                 // (rings[0] = inset boundary) defines the safe interior;
@@ -686,7 +686,7 @@ pub fn pocket_for_object(
                 // the test we abandon spiral and let the caller fall back
                 // to cascade emission, which doesn't cut bridges.
                 //
-                // sbtf: the stitcher tests bridges against the islands
+                // The stitcher tests bridges against the islands
                 // it walks around — pass the same over-inflated set the
                 // rings were generated against so the safe-bridge check
                 // sees the same geometry.
@@ -750,10 +750,10 @@ pub fn pocket_for_object(
             PocketEmit::Cascade => {}
         }
 
-        // sbtf: cascade emission uses the over-inflated island set so the
+        // Cascade emission uses the over-inflated island set so the
         // first ring keeps clearance from raw island walls when
         // step < tool_radius (high overlap). The over-inflation is a
-        // no-op when step >= tool_radius (matches the pre-sbtf path).
+        // no-op when step >= tool_radius.
         let rings = crate::cam::geometry_cache::pocket_cascade_with_islands_cached(
             &pts,
             &cascade_islands,
@@ -857,7 +857,7 @@ pub fn pocket_for_object(
             });
         }
     }
-    // rt1.24 / rt1.33: emit a dedicated finish-wall pass when either
+    // Emit a dedicated finish-wall pass when either
     // an XY allowance is set (single-tool finishing pass) or a
     // dual-tool finish radius is set (smaller tool walks the wall).
     // The dual-tool branch uses `finish_ring_radius`; the single-tool
@@ -913,11 +913,11 @@ fn stitch_rings_to_spiral(
 /// cross any island. Returns None on any violation; the caller falls
 /// back to cascade emission (separate closed rings, no bridges).
 ///
-/// kqsl: prior to this fix islands were ignored — a bridge could carve
+/// Prior to this fix islands were ignored — a bridge could carve
 /// straight through a raised feature on pockets-with-islands. The
 /// per-bridge check now considers every island polygon too.
 ///
-/// kc86: with ≥3 rings the closest start vertex on ring N+1 to ring
+/// With ≥3 rings the closest start vertex on ring N+1 to ring
 /// N's end can produce a bridge that grazes an inflated island sitting
 /// between ring N+1 and ring N+2 — the closest vertex isn't always the
 /// safest. We now sweep ALL vertices in the next ring, ordered by
@@ -938,7 +938,7 @@ pub(crate) fn stitch_rings_to_polyline(
     let mut last_end: Option<Point2> = None;
     for (idx, ring) in rings.iter().enumerate() {
         if ring.len() < 3 {
-            // hx74: a ring with fewer than 3 points can't be traversed
+            // A ring with fewer than 3 points can't be traversed
             // meaningfully. Pre-fix we silently `continue`d past it,
             // leaving a bridge gap (the next ring's first vertex was
             // stitched to the PREVIOUS ring's last vertex across the
@@ -955,7 +955,7 @@ pub(crate) fn stitch_rings_to_polyline(
         }
         let n = ring.len();
         let start_idx = if let Some(end) = last_end {
-            // kc86: rank candidate start vertices by distance from the
+            // Rank candidate start vertices by distance from the
             // previous ring's end, then sweep until the bridge guard
             // passes. The closest vertex is tried first (short bridge
             // = the original heuristic); when that bridge would cross
@@ -1037,7 +1037,7 @@ pub(crate) fn bridge_stays_inside_polygon(a: Point2, b: Point2, polygon: &[Point
     true
 }
 
-/// kqsl: true iff the open segment (a, b) crosses the interior of ANY
+/// True iff the open segment (a, b) crosses the interior of ANY
 /// island, i.e. a sample on the interior of the segment lies inside an
 /// island polygon, or the segment intersects an island edge. Endpoints
 /// are excluded (they may legitimately sit on an inflated island ring).

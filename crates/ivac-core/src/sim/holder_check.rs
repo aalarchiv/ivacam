@@ -39,7 +39,7 @@ pub enum HolderCheck {
         worst_y: f64,
         wall_z: f32,
         required_clearance_mm: f32,
-        /// 24ht: every cell that exceeds the holder envelope, not just the
+        /// Every cell that exceeds the holder envelope, not just the
         /// worst-excess one. Sorted by `required_clearance_mm` descending
         /// so element 0 mirrors `worst_x/worst_y/wall_z/required_clearance_mm`
         /// for back-compat. Without this list, mid-range collisions stayed
@@ -63,7 +63,7 @@ pub struct HolderCollisionCell {
     pub required_clearance_mm: f32,
 }
 
-// WHY: hrex — the cutter envelope (r <= cutting_radius) is the cutter's
+// WHY: the cutter envelope (r <= cutting_radius) is the cutter's
 // own sweep; material there is about to be removed and must NOT count as
 // a holder collision. Only r > cutting_radius — the shank/holder
 // territory above the flutes — gets the wall-vs-envelope test.
@@ -74,7 +74,7 @@ pub struct HolderCollisionCell {
     clippy::cast_sign_loss,
     clippy::cast_lossless,
     clippy::cast_possible_wrap,
-    // juvx: holder-vs-wall sweep walks segment chord + holder cone +
+    // Holder-vs-wall sweep walks segment chord + holder cone +
     // heightmap rasterization inline; splitting would force shared
     // mutable `warnings` + per-cell state across helpers.
     clippy::too_many_lines
@@ -134,7 +134,7 @@ pub fn check_segment_holder_against_walls(
     let pure_plunge = len_sq < 1e-12;
     let plunge_z = from.z.min(to.z);
     let max_r_sq = max_r * max_r;
-    // hrex: cells inside the cutter's own sweep (r <= cutting_radius)
+    // Cells inside the cutter's own sweep (r <= cutting_radius)
     // are about to be removed by the flutes themselves — material there
     // is NOT a shank/holder collision. Treat them as part of the cutter
     // envelope, not the wall.
@@ -142,14 +142,14 @@ pub fn check_segment_holder_against_walls(
     let cutting_r_sq = cutting_r * cutting_r;
     let cols = heightmap.cols as usize;
 
-    // 24ht: collect EVERY offending cell, not just the worst-excess one.
+    // Collect EVERY offending cell, not just the worst-excess one.
     // The previous code kept a single (max-required) tuple — mid-range
     // collisions were silently dropped, and the UI had no way to surface
     // the breadth of the obstacle. We push all offenders here and let
     // the caller decide how to render them.
     let mut offenders: Vec<HolderCollisionCell> = Vec::new();
 
-    // 7iej.9/7iej.11: clip each row to the holder envelope's stadium
+    // Clip each row to the holder envelope's stadium
     // x-extent (radius = max_r) instead of walking the full AABB width.
     // Shares the helper the material sweep uses; the per-cell
     // `r_sq > max_r_sq` test below stays the correctness gate, so the
@@ -187,7 +187,7 @@ pub fn check_segment_holder_against_walls(
             if r_sq > max_r_sq {
                 continue;
             }
-            // hrex: skip cells inside the cutter envelope — the flutes
+            // Skip cells inside the cutter envelope — the flutes
             // sweep them clean, so any "wall" reading there belongs to
             // the cutter's own work, not to a holder collision.
             if r_sq <= cutting_r_sq {
@@ -222,7 +222,7 @@ pub fn check_segment_holder_against_walls(
         return HolderCheck::Clear;
     }
     // Sort worst-first so element 0 keeps the "worst cell" semantics for
-    // back-compat callers (24ht).
+    // back-compat callers.
     offenders.sort_by(|a, b| {
         b.required_clearance_mm
             .partial_cmp(&a.required_clearance_mm)
@@ -347,7 +347,7 @@ mod tests {
         // (top of flutes, where the shank ends and the cylinder
         // begins) → required clearance = 25 - 15 = 10 mm.
         //
-        // After hrex: cells at r ≤ cutting_r (3 mm) are skipped — the
+        // After the fix: cells at r ≤ cutting_r (3 mm) are skipped — the
         // collision is detected at r ∈ (3, 10] where the holder is the
         // genuine threat.
         let t = tool(
@@ -419,7 +419,7 @@ mod tests {
 
     #[test]
     fn fresh_plunge_does_not_emit_holder_collision() {
-        // hrex: a first plunge into uncut stock with a holder set used
+        // A first plunge into uncut stock with a holder set used
         // to emit one HolderCollision per cell directly under the
         // cutter — because the heightmap was still at top_z under the
         // tip when the diagnostic ran *before* the carve, and the old
@@ -453,7 +453,7 @@ mod tests {
 
     #[test]
     fn deep_slot_emits_full_cell_list_not_just_worst() {
-        // 24ht: a deep narrow pocket should now report EVERY cell where
+        // A deep narrow pocket should now report EVERY cell where
         // the holder envelope hits the wall, not just the worst one.
         // The 6 mm endmill with 20 mm holder above sweeps a half-width
         // band [3..10] mm around the path centerline on both sides; in
@@ -502,7 +502,7 @@ mod tests {
 
     #[test]
     fn fresh_plunge_pipeline_zero_holder_warnings() {
-        // hrex (end-to-end through sweep_range): plunging into uncut
+        // End-to-end through sweep_range: plunging into uncut
         // stock with a holder must emit zero `holder_collision`
         // warnings via the sim pipeline. Mirrors the unit test above
         // but goes through `sweep_range` so the wiring is exercised.

@@ -1,4 +1,4 @@
-//! Op-source selection helpers (56a, split from pipeline.rs). One place
+//! Op-source selection helpers (split from pipeline.rs). One place
 //! to map between an op's `OpSource` ({ All, Layers, Objects } variant)
 //! and the chained-object set produced by `segments2objects`. Used by
 //! `offset_builder`, `setup_resolver`, `tabs`, `warnings`, and `frame`.
@@ -41,7 +41,7 @@ pub(in crate::pipeline) fn resolve_op_segments(
         OpSource::Objects { ids, .. } => {
             let mut out = Vec::new();
             for &id in ids {
-                // alwa: 1-based ids — id=0 is invalid (and flagged separately
+                // 1-based ids — id=0 is invalid (and flagged separately
                 // by validate_op_source_objects). saturating_sub(1) would
                 // silently fold id=0 into objects[0], so two ops with
                 // ids=[0,X] and [0,Y] would smuggle object 0's segments
@@ -100,7 +100,7 @@ pub(in crate::pipeline) fn source_combine_mode(op: &Op) -> SourceCombine {
     }
 }
 
-/// 7l0a: surface `OpSource::Objects { ids }` entries that point at IDs no
+/// Surface `OpSource::Objects { ids }` entries that point at IDs no
 /// longer present in the current `objects` slice. The chained-object set
 /// changes between import and emit (pattern expansion, frame synthesis,
 /// user deletion of the source object after creating the op), so an
@@ -122,7 +122,7 @@ pub(in crate::pipeline) fn validate_op_source_objects(
     };
     let mut survivors = 0usize;
     for &id in ids {
-        // alwa: 1-based ids — id=0 is invalid and reported as missing.
+        // 1-based ids — id=0 is invalid and reported as missing.
         // `checked_sub(1)` returns None for id=0 so we don't have to
         // special-case the saturating-collapse-to-objects[0] foot-gun.
         let missing = match (id as usize).checked_sub(1) {
@@ -155,7 +155,7 @@ pub(in crate::pipeline) fn validate_op_source_objects(
     }
 }
 
-/// dcna: sibling of `validate_op_source_objects` for `OpSource::Layers`.
+/// Sibling of `validate_op_source_objects` for `OpSource::Layers`.
 /// A user typo in a layer name (e.g. "TEXTT" instead of "TEXT") used to
 /// produce a silent no-op: `resolve_op_segments` returned an empty Vec,
 /// the op emitted nothing, no diagnostic surfaced. Now we check each
@@ -234,7 +234,7 @@ mod tests {
     use crate::project::SourceCombine;
     use crate::project::ToolOffset;
 
-    /// 7l0a: an `OpSource::Objects` id that doesn't map to any current
+    /// An `OpSource::Objects` id that doesn't map to any current
     /// `VcObject` emits `op_source_missing_object` AND, when every id is
     /// missing, an `op_source_empty` critical warning.
     #[test]
@@ -261,7 +261,7 @@ mod tests {
         );
     }
 
-    /// 7l0a: `OpSource::All` is never an "objects" source — no warnings
+    /// `OpSource::All` is never an "objects" source — no warnings
     /// are emitted regardless of the objects slice.
     #[test]
     fn validate_op_source_all_emits_no_warning() {
@@ -271,9 +271,9 @@ mod tests {
         assert!(warnings.is_empty(), "OpSource::All should not warn");
     }
 
-    // ─── alwa: id=0 must NOT silently map to objects[0] ─────────────
+    // ─── id=0 must NOT silently map to objects[0] ────────────────────
 
-    /// alwa: `OpSource::Objects { ids: vec![0, X] }` used to silently
+    /// `OpSource::Objects { ids: vec![0, X] }` used to silently
     /// pull objects[0]'s segments because `saturating_sub(1)` collapses
     /// 0 → 0. Now `resolve_op_segments` uses `checked_sub` and drops
     /// the id=0 entry cleanly, producing the same segment set as if
@@ -326,7 +326,7 @@ mod tests {
         );
     }
 
-    /// alwa: `validate_op_source_objects` still flags id=0 as missing
+    /// `validate_op_source_objects` still flags id=0 as missing
     /// (parity with the resolve-side guard) — same warning kind as a
     /// stale 1-based id.
     #[test]
@@ -346,9 +346,9 @@ mod tests {
         );
     }
 
-    // ─── dcna: OpSource::Layers missing-layer validation ────────────
+    // ─── OpSource::Layers missing-layer validation ───────────────────
 
-    /// dcna: a typo in a layer name used to silently produce zero
+    /// A typo in a layer name used to silently produce zero
     /// segments and no warning. Now `validate_op_source_layers` emits
     /// `op_source_missing_layer` per unknown layer, plus
     /// `op_source_empty` when no requested layer matches.
@@ -381,7 +381,7 @@ mod tests {
         );
     }
 
-    /// dcna: when EVERY requested layer is missing, both
+    /// When EVERY requested layer is missing, both
     /// `op_source_missing_layer` (per layer) and the critical
     /// `op_source_empty` warning fire.
     #[test]
@@ -410,7 +410,7 @@ mod tests {
         );
     }
 
-    /// dcna: `OpSource::All` / `OpSource::Objects` never trigger the
+    /// `OpSource::All` / `OpSource::Objects` never trigger the
     /// layer validator.
     #[test]
     fn validate_op_source_layers_skips_non_layers_sources() {
@@ -423,7 +423,7 @@ mod tests {
         );
     }
 
-    /// dcna: end-to-end through `run_pipeline` — a typoed layer name
+    /// End-to-end through `run_pipeline` — a typoed layer name
     /// surfaces both `op_source_missing_layer` and `op_source_empty`
     /// in the response warnings.
     #[test]
@@ -459,7 +459,7 @@ mod tests {
         );
     }
 
-    /// 7l0a: `project_with` builds a project of given ops + tools so a
+    /// `project_with` builds a project of given ops + tools so a
     /// quick `run_pipeline` smoke test exercises the wiring without
     /// crashing.
     #[test]

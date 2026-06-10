@@ -1,4 +1,4 @@
-/// TS mirror of the post-profile renderer (uzz). Used ONLY for the
+/// TS mirror of the post-profile renderer. Used ONLY for the
 /// PostProcessor editor's live preview pane — every keystroke
 /// re-renders a short representative program, and round-tripping that
 /// through the backend on every key would be wasteful. The output is

@@ -1,4 +1,4 @@
-// rt1.12 (nrob): pure helpers for the 3D raster-engrave toolpath
+// Pure helpers for the 3D raster-engrave toolpath
 // heatmap. The wire `ToolpathSegment` carries no laser-power `S`, so the
 // frontend re-derives it by sampling the source's power grid (the same
 // `cam::raster::power_grid` the backend emits from — ported in

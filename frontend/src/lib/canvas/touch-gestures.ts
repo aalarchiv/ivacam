@@ -1,4 +1,4 @@
-// Pure two-finger gesture math for EntityCanvas2D (bwt7). The canvas
+// Pure two-finger gesture math for EntityCanvas2D. The canvas
 // component owns the live pointer Map, the gesture timers, and the
 // reactive user-pan/zoom fields; what's pure (and unit-tested here) is
 // the formula that turns a two-pointer pinch/pan step into a new

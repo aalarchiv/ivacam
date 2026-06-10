@@ -18,7 +18,7 @@ use crate::pipeline::{
 };
 use crate::project::{Op, Project};
 
-/// o3od: cheap pre-check used by `run_per_op` to decide whether the
+/// Cheap pre-check used by `run_per_op` to decide whether the
 /// toolchange envelope (M5+dwell → M6 → z-shift → M3+dwell) needs to
 /// fire BEFORE this op. The medial-axis combine is the cheapest reliable
 /// gate — V-Carve emits exactly when `combine_source_regions` is
@@ -36,9 +36,8 @@ pub(in crate::pipeline) fn vcarve_would_emit(op: &Op, objects: &[VcObject]) -> b
 }
 
 // V-Carve driver couples medial-axis sampling, multi-pass cascade, and
-// optional finish-pass into a single state machine — see 55o4 for the
-// planned per-stage extraction. Length budget waived for the same
-// reason — the function is the per-stage split's main entry point.
+// optional finish-pass into a single state machine. Length budget waived
+// — the function is the per-stage split's main entry point.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
     op: &Op,
@@ -66,7 +65,7 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
             ),
         });
     }
-    // 7rt2: a tool whose configured tip_angle lies outside the cone-math
+    // A tool whose configured tip_angle lies outside the cone-math
     // valid range [1°, 179°] gets silently clamped by `chamfer_depth` and
     // by `polyline_to_z`'s tan-half lookup. Surface the clamp so the user
     // realizes their bit configuration is producing different geometry
@@ -93,7 +92,7 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
     let selected = ordered_selection(op, objects);
     let combine = source_combine_mode(op);
     let regions = combine_source_regions(objects, &selected, combine);
-    // Guard (rt1.7 / user report): combine_source_regions returns empty
+    // Guard: combine_source_regions returns empty
     // when the selection has no closable contours — e.g. the user pointed
     // a V-Carve op at a single-line text layer or at open polylines from
     // an SVG <line>. Silently no-op'ing left the user wondering why
@@ -110,7 +109,7 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
         return Ok(());
     }
 
-    // kbx5 step 2: V-Carve cap lives on VCarveParams.
+    // V-Carve cap lives on VCarveParams.
     // Effective r cap = min(user carve_max_width_mm, tool reach radius).
     // The tool-reach clamp prevents the medial-axis-driven depth from
     // running deeper than the cone can physically reach, which would
@@ -133,13 +132,13 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
     let mut polylines: Vec<Vec<(f64, f64, f64)>> = Vec::new();
     let mut any_depth_limited = false;
 
-    // r8ut: full_medial_axis defaults to false → Estlcam-style perimeter
+    // full_medial_axis defaults to false → Estlcam-style perimeter
     // pass. The medial-axis path is opt-in for the rare "carve a depth
     // gradient across the entire interior" workflow (think Aspire-style
     // relief). The two paths share tip-angle / tip-radius / reach-cap
     // / depth-cap math; only the traversal shape differs.
     let full_medial = op.vcarve_params().is_some_and(|v| v.full_medial_axis);
-    // rt1.7: optional pre-offset for the source region. Inlay plug side
+    // Optional pre-offset for the source region. Inlay plug side
     // sets this to the desired gap so the plug ends up `gap` mm smaller
     // per side than the pocket. None / 0 = identity (the common case).
     let source_inset = op
@@ -155,7 +154,7 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
         if region.boundary.len() < 3 {
             continue;
         }
-        // rt1.7: when the user requested a pre-inset (inlay plug side),
+        // When the user requested a pre-inset (inlay plug side),
         // shrink the boundary and any holes BEFORE the V-carve pass.
         // If the inset collapses the region we silently skip it — the
         // plug is geometrically too small to exist (e.g. a 0.1 mm-wide
@@ -184,7 +183,7 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
             continue;
         }
         if full_medial {
-            // Medial-axis traversal (pre-r8ut behaviour). Plunges along
+            // Medial-axis traversal. Plunges along
             // every interior medial-axis chain; depth follows local
             // inscribed radius up to effective_r_cap.
             let vc_region = crate::cam::vcarve::VcRegion {
@@ -195,7 +194,7 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
             if cancelled(cancel) {
                 return Err(PipelineError::Cancelled);
             }
-            // 17q4: a degenerate medial axis (e.g. a single straight slot
+            // A degenerate medial axis (e.g. a single straight slot
             // whose Voronoi vertices all sit on the boundary) returns
             // empty. Surface a `vcarve_no_medial_axis` warning so the
             // user understands why full-medial-axis mode produced no
@@ -211,12 +210,12 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
                 });
                 continue;
             }
-            // iqbu: prune spurious branches (boundary-sampling spurs +
+            // Prune spurious branches (boundary-sampling spurs +
             // chains that can never engage past the tip plateau). Without
             // this the cutter spends most of its time ratcheting into
             // micro-features that the bit physically can't carve.
             let axes = crate::cam::vcarve::prune_medial_axis(axes_raw, tool_reach_r, tip_radius_mm);
-            // idne: track whether at least one chain produced a useful
+            // Track whether at least one chain produced a useful
             // (non-all-zero) toolpath. When every chain bottoms out at
             // z=0 the user is silently getting a no-op carve — surface
             // a warning instead.
@@ -234,17 +233,17 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
                     any_depth_limited = true;
                 }
                 if all_zero {
-                    // idne: full-medial-axis path used to silently emit
+                    // Full-medial-axis path used to silently emit
                     // a z=0 walk along this chain — cutter scrubs the
                     // surface, removes nothing, user thinks they cut.
                     // Skip the chain; report below.
                     any_skipped_below_tip = true;
                     continue;
                 }
-                // kagr: ratchet_emit returns a list of sub-polylines
+                // ratchet_emit returns a list of sub-polylines
                 // so the caller can rapid (G0) between them rather
                 // than dragging the bit across uncut stock at feed.
-                // ot80: route the per-tool lead-in angle through.
+                // Route the per-tool lead-in angle through.
                 let paths = crate::cam::vcarve_emit::ratchet_emit_with_lead_in(
                     &z_axis,
                     dpp,
@@ -486,7 +485,7 @@ mod tests {
         );
     }
 
-    /// Tool-reach clamp (rbl follow-up): a 6mm V-bit physically can't
+    /// Tool-reach clamp: a 6mm V-bit physically can't
     /// engage past r = 3mm. For a 30x30 square (incircle radius 15mm)
     /// the medial axis hits r = 15 — without the clamp the depth math
     /// would dive to z = -15 / tan(30°) ≈ -26mm regardless of the bit's
@@ -560,7 +559,7 @@ mod tests {
         );
     }
 
-    /// r8ut: default V-Carve (`full_medial_axis` = false) traces ONLY a
+    /// Default V-Carve (`full_medial_axis` = false) traces ONLY a
     /// perimeter loop on a 30×30 square — no spine cuts through the
     /// interior. Compare with `vcarve_op_respects_tool_reach` above
     /// which exercises the medial-axis branch on the same geometry.
@@ -644,7 +643,7 @@ mod tests {
         );
     }
 
-    /// rt1.7: a Plug-side V-Carve with `source_inset_mm = 1.0` emits a
+    /// A Plug-side V-Carve with `source_inset_mm = 1.0` emits a
     /// perimeter loop further from the original boundary than the
     /// Pocket-side default. We pair them on the same 30×30 square and
     /// verify the plug's outer extent is ≈ 1 mm narrower than the
@@ -729,7 +728,7 @@ mod tests {
         );
     }
 
-    /// idne: full-medial-axis V-Carve where the effective r-cap drops
+    /// Full-medial-axis V-Carve where the effective r-cap drops
     /// at or below the V-bit's flat tip used to silently emit a Z=0
     /// toolpath (the cutter walked the medial axis without engaging,
     /// removing nothing — looked like a successful cut). Verify a

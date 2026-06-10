@@ -13,7 +13,7 @@ export function simWarningSeverity(w: SimWarning): SimSeverity {
     case 'fixture_collision':
     case 'holder_collision':
       return 'critical';
-    // wpzm: cell_size coarsening is informational — sim still works,
+    // cell_size coarsening is informational — sim still works,
     // just at coarser resolution. Render in the "info" lane.
     case 'cell_size_coarsened':
       return 'info';

@@ -1,4 +1,4 @@
-/// OSnap engine tests (64p). Verifies the pure-TS data layer:
+/// OSnap engine tests. Verifies the pure-TS data layer:
 /// target precomputation collects endpoints / midpoints / centers /
 /// intersections from imported geometry, and `findOSnap` returns the
 /// closest enabled-kind candidate inside the tolerance.

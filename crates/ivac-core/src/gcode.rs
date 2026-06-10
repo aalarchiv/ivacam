@@ -24,11 +24,11 @@ use crate::geometry::Point2;
 use crate::project::tool::SpindleDirection;
 use crate::project::{MachineMode, ToolOffset, UnitSystem};
 
-// cula: the per-offset emission machinery (emit_offset → multi_pass) lives
+// The per-offset emission machinery (emit_offset → multi_pass) lives
 // in the `emit` submodule; the public block shells below call emit_offset.
 use emit::emit_offset;
 
-/// z1y0: route the post's spindle-direction call based on the tool's
+/// Route the post's spindle-direction call based on the tool's
 /// `spindle_direction`. Centralized so every cut-emission site
 /// (`emit_offset`, `emit_drill_block`, `emit_vcarve_block`) and the
 /// toolchange envelope (`pipeline::emit_toolchange_envelope`) pick
@@ -45,7 +45,7 @@ pub(crate) fn spindle_on<P: PostProcessor>(
     }
 }
 
-/// 20y5: dispatch the cut-entry "tool-on" call based on the machine
+/// Dispatch the cut-entry "tool-on" call based on the machine
 /// mode. Mill spins the spindle (M3 / M4). Laser fires the beam at the
 /// configured power (M3 S<power>) via the post's `laser_on` hook. Drag
 /// (knives, pen plotters) has no spindle / beam — no-op.
@@ -66,7 +66,7 @@ fn cut_tool_on<P: PostProcessor>(post: &mut P, setup: &Setup, power_or_speed: u3
             );
         }
         MachineMode::Laser => {
-            // xkvv: arm the laser at S0 BEFORE the rapid to the entry
+            // Arm the laser at S0 BEFORE the rapid to the entry
             // point. The previous `laser_on(power)` here fired the beam
             // at full power before the head had moved — every rapid
             // traverse scorched a line across the workpiece. The
@@ -78,7 +78,7 @@ fn cut_tool_on<P: PostProcessor>(post: &mut P, setup: &Setup, power_or_speed: u3
             // Drag knife / pen plotter — no spindle, no beam.
         }
         MachineMode::Plasma => {
-            // zpuk: plasma torch — most controllers accept M3 S<power>
+            // Plasma torch — most controllers accept M3 S<power>
             // for "fire arc at <power>" the same way GRBL / LinuxCNC
             // accept it for a laser. Unlike laser, the plasma torch
             // must be LIT during the rapid + Z-drop to pierce height
@@ -90,7 +90,7 @@ fn cut_tool_on<P: PostProcessor>(post: &mut P, setup: &Setup, power_or_speed: u3
     }
 }
 
-/// xkvv: ramp the laser from armed (S0) to cut power right before the
+/// Ramp the laser from armed (S0) to cut power right before the
 /// pierce dwell. No-op for every mode except Laser; the matching arm
 /// happened at `cut_tool_on` so the rapid traverse runs cold.
 fn cut_tool_pierce<P: PostProcessor>(post: &mut P, setup: &Setup, power: u32) {
@@ -99,14 +99,14 @@ fn cut_tool_pierce<P: PostProcessor>(post: &mut P, setup: &Setup, power: u32) {
     }
 }
 
-/// 20y5: dispatch the cut-exit "tool-off" call. Laser MUST drop the
+/// Dispatch the cut-exit "tool-off" call. Laser MUST drop the
 /// beam (M5 or S0) before any rapid traverse, otherwise the rapid
 /// burns a stripe through the workpiece. Mill leaves the spindle
 /// running between cuts (the post's delta-encoded spindle state
 /// dedupes the re-arm); Drag is a no-op.
 fn cut_tool_off<P: PostProcessor>(post: &mut P, setup: &Setup) {
     if matches!(setup.machine.mode, MachineMode::Laser | MachineMode::Plasma) {
-        // zpuk: plasma torch-off mirrors laser — drop the arc between
+        // Plasma torch-off mirrors laser — drop the arc between
         // cuts so the rapid traverse doesn't leave a melt trail.
         post.laser_off();
     }
@@ -134,7 +134,7 @@ use leads::{lead_in_geometry, lead_out_geometry, LeadGeometry};
 use order::{end_pos, order_offsets};
 use tabs::emit_path_with_tabs;
 use walk::{emit_cut_path, reverse_chain};
-// ldu2: `fit_line_runs` is also reachable from the offset pipeline,
+// `fit_line_runs` is also reachable from the offset pipeline,
 // which arc-fits source geometry before offsetting so tessellated
 // (imported) circles don't explode into per-vertex round-join arcs.
 pub(crate) use walk::fit_line_runs;
@@ -166,7 +166,7 @@ pub trait PostProcessor {
     fn spindle_cw(&mut self, speed: u32, pause_seconds: u32);
     fn spindle_ccw(&mut self, speed: u32, pause_seconds: u32);
 
-    /// 20y5: laser-on at the configured power. Called by `cut_tool_pierce`
+    /// Laser-on at the configured power. Called by `cut_tool_pierce`
     /// AFTER the rapid + Z-drop has landed the head at the pierce point;
     /// the beam ramps up to cut power just before the pierce dwell so
     /// the rapid itself runs at zero power (see `laser_arm`).
@@ -176,7 +176,7 @@ pub trait PostProcessor {
     /// ignores. Default no-op so non-laser-aware posts keep working.
     fn laser_on(&mut self, _power: u32) {}
 
-    /// xkvv: laser-arm — emit `M3 S0` to bring the controller into
+    /// Laser-arm — emit `M3 S0` to bring the controller into
     /// laser-on / spindle-clockwise modal state at ZERO power BEFORE
     /// the rapid traverse to the entry point. Without this the prior
     /// `cut_tool_on` fired `M3 S<power>` and the rapid burnt a stripe
@@ -186,7 +186,7 @@ pub trait PostProcessor {
     /// working.
     fn laser_arm(&mut self) {}
 
-    /// 20y5: laser-off — drop the beam between cuts so the rapid
+    /// Laser-off — drop the beam between cuts so the rapid
     /// traverse doesn't burn a stripe through the part. Called by
     /// `cut_tool_off` at the end of every cut block in Laser mode.
     /// `LinuxCNC` / GRBL override to emit `M5` (which is `S0` modally
@@ -195,7 +195,7 @@ pub trait PostProcessor {
 
     fn move_to(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>);
 
-    /// ad0v: rapid to a fixed tool-change station in MACHINE
+    /// Rapid to a fixed tool-change station in MACHINE
     /// coordinates (`G53 G0 X<x> Y<y>`). `G53` makes THIS line interpret
     /// X/Y in the machine frame regardless of the active WCS, so the
     /// changer is a fixed physical location independent of part zero.
@@ -229,7 +229,7 @@ pub trait PostProcessor {
         j: Option<f64>,
     );
 
-    /// pxyt: format a dwell `seconds` value for the post's `G4 P<...>`
+    /// Format a dwell `seconds` value for the post's `G4 P<...>`
     /// word. Default returns seconds (`LinuxCNC` / Smoothieware reading).
     /// Posts that own a [`post_profile::PostProfile`] override this to
     /// honour `dwell_unit` — Mach3 / Mach4 / Centroid / most Fanuc
@@ -247,10 +247,10 @@ pub trait PostProcessor {
     /// `rate_v` is the plunge feed in mm/min; the default impl emits an
     /// F<`rate_v`> before each G1 plunge so the move lands at a known
     /// feed regardless of what the modal F was when the caller invoked
-    /// us (o01e — non-canned posts must self-anchor their feed).
+    /// us (non-canned posts must self-anchor their feed).
     fn drill_simple(&mut self, x: f64, y: f64, z: f64, r: f64, rate_v: u32, dwell_sec: f64) {
         self.move_to(Some(x), Some(y), Some(r));
-        // o01e: anchor plunge feed inside the cycle so we don't inherit
+        // Anchor plunge feed inside the cycle so we don't inherit
         // whatever F a prior op left modal (often rate_h or 0).
         self.feedrate(rate_v);
         self.linear(None, None, Some(z));
@@ -263,11 +263,11 @@ pub trait PostProcessor {
     /// G83 peck: as G81 but pecks `q` mm at a time, fully retracting to r each peck.
     /// `rate_v` is the plunge feed (see [`PostProcessor::drill_simple`]).
     /// Default: manual G0/G1 expansion for posts that don't support canned cycles.
-    // juvx: `RE_ENTRY_CLEARANCE_MM` const lives near its sole use site
-    // mid-loop so the co8b rationale comment sits next to the value.
+    // `RE_ENTRY_CLEARANCE_MM` const lives near its sole use site
+    // mid-loop so the rationale comment sits next to the value.
     #[allow(clippy::items_after_statements)]
     fn drill_peck(&mut self, x: f64, y: f64, z: f64, r: f64, q: f64, rate_v: u32, dwell_sec: f64) {
-        // co8b: small clearance above the previous peck depth before each
+        // Small clearance above the previous peck depth before each
         // re-entry plunge (kept here so the value is visible at the top
         // of the routine even though the use site is mid-loop).
         const RE_ENTRY_CLEARANCE_MM: f64 = 0.5;
@@ -277,7 +277,7 @@ pub trait PostProcessor {
             return;
         }
         self.move_to(Some(x), Some(y), Some(r));
-        // o01e: anchor the plunge feed at entry. Without this, the
+        // Anchor the plunge feed at entry. Without this, the
         // first G1 plunge would inherit whatever F was last set — for
         // GRBL (which uses this default impl) that could be rate_h
         // from the prior cut block, which slams the bit into the work
@@ -300,7 +300,7 @@ pub trait PostProcessor {
             if current_z <= z + 1e-9 {
                 break;
             }
-            // co8b: re-enter to a small clearance ABOVE the previous
+            // Re-enter to a small clearance ABOVE the previous
             // peck depth at rapid, then feed the last 0.5 mm down at
             // plunge feed. Rapidding all the way down to the just-cut
             // depth lets the cutter slam straight into chip-clogged
@@ -308,7 +308,7 @@ pub trait PostProcessor {
             // a fast Z.
             let re_entry_z = current_z + RE_ENTRY_CLEARANCE_MM;
             self.move_to(None, None, Some(re_entry_z));
-            // o01e: re-anchor the plunge feed after every rapid retract.
+            // Re-anchor the plunge feed after every rapid retract.
             // G0 doesn't consume F, but it does NOT roll back any prior
             // modal change, so a controller that re-evaluates F at each
             // motion-mode change (FANUC, vintage Mach3) sees the right
@@ -339,7 +339,7 @@ pub trait PostProcessor {
             return;
         }
         self.move_to(Some(x), Some(y), Some(r));
-        // o01e: anchor plunge feed at entry (see drill_peck).
+        // Anchor plunge feed at entry (see drill_peck).
         self.feedrate(rate_v);
         let mut current_z = r;
         loop {
@@ -400,9 +400,9 @@ pub trait PostProcessor {
     /// lines had been emitted live.
     fn restore_state(&mut self, _state: &CapturedPostState) {}
 
-    /// Configure the program-wide number formatter (rt1.36): decimal
+    /// Configure the program-wide number formatter: decimal
     /// separator and optional N-line-numbering start, plus the project
-    /// unit (w9hd) so the emit-time mm→inch scale applies to every
+    /// unit so the emit-time mm→inch scale applies to every
     /// X/Y/Z/I/J/R/F number. Called once at `program_begin` from
     /// `MachineConfig`. Default impl is a no-op — posts that emit
     /// numeric coordinates (linuxcnc, grbl) override it; HPGL / pen
@@ -415,33 +415,33 @@ pub trait PostProcessor {
     ) {
     }
 
-    /// rt1.15: attach a user-configurable post-processor profile.
+    /// Attach a user-configurable post-processor profile.
     /// Called once at `program_begin` from `MachineConfig`. Default
     /// impl is a no-op; linuxcnc / grbl posts override to store the
     /// profile in their `PostState` and consult it for
     /// `program_start` / _end / tool / coolant.
     fn set_post_profile(&mut self, _profile: Option<&post_profile::PostProfile>) {}
 
-    /// rt1.15: refresh the token-substitution context. Called at
+    /// Refresh the token-substitution context. Called at
     /// `program_begin` and at every op boundary so per-op tokens
     /// (`<op>`, `<t>`, `<n>`, `<f>`, `<s>`) reflect the active
     /// state. Default impl is a no-op.
     fn set_token_ctx(&mut self, _ctx: &post_profile::TokenCtx) {}
 
-    /// Apply a per-tool Z work-coordinate offset (rt1.30). Called
+    /// Apply a per-tool Z work-coordinate offset. Called
     /// at `program_begin` for the first op's tool and right after each
     /// emitted toolchange. `LinuxCNC` / GRBL emit `G92 Z<shift>`;
     /// HPGL ignores. Skip when `shift_mm == 0`.
     fn tool_z_shift(&mut self, _shift_mm: f64) {}
 
-    /// hat3: pin the work-coordinate Z of the CURRENT position to
+    /// Pin the work-coordinate Z of the CURRENT position to
     /// `z_mm` (`G92 Z` on LinuxCNC, `G10 L20 P<n> Z` on GRBL). Unlike
     /// [`tool_z_shift`](Self::tool_z_shift) this ALWAYS emits — used to
     /// re-zero Z right after a touch-plate `G38.2` trips, where `z_mm`
     /// is the plate thickness (often 0). HPGL ignores.
     fn set_work_z_here(&mut self, _z_mm: f64) {}
 
-    /// llkf: apply the controller's tool-length offset for tool `h`
+    /// Apply the controller's tool-length offset for tool `h`
     /// (`G43 H<h>`). Emitted after `T<n> M6` in the ATC envelope when
     /// `MachineConfig.use_tool_length_offsets` is set, so the controller
     /// applies the pre-measured length from its tool table. `LinuxCNC` /
@@ -450,20 +450,20 @@ pub trait PostProcessor {
     /// Z move should re-emit explicitly.
     fn tool_length_offset(&mut self, _h: u32) {}
 
-    /// llkf: cancel tool-length compensation (`G49`). Emitted at
+    /// Cancel tool-length compensation (`G49`). Emitted at
     /// `program_end` when `use_tool_length_offsets` is set so the
     /// program doesn't leave a dynamic offset active for the next job.
     /// `LinuxCNC` / GRBL override; HPGL ignores.
     fn tool_length_offset_off(&mut self) {}
 
-    /// hat3: rapid to a machine-coords Z (`G53 G0 Z<z>`), e.g. the safe
+    /// Rapid to a machine-coords Z (`G53 G0 Z<z>`), e.g. the safe
     /// approach height above a fixed tool-length sensor. Sibling of
     /// [`rapid_machine_xy`](Self::rapid_machine_xy); same invalidation
     /// contract (the WCS position cache is dropped). `LinuxCNC` / GRBL
     /// override; HPGL keeps the default no-op.
     fn rapid_machine_z(&mut self, _z_mm: f64) {}
 
-    /// hat3: emit a `G38.2 Z<distance> F<feed>` probing-feed move that
+    /// Emit a `G38.2 Z<distance> F<feed>` probing-feed move that
     /// halts the instant the probe trips. `distance_mm` is signed
     /// (NEGATIVE probes DOWN); `feed_mm_min` is the probe feed. Used by
     /// the post-change Z re-establish flow (touch plate / fixed sensor).
@@ -473,7 +473,7 @@ pub trait PostProcessor {
     /// next move must re-emit coordinates explicitly.
     fn probe_toward_z(&mut self, _distance_mm: f64, _feed_mm_min: u32) {}
 
-    /// hat3: apply the just-probed tool length as a tool-length offset.
+    /// Apply the just-probed tool length as a tool-length offset.
     /// Called after [`probe_toward_z`](Self::probe_toward_z) lands the
     /// tool on a fixed sensor in `FixedSensor` mode. The numeric
     /// difference from the reference tool is a CONTROLLER-runtime value
@@ -483,28 +483,28 @@ pub trait PostProcessor {
     /// NOT use this — it pins work Z directly via `tool_z_shift`.
     fn apply_probed_tool_length(&mut self) {}
 
-    /// Emit a dwell of `seconds` (rt1.29 — used for laser pierce
-    /// time). `LinuxCNC` / GRBL emit `G4 P<seconds>`; HPGL ignores.
+    /// Emit a dwell of `seconds` (used for laser pierce time).
+    /// `LinuxCNC` / GRBL emit `G4 P<seconds>`; HPGL ignores.
     /// Skip when `seconds <= 0`.
     fn dwell(&mut self, _seconds: f64) {}
 
-    /// sbtg: select the XY plane for arc interpretation. `LinuxCNC` /
+    /// Select the XY plane for arc interpretation. `LinuxCNC` /
     /// GRBL emit `G17`; HPGL ignores. A controller booted in G18 / G19
     /// would otherwise reinterpret our G2/G3 arcs in XZ / YZ. Called
     /// once per program in [`program_begin`] before any motion.
     fn plane_xy(&mut self) {}
 
-    /// sbtg: cancel any active cutter-radius compensation. `LinuxCNC`
+    /// Cancel any active cutter-radius compensation. `LinuxCNC`
     /// / GRBL emit `G40`; HPGL ignores. Defends against G41 / G42
     /// left modal by a prior program.
     fn cutter_comp_off(&mut self) {}
 
-    /// sbtg: select feed-per-minute mode. `LinuxCNC` / GRBL emit
+    /// Select feed-per-minute mode. `LinuxCNC` / GRBL emit
     /// `G94`; HPGL ignores. Defends against G95 (units-per-revolution)
     /// left modal by a prior turning program.
     fn feed_per_minute(&mut self) {}
 
-    /// olpn: cancel any active canned drill cycle. `LinuxCNC` emits
+    /// Cancel any active canned drill cycle. `LinuxCNC` emits
     /// `G80`; GRBL has no canned cycles so the default no-op is fine
     /// (its drill block was already G0/G1 expanded). Called at the end
     /// of [`emit_drill_block`] so a following op's G0 / G1 is not
@@ -512,7 +512,7 @@ pub trait PostProcessor {
     /// cycle's modal Z / R.
     fn cancel_canned_cycle(&mut self) {}
 
-    /// e2mq: select the program's active work coordinate system. Called
+    /// Select the program's active work coordinate system. Called
     /// once from [`program_begin`] with `Setup.wcs`. `LinuxCNC` / GRBL
     /// write the explicit `G54..G59` word AND pin the same `Wcs` value
     /// into `PostState.wcs` so `tool_z_shift` can emit a
@@ -532,14 +532,15 @@ pub struct CapturedPostState {
     pub last_z: Option<f64>,
     pub last_rate: Option<u32>,
     pub last_speed: Option<u32>,
-    /// sulg: last commanded coolant state. Without this, an op that
+    /// Last commanded coolant state. Without this, an op that
     /// turned coolant off would have its M9 line cached, but the next
     /// op's `coolant_flood` would see the live `PostState`'s stale
     /// `last_coolant` and skip re-emitting the M8 — leaving the next
-    /// cut dry. `Unknown` keeps pre-sulg cache entries (which deserialize
-    /// via `Default`) compatible with the live default initial state.
+    /// cut dry. `Unknown` keeps pre-existing cache entries (which
+    /// deserialize via `Default`) compatible with the live default
+    /// initial state.
     pub last_coolant: CoolantState,
-    /// sulg: last commanded spindle direction. Op N may flip a tool
+    /// Last commanded spindle direction. Op N may flip a tool
     /// to `Ccw` (M4); when op N+1 is cached and its body was authored
     /// against `Cw`, the replay would otherwise leave the spindle in
     /// the wrong direction. None = no spindle direction commanded yet
@@ -623,7 +624,7 @@ pub fn emit_vcarve_block<P: PostProcessor>(
         return;
     }
     let fast_z = setup.mill.fast_move_z;
-    // 20y5: spin up the spindle / arm the laser ONCE at block entry.
+    // Spin up the spindle / arm the laser ONCE at block entry.
     // For Mill, the spindle stays on and the loop's re-arms dedupe via
     // `last_speed`. For Laser, the loop bounces M3 S<power> / M5 around
     // each rapid traverse so the beam is off during travel — see the
@@ -641,7 +642,7 @@ pub fn emit_vcarve_block<P: PostProcessor>(
         }
         let (sx, sy, entry_z) = poly[0];
         // Travel: lift to safe Z, fly to the start XY, drop to start_depth.
-        // 20y5: drop the laser BEFORE the inter-poly rapid traverse;
+        // Drop the laser BEFORE the inter-poly rapid traverse;
         // re-arm at the new start XY. Mill's spindle_off is NOT called
         // here — only laser_off, which is a no-op for non-laser modes.
         // The first iteration skips the off/on bounce because the
@@ -655,13 +656,13 @@ pub fn emit_vcarve_block<P: PostProcessor>(
             cut_tool_on(post, setup, setup.tool.speed);
         }
         post.feedrate(setup.tool.rate_v);
-        // n3hn: the pre-polyline plunge must never dive BELOW the
+        // The pre-polyline plunge must never dive BELOW the
         // polyline's own first Z. Medial-axis chains begin with an angled
         // lead-in ramp anchored at z=0 (the stock surface — see
         // vcarve_emit::ratchet_emit), so a vertical G1 to a negative
         // `start_depth` (multi-pass / staged carve) would crash the V-bit
         // straight into uncut stock before the ramp ever runs — the same
-        // failure mode pmpk fixed at the per-chain entry. Clamp the plunge
+        // failure mode fixed at the per-chain entry. Clamp the plunge
         // to `max(start_depth, entry_z)`: it stops at the polyline's own
         // entry plane and lets the ramp (or the ring's own descent) carry
         // the cutter into material laterally. For the default V-carve case
@@ -669,12 +670,10 @@ pub fn emit_vcarve_block<P: PostProcessor>(
         // existing output is byte-for-byte unchanged.
         let plunge_z = setup.mill.start_depth.max(entry_z);
         post.linear(None, None, Some(plunge_z));
-        // md0m: laser-mode V-carve needs a pierce dwell at the cut
+        // Laser-mode V-carve needs a pierce dwell at the cut
         // plane so the beam burns through stock before lateral motion
-        // begins. gd2x added this to emit_offset; emit_vcarve_block
-        // had the same plunge-then-immediately-cut shape and dragged
-        // the first few mm through unmelted material. Mirror the
-        // gd2x ordering: F<rate_v> → G1 Z<start> → dwell → F<rate_h>.
+        // begins. This mirrors the ordering used by emit_offset:
+        // F<rate_v> → G1 Z<start> → dwell → F<rate_h>.
         if setup.tool.pierce_sec > 0.0 {
             post.dwell(setup.tool.pierce_sec);
         }
@@ -686,10 +685,10 @@ pub fn emit_vcarve_block<P: PostProcessor>(
         *last_pos = Point2::new(lx, ly);
         // The polyline emitter (e.g. thread::helix_waypoints) is
         // responsible for ending on a safe XY before the G0 lift below
-        // (7388 — thread helices end with a radial retract so the lift
-        // doesn't scrape the just-cut crest).
+        // Thread helices end with a radial retract so the lift
+        // doesn't scrape the just-cut crest.
     }
-    // 20y5: drop the laser before the final lift so a subsequent op's
+    // Drop the laser before the final lift so a subsequent op's
     // rapid (or program_end's park traverse) doesn't burn.
     cut_tool_off(post, setup);
     post.move_to(None, None, Some(fast_z));
@@ -700,12 +699,12 @@ pub fn emit_vcarve_block<P: PostProcessor>(
 /// `flat_z`. The ramp polyline starts above stock and ends tangent to
 /// the flat revolution's start XY at `flat_z`.
 ///
-/// sq8z: prior to this struct the rim revolution was a 64-point flat
+/// Prior to this struct the rim revolution was a 64-point flat
 /// polyline emitted via `emit_vcarve_block`, which walks point-by-point
 /// at G1. Output was bloated, jerky, and chord-approximated a true
 /// circle. By passing the rim's actual `(center, radius, ccw)` we can
 /// emit ONE G2/G3 full-circle and let the post-processor split it for
-/// controllers that need the half-circle pair (3p7v in linuxcnc.rs and
+/// controllers that need the half-circle pair (see linuxcnc.rs and
 /// grbl.rs).
 #[derive(Debug, Clone)]
 pub struct StufenfaseHole {
@@ -726,9 +725,9 @@ pub struct StufenfaseHole {
 ///   * G1 plunge to `start_depth`;
 ///   * G1 walk of the lead-in ramp at cut feed;
 ///   * single G2/G3 full revolution at `flat_z` (the post splits
-///     full-circles for controllers that need it — see 3p7v).
+///     full-circles for controllers that need it).
 ///
-/// sq8z: replaces the previous "build a 64-point polyline and feed it
+/// Replaces the previous "build a 64-point polyline and feed it
 /// to `emit_vcarve_block`" path; rim revolutions now emit as a single
 /// arc move rather than 64 chord G1s.
 ///
@@ -813,7 +812,7 @@ pub fn emit_stufenfase_rim_block<P: PostProcessor>(
 /// `setup.mill.depth`        → drill bottom Z (typically negative).
 /// `setup.mill.start_depth`  → R (clearance plane just above the workpiece).
 /// `setup.mill.fast_move_z`  → safe Z for rapid moves between drill sites.
-// juvx: `DRILL_R_CLEARANCE_MM` const lives near its use site so the
+// `DRILL_R_CLEARANCE_MM` const lives near its use site so the
 // canned-cycle R-plane derivation reads top-to-bottom; hoisting it
 // would force a forward reference for a one-call value.
 #[allow(clippy::items_after_statements)]
@@ -824,7 +823,7 @@ pub fn emit_drill_block<P: PostProcessor>(
     post: &mut P,
     last_pos: &mut Point2,
 ) {
-    // 3kqo: match the co8b re-entry clearance value (0.5 mm) so the
+    // Match the re-entry clearance value (0.5 mm) so the
     // canned-cycle path uses the same air-gap budget as the trait-
     // default manual peck loop. Used to compute the canned-cycle R
     // retract plane below.
@@ -841,7 +840,7 @@ pub fn emit_drill_block<P: PostProcessor>(
     // still works.
     let cone_extra = setup.tool.tip_cone_length();
     let z = setup.mill.depth - setup.mill.through_depth.max(0.0) - cone_extra;
-    // 3kqo: separate the canned-cycle retract plane R from the user's
+    // Separate the canned-cycle retract plane R from the user's
     // `start_depth` (the entry / clearance plane configured per op).
     // R is the plane to which G83/G73 RAPID retract after every peck —
     // it MUST be above the stock surface, otherwise the bit retracts
@@ -856,7 +855,7 @@ pub fn emit_drill_block<P: PostProcessor>(
         .start_depth
         .max(stock_top_z + DRILL_R_CLEARANCE_MM);
     let fast_z = setup.mill.fast_move_z;
-    // 20y5: laser-aware tool-on. Drilling under a laser is an unusual
+    // Laser-aware tool-on. Drilling under a laser is an unusual
     // workflow (you'd be ablating spots) but it should at least fire
     // the beam — better than the previous "mode != Mill" gate that
     // emitted moves with the laser silently off.
@@ -885,7 +884,7 @@ pub fn emit_drill_block<P: PostProcessor>(
         // mirroring what emit_offset does for normal cuts.
         post.move_to(None, None, Some(fast_z));
         if matches!(setup.machine.mode, MachineMode::Laser) {
-            // 7iej.5: a laser has no Z-plunge canned cycle — a G81/G83
+            // A laser has no Z-plunge canned cycle — a G81/G83
             // drill cycle is meaningless for a beam, and `cut_tool_on`
             // only ARMED it at S0, so the previous code drilled nothing.
             // Emit a spot ablation: rapid XY cold (beam armed at S0),
@@ -932,14 +931,14 @@ pub fn emit_drill_block<P: PostProcessor>(
         }
         *last_pos = pt;
     }
-    // olpn: cancel the canned drill cycle before any subsequent G0 /
+    // Cancel the canned drill cycle before any subsequent G0 /
     // G1 from the next op. Otherwise FANUC / Mach3 (and LinuxCNC in
     // strict modes) reinterpret the next G0 as another invocation of
     // the same drill cycle at the modal Z / R, with disastrous
     // results. Emit BEFORE the safe-Z lift so the G80 lands inside
     // the drill block, not adjacent to the next op's spindle line.
     post.cancel_canned_cycle();
-    // 20y5: drop the laser before the final lift so a subsequent op's
+    // Drop the laser before the final lift so a subsequent op's
     // rapid traverse (or program_end's park move) doesn't burn.
     cut_tool_off(post, setup);
     // Lift back to safe Z so subsequent ops start clean.
@@ -947,7 +946,7 @@ pub fn emit_drill_block<P: PostProcessor>(
 }
 
 fn program_begin<P: PostProcessor>(setup: &Setup, post: &mut P) {
-    // rt1.36: thread the decimal separator + N-numbering knobs into
+    // Thread the decimal separator + N-numbering knobs into
     // the post state BEFORE any output flows so every emitted line
     // honors the project's MachineConfig.
     post.configure(
@@ -955,7 +954,7 @@ fn program_begin<P: PostProcessor>(setup: &Setup, post: &mut P) {
         setup.machine.line_number_start,
         setup.machine.unit,
     );
-    // rt1.15: thread the user-configurable post profile + initial
+    // Thread the user-configurable post profile + initial
     // token-substitution context. Profile templates can reference
     // tool / feed / spindle / unit etc. that we know from `setup`
     // even before any op runs.
@@ -971,14 +970,14 @@ fn program_begin<P: PostProcessor>(setup: &Setup, post: &mut P) {
     post.program_start();
     post.unit(setup.machine.unit);
     post.absolute(true);
-    // e2mq: pin the active WCS so the controller can't be left on a
+    // Pin the active WCS so the controller can't be left on a
     // stale `G55`/`G56` from a prior program — and so per-tool
     // `tool_z_shift` writes its `G10 L20 P<n>` against the right
     // table. Emitted after the unit/absolute pragmas (the G54..G59
     // word is itself a modal pragma; its position in the preamble
     // is conventional) and before any motion. HPGL ignores.
     post.select_wcs(setup.wcs);
-    // sbtg: emit a known modal preamble before any motion so a
+    // Emit a known modal preamble before any motion so a
     // controller booted in a non-default state doesn't reinterpret our
     // arcs in XZ (G18), leave cutter-comp on from a prior program
     // (G42/G41), or feed in units-per-revolution (G95) instead of
@@ -987,7 +986,7 @@ fn program_begin<P: PostProcessor>(setup: &Setup, post: &mut P) {
     post.plane_xy();
     post.cutter_comp_off();
     post.feed_per_minute();
-    // l3o6: don't emit F<rate> here — the next motion is a G0 rapid
+    // Don't emit F<rate> here — the next motion is a G0 rapid
     // (move_to fast_move_z) and G0 ignores the modal feedrate. The
     // first G1/G2/G3 that actually needs F is in the per-offset block
     // below (`post.feedrate(use_rate_h)` before any cut), so deferring
@@ -998,11 +997,11 @@ fn program_begin<P: PostProcessor>(setup: &Setup, post: &mut P) {
 }
 
 fn program_end<P: PostProcessor>(setup: &Setup, post: &mut P) {
-    // syol: lift to fast_move_z FIRST so any park-XY move happens
+    // Lift to fast_move_z FIRST so any park-XY move happens
     // safely above the workpiece (the previous code emitted only the
     // Z lift before M5/M30, leaving the head parked over the part).
     post.move_to(None, None, Some(setup.mill.fast_move_z));
-    // syol: emit a safe XY parking move BEFORE the spindle stops.
+    // Emit a safe XY parking move BEFORE the spindle stops.
     //   1. explicit `park_xy` in the work coordinate system, or
     //   2. machine-home via G53 G0 X0 Y0 when `park_at_home == true`
     //      (most hobby + pro controllers accept G53 since LinuxCNC
@@ -1012,7 +1011,7 @@ fn program_end<P: PostProcessor>(setup: &Setup, post: &mut P) {
     if let Some((px, py)) = setup.machine.park_xy {
         post.move_to(Some(px), Some(py), None);
     } else if setup.machine.park_at_home {
-        // 7iej.6: machine-home park. Route through the `rapid_machine_xy`
+        // Machine-home park. Route through the `rapid_machine_xy`
         // trait method (machine-coord G53 G0 rapid) rather than a raw
         // string so the move honors the decimal separator / inch scale /
         // per-axis rename like every other coordinate, and invalidates the
@@ -1023,7 +1022,7 @@ fn program_end<P: PostProcessor>(setup: &Setup, post: &mut P) {
     } else {
         post.move_to(Some(0.0), Some(0.0), None);
     }
-    // llkf: cancel tool-length compensation before the program ends so
+    // Cancel tool-length compensation before the program ends so
     // a dynamic G43 offset doesn't bleed into the next job. Only emitted
     // when the run used G43 (flag off → no G49, output unchanged).
     if setup.machine.use_tool_length_offsets {
@@ -1046,18 +1045,18 @@ pub struct PostState {
     pub last_speed: Option<u32>,
     pub absolute: bool,
     /// Decimal separator used by the number formatter — `.` (default)
-    /// or `,` for European-locale Siemens / Heidenhain controllers
-    /// (rt1.36). Configured once at program start from
+    /// or `,` for European-locale Siemens / Heidenhain controllers.
+    /// Configured once at program start from
     /// `MachineConfig::decimal_separator`.
     #[serde(default = "default_decimal_separator")]
     pub decimal_separator: char,
     /// When `Some(next)`, every emitted line gets a `N<next> ` prefix
-    /// and `next` increments by 10 (rt1.36 / FANUC / vintage
-    /// controllers). `None` = no numbering. Configured once at
-    /// program start from `MachineConfig::line_number_start`.
+    /// and `next` increments by 10 (FANUC / vintage controllers).
+    /// `None` = no numbering. Configured once at program start from
+    /// `MachineConfig::line_number_start`.
     #[serde(default)]
     pub line_counter: Option<u32>,
-    /// rt1.15: user-configurable post-processor profile attached to
+    /// User-configurable post-processor profile attached to
     /// `MachineConfig`. When `Some`, the built-in posts consult its
     /// template strings instead of their hard-coded headers /
     /// footers / toolchange / coolant lines. `None` = use the
@@ -1068,7 +1067,7 @@ pub struct PostState {
     /// Refreshed at `program_begin` and at each op boundary.
     #[serde(default, skip)]
     pub token_ctx: crate::gcode::post_profile::TokenCtx,
-    /// w9hd: emit-time length scale from project units (mm) to gcode
+    /// Emit-time length scale from project units (mm) to gcode
     /// units. 1.0 for `UnitSystem::Mm`, 1/25.4 for `UnitSystem::Inch`.
     /// Multiplied into every X/Y/Z/I/J/R/Q coordinate AND into the
     /// feedrate F word at emission time. The pipeline math keeps
@@ -1077,7 +1076,7 @@ pub struct PostState {
     /// by `configure_post_state` from `MachineConfig::unit`.
     #[serde(default = "default_unit_scale")]
     pub unit_scale: f64,
-    /// f78z: last commanded coolant state. Dedupe target so M7 / M8 /
+    /// Last commanded coolant state. Dedupe target so M7 / M8 /
     /// M9 lines only emit on state changes — the old code re-emitted
     /// the SAME M7 / M8 on every offset because the cut-block helpers
     /// unconditionally call `coolant_mist` / `coolant_flood` before
@@ -1086,14 +1085,14 @@ pub struct PostState {
     /// gets through.
     #[serde(default, skip)]
     pub last_coolant: CoolantState,
-    /// sulg: last commanded spindle direction. Tracked so the cache
+    /// Last commanded spindle direction. Tracked so the cache
     /// can capture and restore it across cached-op boundaries — without
     /// this, op N flipping to `Ccw` (M4) would leave a cached op N+1
     /// re-emitting against a stale "we're in Cw" assumption. None =
     /// no spindle direction commanded yet.
     #[serde(default, skip)]
     pub last_spindle_dir: Option<SpindleDirection>,
-    /// e2mq: the active work coordinate system the gcode program runs
+    /// The active work coordinate system the gcode program runs
     /// under. Threaded in from `Project.work_offset.wcs` via
     /// `configure_post_state` and emitted as an explicit `G54..G59`
     /// in `program_begin`. Without this, GRBL's `tool_z_shift` had to
@@ -1110,7 +1109,7 @@ pub struct PostState {
     pub laser_dynamic: bool,
 }
 
-/// f78z: tracked coolant state for dedup. Mirrors the M-code we last
+/// Tracked coolant state for dedup. Mirrors the M-code we last
 /// commanded (or `Unknown` at program start, before any M7 / M8 / M9
 /// has been emitted).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1153,7 +1152,7 @@ impl Default for PostState {
 }
 
 impl PostState {
-    /// tsay: number of decimal places to use when formatting numbers
+    /// Number of decimal places to use when formatting numbers
     /// for emission. mm projects stay at 4 (0.0001 mm = 0.1 µm, finer
     /// than any realistic CNC repeats). Inch projects consult the
     /// post profile's `decimal_places_inch` override and fall back to
@@ -1177,8 +1176,8 @@ impl PostState {
 }
 
 /// Apply the post-processor numbering / separator settings derived
-/// from `MachineConfig` (rt1.36) and the program-wide unit scale
-/// (w9hd). Drains down into `PostState` so the per-post `write` /
+/// from `MachineConfig` and the program-wide unit scale.
+/// Drains down into `PostState` so the per-post `write` /
 /// `fmt` helpers consult them on every line.
 pub fn configure_post_state(
     state: &mut PostState,
@@ -1193,7 +1192,7 @@ pub fn configure_post_state(
         _ => '.',
     };
     state.line_counter = line_number_start;
-    // w9hd: pipeline math runs in mm. When the machine is unit=Inch
+    // Pipeline math runs in mm. When the machine is unit=Inch
     // the G20 pragma flips and every emitted X/Y/Z/I/J/R + F must be
     // divided by 25.4 to convert mm -> inches AT THE OUTPUT BOUNDARY.
     // Without this the controller mis-scales by 25.4× (catastrophic).
@@ -1208,7 +1207,7 @@ pub fn configure_post_state(
 /// zeros, never end with `.`. The decimal count is the maximum width;
 /// shorter renderings (e.g. round numbers) trim down identically.
 ///
-/// e0hq: snap values whose magnitude is below half-an-ULP of the
+/// Snap values whose magnitude is below half-an-ULP of the
 /// emitted precision to a positive literal `0` so we never render
 /// `-0.000` / `-0` — some controllers (Heidenhain, vintage FANUC)
 /// reject a leading minus on a zero coordinate, and operators reading
@@ -1218,7 +1217,7 @@ pub fn fmt_num(v: f64, sep: char) -> String {
     fmt_num_dp(v, sep, 4)
 }
 
-/// tsay: same as [`fmt_num`] but with caller-chosen decimal places.
+/// Same as [`fmt_num`] but with caller-chosen decimal places.
 /// Inch mode (0.0001 in = 0.00254 mm) is borderline for sub-mil work,
 /// so the post can opt into 5 or 6 decimals via
 /// `PostProfile::decimal_places_inch`. mm-mode defaults remain at 4.
@@ -1345,8 +1344,8 @@ mod tests {
 
     #[test]
     fn z1y0_default_spindle_direction_still_cw() {
-        // Default behavior (Cw) must keep emitting M3 — z1y0 only
-        // adds the CCW path.
+        // Default behavior (Cw) must keep emitting M3 — the CCW path
+        // was added later; Cw must be unaffected.
         let mut setup = Setup::default();
         setup.tool.diameter = 1.0;
         setup.tool.speed = 12000;
@@ -1471,7 +1470,7 @@ mod tests {
 
     #[test]
     fn gcode_helix_walk_to_start_uses_safe_feed() {
-        // lja0: After emit_helix_entry lands the cutter on a small
+        // After emit_helix_entry lands the cutter on a small
         // circle inside the pocket boundary, the post must NOT walk
         // from there to the contour start with a G1 at rate_h at the
         // new cut depth — that's a full-immersion straight-line cut
@@ -1901,7 +1900,7 @@ mod tests {
         );
     }
 
-    /// sbtg: the prologue must contain G17 (XY plane), G40 (cutter-comp
+    /// The prologue must contain G17 (XY plane), G40 (cutter-comp
     /// off), and G94 (feed-per-minute) BEFORE the first motion line so
     /// a controller booted in G18 / G42 / G95 doesn't reinterpret the
     /// first G0 / G1.
@@ -1943,7 +1942,7 @@ mod tests {
         );
     }
 
-    /// 3p7v: a full-circle arc (start == end, with a non-trivial I/J
+    /// A full-circle arc (start == end, with a non-trivial I/J
     /// vector to the center) must split into two G2 / G3 commands so
     /// GRBL doesn't reject the program with error:33.
     #[test]
@@ -1984,7 +1983,7 @@ mod tests {
         );
     }
 
-    /// lyq6: the lead-in plunge must drop to `setup.mill.start_depth`,
+    /// The lead-in plunge must drop to `setup.mill.start_depth`,
     /// not a literal Z=0. Verifies the proud-stock case
     /// (`start_depth` < 0) where Z=0 would crash the cutter.
     #[test]
@@ -2024,7 +2023,7 @@ mod tests {
 
     #[test]
     fn syol_program_end_parks_at_work_zero_by_default() {
-        // syol: program_end must lift Z to fast_move_z, traverse to a
+        // program_end must lift Z to fast_move_z, traverse to a
         // safe XY, THEN shut off the spindle. Default (no park config)
         // = G0 X0 Y0 in WCS — the operator's reference zero, away
         // from the part for most setups.
@@ -2134,13 +2133,12 @@ mod tests {
         assert!(g.contains("M5"), "should stop spindle at end");
     }
 
-    /// 20y5 / xkvv: in Laser mode, every cut block must arm the beam at
+    /// In Laser mode, every cut block must arm the beam at
     /// S0 BEFORE the rapid traverse (so the rapid doesn't burn), ramp to
     /// `M3 S<power>` AFTER the plunge to cut Z, and OFF (M5) before the
     /// safe-Z retract / rapid out — otherwise the rapid burns a stripe
-    /// through the workpiece (xkvv) and / or the program runs with the
-    /// laser silently off (20y5's original bug from the `mode == Mill`-
-    /// only gate).
+    /// through the workpiece and / or the program runs with the
+    /// laser silently off.
     #[test]
     fn laser_mode_emits_m3_at_cut_entry_and_m5_before_retract() {
         let mut setup = Setup::default();
@@ -2196,7 +2194,7 @@ mod tests {
         );
     }
 
-    /// 20y5: in Laser mode with multiple offsets, M5 must be emitted
+    /// In Laser mode with multiple offsets, M5 must be emitted
     /// between every pair of cut blocks so the rapid traverse doesn't
     /// burn. Each subsequent cut re-arms the beam with M3 S<power>.
     #[test]
@@ -2243,7 +2241,7 @@ mod tests {
         );
     }
 
-    /// xkvv: in Laser mode the BEAM must be at S0 during the rapid
+    /// In Laser mode the BEAM must be at S0 during the rapid
     /// traverse to the entry point. Sequence: `M3 S0` → G0 rapid → G1
     /// plunge → `M3 S<power>` → optional pierce dwell → cut motion.
     /// Pre-fix the M3 S<power> appeared BEFORE the rapid, scorching a
@@ -2315,7 +2313,7 @@ mod tests {
         );
     }
 
-    /// 20y5: Drag knife / pen plotter mode must NOT emit M3 or M5 —
+    /// Drag knife / pen plotter mode must NOT emit M3 or M5 —
     /// there's no spindle or beam to control. The default (Mill)
     /// path keeps emitting M3 / M5; this test pins the Drag exclusion.
     #[test]
@@ -2355,7 +2353,7 @@ mod tests {
         }
     }
 
-    /// 3kqo: G83 / G73 R-word must be above the stock surface, NOT at
+    /// G83 / G73 R-word must be above the stock surface, NOT at
     /// `start_depth` when `start_depth` sits below the stock top. If R
     /// is below the stock surface, the canned cycle's rapid retract
     /// between pecks pulls the bit back into the chip-clogged hole
@@ -2420,7 +2418,7 @@ mod tests {
         );
     }
 
-    /// 7iej.5: laser-mode drilling must actually FIRE the beam. The old
+    /// Laser-mode drilling must actually FIRE the beam. The old
     /// code armed the laser at S0 (via `cut_tool_on`) and then ran a
     /// G81/G83 canned cycle that never ramped to power, so the beam stayed
     /// cold and nothing ablated. The fix emits a spot ablation per hole:
@@ -2483,7 +2481,7 @@ mod tests {
         );
     }
 
-    /// 3kqo: when `start_depth` sits ABOVE the stock surface (recessed
+    /// When `start_depth` sits ABOVE the stock surface (recessed
     /// work where the user explicitly raised the entry plane), R
     /// follows `start_depth` — it would be wasteful to drop R to the
     /// `stock_top` clearance because every peck rapid then has to
@@ -2536,7 +2534,7 @@ mod tests {
         );
     }
 
-    /// vfpa: lead-in plunge (G1 Z-drop from `fast_move_z` to `start_depth`)
+    /// Lead-in plunge (G1 Z-drop from `fast_move_z` to `start_depth`)
     /// must execute at the plunge feed (`rate_v`), not the cut feed
     /// (`rate_h`). Asserts the F-word sequence at the contour entry:
     /// F<`rate_v`> → G1 Z<entry> → F<`rate_h`> → G1 X/Y (first cut).
@@ -2588,15 +2586,15 @@ mod tests {
         let _ = g1_xy_after_f800;
     }
 
-    /// irg7: with the vfpa lead-plunge-feed fix in place, EVERY lead
+    /// With the lead-plunge-feed fix in place, EVERY lead
     /// arm (Arc / Straight / None) must restore F<`rate_h`> between
-    /// the plunge Z-drop and the first cut motion. The Arc arm got
-    /// this via the 3o3n defensive re-emit historically; the Straight
+    /// the plunge Z-drop and the first cut motion. The Arc arm handled
+    /// this via a defensive re-emit historically; the Straight
     /// and None arms relied on the modal F set further upstream
-    /// matching `rate_h` — which after vfpa it no longer does (modal
-    /// is `rate_v` at that point). Regression: an op with each lead
-    /// kind must emit `F<rate_h>` between plunge Z and the first
-    /// cutting motion. Uses a separately-closed square per arm to
+    /// matching `rate_h` — which after the plunge-feed fix it no longer
+    /// does (modal is `rate_v` at that point). Regression: an op with
+    /// each lead kind must emit `F<rate_h>` between plunge Z and the
+    /// first cutting motion. Uses a separately-closed square per arm to
     /// avoid Arc lead-fit fallback to Straight on tight geometry.
     #[test]
     fn irg7_feedrate_restored_on_all_three_lead_arms() {
@@ -2604,7 +2602,7 @@ mod tests {
         use crate::geometry::Segment;
 
         // Closed 30mm square — large enough for Arc lead-in to "fit"
-        // (62pd arc_lead_fits check).
+        // (arc_lead_fits check).
         fn big_closed_square() -> PolylineOffset {
             PolylineOffset {
                 segments: vec![
@@ -2677,7 +2675,7 @@ mod tests {
         check_arm(LeadKind::Off, 0.0, "None");
     }
 
-    /// o1g3: final retract after lead-out (to `fast_move_z`) must be a
+    /// Final retract after lead-out (to `fast_move_z`) must be a
     /// rapid (G0), not a cut motion (G1). The lead-out already rolled
     /// the cutter into free space; retracting at cut feed multiplies
     /// cycle time across hundreds of contours with zero safety benefit.
@@ -2724,7 +2722,7 @@ mod tests {
         }
     }
 
-    /// o01e: GRBL has no canned-cycle support, so a Peck drill uses the
+    /// GRBL has no canned-cycle support, so a Peck drill uses the
     /// trait-default G0/G1 expansion. That default must self-anchor the
     /// plunge feed (F<`rate_v`>) at entry AND after each rapid retract
     /// so the G1 plunges land at the safe plunge feed regardless of
@@ -2806,7 +2804,7 @@ mod tests {
         }
     }
 
-    /// g30a: drag-knife Line→Arc transitions must emit a swivel arc
+    /// Drag-knife Line→Arc transitions must emit a swivel arc
     /// BEFORE the cut arc — otherwise the trailing blade enters the
     /// arc still aligned with the prior line direction, bending the
     /// blade and tearing material at every line→arc seam. Build a
@@ -2901,7 +2899,7 @@ mod tests {
 
     #[test]
     fn i6c2_post_helix_entry_lift_uses_g0_rapid() {
-        // i6c2: the lift to fast_move_z that happens AFTER emit_helix_entry
+        // The lift to fast_move_z that happens AFTER emit_helix_entry
         // (and before the rapid XY to the contour start + the rate_v plunge)
         // must be a G0 rapid, not a G1 cut-feed move. The helix entry has
         // already cleared the spiral disc; the lift travels through air on
@@ -2963,7 +2961,7 @@ mod tests {
 
     #[test]
     fn nj6_feedrate_zero_skipped_in_post() {
-        // 4nj6: a tool with rate_v=0 or rate_h=0 (default-constructed,
+        // A tool with rate_v=0 or rate_h=0 (default-constructed,
         // misconfigured laser-on-mill, or a regression that lets a zero
         // slip past pipeline validation) must NEVER emit `F0` to the
         // controller. LinuxCNC raises "negative or zero feed rate" and
@@ -2988,7 +2986,7 @@ mod tests {
 
     #[test]
     fn pxyt_trait_default_drill_honors_ms_dwell_unit() {
-        // pxyt: GRBL inherits the default trait drill_simple / drill_peck /
+        // GRBL inherits the default trait drill_simple / drill_peck /
         // drill_chip_break impls (it has no canned cycle support). Those
         // defaults previously emitted `G4 P<seconds>` via a seconds-only
         // helper, ignoring the active profile's dwell_unit. A Mach3-metric
@@ -3019,7 +3017,7 @@ mod tests {
 
     #[test]
     fn pxyt_trait_default_drill_seconds_unchanged_without_profile() {
-        // pxyt regression-guard: the LinuxCNC default (no profile, or
+        // Regression guard: the LinuxCNC default (no profile, or
         // DwellUnit::Seconds) must still emit `G4 P<seconds>` exactly
         // as before — the fix is profile-driven, not blanket.
         let mut post = grbl::Post::new();
@@ -3033,7 +3031,7 @@ mod tests {
 
     #[test]
     fn e2mq_program_begin_emits_explicit_g54_by_default() {
-        // e2mq: the program prologue must emit an explicit `G54`
+        // The program prologue must emit an explicit `G54`
         // (the default WCS) so the controller isn't left modally on
         // a stale G55..G59 from a prior program.
         let setup = Setup::default(); // wcs defaults to G54
@@ -3048,7 +3046,7 @@ mod tests {
 
     #[test]
     fn e2mq_program_begin_emits_active_wcs_when_set() {
-        // e2mq: when the project pins `work_offset.wcs = G55`, the
+        // When the project pins `work_offset.wcs = G55`, the
         // prologue must emit `G55` (NOT G54) so the controller is
         // pinned to the same table the user authored against.
         let mut setup = Setup::default();
@@ -3068,7 +3066,7 @@ mod tests {
 
     #[test]
     fn e2mq_grbl_tool_z_shift_targets_active_wcs_p_number() {
-        // e2mq: GRBL's tool_z_shift emits `G10 L20 P<n> Z<shift>`. The
+        // GRBL's tool_z_shift emits `G10 L20 P<n> Z<shift>`. The
         // `P<n>` must match the active WCS (G54=P1, G55=P2, …, G59=P6),
         // NOT a hardcoded P1. Pre-fix: a user running on G55 saw the
         // z-shift written into G54's table — silent, no error, but the
@@ -3099,7 +3097,7 @@ mod tests {
         );
     }
 
-    /// 0t9o: drag-knife self-alignment threshold suppresses swivel
+    /// Drag-knife self-alignment threshold suppresses swivel
     /// arcs at shallow corners. A polyline approximating a circle as
     /// 64 chords has ~5.6° turns at each corner — well below the
     /// 30° default. The walker must NOT emit a swivel arc at each
@@ -3176,7 +3174,7 @@ mod tests {
         );
     }
 
-    /// zpuk: Plasma mode emits a two-step Z entry — rapid to
+    /// Plasma mode emits a two-step Z entry — rapid to
     /// `pierce_height`, dwell `pierce_delay_sec`, then G1 to `cut_height`.
     /// The cut proceeds at constant Z = `cut_height` (`multi_pass`
     /// collapses for Plasma the same way it collapses for Drag).
@@ -3258,7 +3256,7 @@ mod tests {
         );
     }
 
-    /// 6yhs: Drag-knife mode (machine.mode = Drag) must collapse to
+    /// Drag-knife mode (machine.mode = Drag) must collapse to
     /// a single pass at `setup.mill.depth` even without the global
     /// `plot_mode_z` flag. `setup_resolver` sets mode=Drag per-op for
     /// `DragKnife` ops; before the fix, `multi_pass` walked the schedule
@@ -3333,9 +3331,9 @@ mod tests {
         );
     }
 
-    /// 0t9o: sanity that a SHARP corner (90°, above threshold) still
+    /// Sanity that a SHARP corner (90°, above threshold) still
     /// emits the swivel — regression guard so we don't accidentally
-    /// kill the g30a swivel on legitimately-sharp polyline corners.
+    /// suppress the swivel on legitimately-sharp polyline corners.
     /// Setting `drag_self_align_angle_rad = 0.0` forces legacy
     /// behaviour (every corner swivels).
     #[test]
@@ -3392,12 +3390,12 @@ mod tests {
         );
     }
 
-    /// md0m: V-Carve emit must honor `pierce_sec` — laser-mode V-carve
+    /// V-Carve emit must honor `pierce_sec` — laser-mode V-carve
     /// needs to dwell at the cut plane so the beam burns through the
     /// stock before lateral motion begins. The bug was that
     /// `emit_vcarve_block` plunged then immediately started cutting,
     /// dragging the first few mm of each sub-polyline through unmelted
-    /// material. Mirror the gd2x ordering used by `emit_offset`.
+    /// material. Mirror the ordering used by `emit_offset`.
     /// Asserts a `G4 P<pierce_sec>` appears between the plunge G1 Z
     /// (to `start_depth`) and the first lateral G1 motion.
     #[test]
@@ -3460,7 +3458,7 @@ mod tests {
         }
     }
 
-    /// n3hn: with `start_depth < 0` (multi-pass / staged V-carve), the
+    /// With `start_depth < 0` (multi-pass / staged V-carve), the
     /// pre-polyline plunge must NOT drive the V-bit vertically below the
     /// surface into uncut stock. The medial-axis polyline already begins
     /// with an angled lead-in ramp anchored at z=0; the entry plunge is
@@ -3490,8 +3488,8 @@ mod tests {
         let g = post.finish();
 
         // Walk the emitted motion and assert no G1 drops Z below the
-        // surface (z<0) without simultaneous XY motion — that is exactly
-        // the V-bit-snapping vertical plunge into stock n3hn forbids.
+        // surface (z<0) without simultaneous XY motion — a vertical plunge
+        // into uncut stock that snaps the V-bit.
         let mut last_x = 0.0_f64;
         let mut last_y = 0.0_f64;
         let mut last_z = setup.mill.fast_move_z;

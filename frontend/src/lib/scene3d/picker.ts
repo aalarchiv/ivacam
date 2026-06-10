@@ -3,7 +3,7 @@
 /// to the owning segment, so the host can act on it (select an object /
 /// scrub the playhead). Owns its raycaster + NDC scratch vector.
 ///
-/// Extracted from Scene3D.svelte (4w2f). THREE-only — no rune state — so
+/// Extracted from Scene3D.svelte. THREE-only — no rune state — so
 /// the side-effecting actions (selection, playhead) stay in the host.
 
 import * as THREE from 'three';

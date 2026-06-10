@@ -1,6 +1,6 @@
 /// Fat-line (Line2 / LineSegments2) construction. WebGL caps
 /// LineBasicMaterial.linewidth to 1px, so the preview-line-width setting
-/// (68ab) drives LineMaterial instead, which renders width in screen
+/// the preview-line-width setting drives LineMaterial instead, which renders width in screen
 /// pixels via a `resolution` uniform that must track the canvas size.
 ///
 /// Flat per-segment position + color arrays (6 floats per segment —
@@ -8,7 +8,7 @@
 /// interleaved instance buffers, so the playhead-fade / selection-recolor
 /// offset math downstream is unchanged.
 ///
-/// Extracted from Scene3D.svelte (4w2f) so both line builders share it.
+/// Extracted from Scene3D.svelte so both line builders share it.
 
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';

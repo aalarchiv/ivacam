@@ -20,9 +20,9 @@
     /// namespace, which the linter audit flagged).
     width?: string;
     maxHeight?: string;
-    /// zi6p: opt-in window behaviors (default off so the ~6 plain
-    /// dialogs stay centered + static). `draggable` lets the user
-    /// reposition by the inner <header>; `resizable` adds a corner grip.
+    /// Opt-in window behaviors (default off so the ~6 plain dialogs stay
+    /// centered + static). `draggable` lets the user reposition by the
+    /// inner <header>; `resizable` adds a corner grip.
     draggable?: boolean;
     resizable?: boolean;
     /// id of the heading element inside the dialog; wired to
@@ -47,7 +47,7 @@
   let overlay: HTMLDivElement;
   let body: HTMLDivElement;
 
-  /// zi6p: when draggable/resizable, the modal is positioned with
+  /// When draggable/resizable, the modal is positioned with
   /// `position: fixed` at this top-left and (optionally) a custom size.
   /// null until measured on mount, so the first paint can fall back to
   /// the centered flex layout to avoid a flash.
@@ -238,11 +238,11 @@
        the natural Tab order. */
     outline: none;
   }
-  /* zi6p: a floating (draggable/resizable) modal is positioned by JS
-     with position:fixed, so it ignores the overlay's flex centering.
-     The overlay still covers the screen for the backdrop + click-to-
-     close. Laid out as a column so the header pins to the top and the
-     footer (action buttons) pins to the bottom (esjb). */
+  /* A floating (draggable/resizable) modal is positioned by JS with
+     position:fixed, so it ignores the overlay's flex centering. The
+     overlay still covers the screen for the backdrop + click-to-close.
+     Laid out as a column so the header pins to the top and the footer
+     (action buttons) pins to the bottom. */
   .modal.floating {
     position: fixed;
     margin: 0;
@@ -257,7 +257,7 @@
     max-width: 96vw;
     max-height: 92vh;
   }
-  /* esjb: keep the header (drag handle) glued to the top and the footer
+  /* Keep the header (drag handle) glued to the top and the footer
      (Cancel/OK/Save/Done) glued to the bottom of a floating dialog —
      `margin-top:auto` pushes the footer down to fill a resized-taller
      window, and `position:sticky` keeps both bars in view while long

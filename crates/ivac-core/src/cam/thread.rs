@@ -1,4 +1,4 @@
-//! Helical thread emitter (rt1.17 — Estlcam `Prog_Thread` / IG / AG).
+//! Helical thread emitter (`Prog_Thread` / internal / external threads).
 //!
 //! Given a circular bore (or stud) and a single-point thread cutter,
 //! walk the cutter on a helix that descends Z by one `pitch` per
@@ -34,16 +34,16 @@
 //! | false    | false | CCW     |
 //!
 //! i.e. `ccw = climb XOR !internal`. The original `helix_waypoints`
-//! signature (rt1.17) hard-wired `internal=true`; passing
+//! signature hard-wired `internal=true`; passing
 //! `internal=false` with `climb=true` used to silently emit conventional
-//! cuts on a stud (7nd2).
+//! cuts on a stud.
 //!
-//! q57s: for a LEFT-hand spindle (M4 / left-hand thread cutter), the
+//! For a LEFT-hand spindle (M4 / left-hand thread cutter), the
 //! cutting edge rotates the other way, so the GEOMETRIC winding that
 //! produces a "climb" cut is flipped. The right-hand truth table above
 //! is XOR'd with the spindle bit so the user's climb-vs-conventional
 //! intent matches the physical chip evacuation direction regardless of
-//! M3/M4. Pre-q57s the helix hard-coded right-hand and silently inverted
+//! M3/M4. Previously the helix hard-coded right-hand and silently inverted
 //! the cut on left-hand thread mills (M4 + climb cut conventional →
 //! stripped first pass on hard material).
 //!
@@ -59,7 +59,7 @@
 //! ## Exit retract
 //!
 //! After the helix reaches `bottom_z` the cutter is touching the freshly
-//! cut thread crest. A straight G0 lift would scrape it (7388). The
+//! cut thread crest. A straight G0 lift would scrape it. The
 //! emitter therefore appends a single radial retract waypoint at the
 //! same Z:
 //!
@@ -95,7 +95,7 @@ const EXTERNAL_RETRACT_SAFETY_MM: f64 = 0.5;
 
 /// Emit the helical thread path as a list of (x, y, z) waypoints.
 /// The first waypoint sits at `start_angle_rad` (radians CCW from
-/// +X — 6uns) at `top_z`; the last helix waypoint sits at the same
+/// +X) at `top_z`; the last helix waypoint sits at the same
 /// angular offset advanced by the helix winding at `bottom_z`. A
 /// final retract waypoint at `bottom_z` is appended so the caller's
 /// vertical G0 lift doesn't scrape the just-cut thread (see the
@@ -107,12 +107,12 @@ const EXTERNAL_RETRACT_SAFETY_MM: f64 = 0.5;
 /// climb (or true conventional) on a right-hand spindle regardless of
 /// orientation — see the module-level truth table.
 ///
-/// q57s: `spindle` selects between right-hand (M3, CW) and left-hand
+/// `spindle` selects between right-hand (M3, CW) and left-hand
 /// (M4, CCW) spindle rotation. Left-hand flips the geometric winding
 /// so "climb"/"conventional" intent matches physical chipload on either
 /// spindle.
 ///
-/// ttoa: short helices (`|dz| < pitch_mm`) used to emit a single G1
+/// Short helices (`|dz| < pitch_mm`) used to emit a single G1
 /// diagonal across the bore because `revolutions` rounded down to a
 /// fraction; now floored at 1.0 so the cutter always completes at
 /// least one full turn at `pitch_mm` per rev. Callers that need to
@@ -179,8 +179,8 @@ pub fn helix_waypoints_with_density(
     if dz.abs() < 1e-9 {
         return Vec::new();
     }
-    // ttoa: even when |dz| < pitch, we still need at least one full
-    // revolution at the configured pitch. The pre-ttoa formula
+    // Even when |dz| < pitch, we still need at least one full
+    // revolution at the configured pitch. The previous formula
     // `revolutions = max(|dz|/pitch, 1/steps_per_rev)` rounded a
     // 5 µm finishing pass to ≈1.5 % of a rev, which collapsed to a
     // single G1 diagonal across the bore — full-bore crash on
@@ -204,7 +204,7 @@ pub fn helix_waypoints_with_density(
     //   external+climb       → CW  (-Δθ)
     //   external+conventional→ CCW (+Δθ)
     let ccw_rh = climb ^ !internal;
-    // q57s: left-hand spindle flips the geometric winding because the
+    // Left-hand spindle flips the geometric winding because the
     // cutting edge rotates the other way.
     let ccw = match spindle {
         SpindleDirection::Cw => ccw_rh,
@@ -213,9 +213,9 @@ pub fn helix_waypoints_with_density(
     let dir: f64 = if ccw { 1.0 } else { -1.0 };
     for i in 0..=total_steps {
         let t = i as f64 / total_steps as f64;
-        // 6uns: anchor at `start_angle_rad` so the cutter enters at
-        // the caller-chosen angular position. Default 0 reproduces
-        // the pre-6uns behavior (first waypoint at +X axis).
+        // Anchor at `start_angle_rad` so the cutter enters at
+        // the caller-chosen angular position. Default 0 starts at
+        // the +X axis.
         let theta = start_angle_rad + dir * t * revolutions * two_pi;
         let x = center.x + radius * theta.cos();
         let y = center.y + radius * theta.sin();
@@ -223,7 +223,7 @@ pub fn helix_waypoints_with_density(
         out.push((x, y, z));
     }
     // Final radial retract at bottom_z so the caller's vertical lift
-    // never drags the cutter against the freshly cut thread (7388).
+    // never drags the cutter against the freshly cut thread.
     // Internal: pull to bore center. External: push out by one full
     // tool diameter past the helix radius, plus a safety margin.
     let (rx, ry, rz) = *out.last().expect("loop pushed at least one point");
@@ -367,7 +367,7 @@ mod tests {
         );
     }
 
-    /// External + climb=true walks CW on a right-hand spindle (7nd2):
+    /// External + climb=true walks CW on a right-hand spindle:
     /// the cutter is on the outside of the stud, so CCW would scrape
     /// in the conventional direction. Second waypoint sits below +X.
     #[test]
@@ -440,7 +440,7 @@ mod tests {
     }
 
     /// Internal threads must end with a retract to the bore center so
-    /// the post-helix G0 lift travels through cleared air (7388).
+    /// the post-helix G0 lift travels through cleared air.
     #[test]
     fn internal_retract_pulls_cutter_to_bore_center() {
         let wps = helix_waypoints(
@@ -464,7 +464,7 @@ mod tests {
 
     /// External threads must end radially outside the helix circle so
     /// the post-helix G0 lift doesn't drag the cutter through the
-    /// freshly cut crest (7388).
+    /// freshly cut crest.
     #[test]
     fn external_retract_pushes_cutter_clear_of_thread() {
         let center = p(0.0, 0.0);
@@ -537,7 +537,7 @@ mod tests {
         .is_empty());
     }
 
-    /// q57s: a left-hand spindle (`SpindleDirection::Ccw`, M4 mode)
+    /// A left-hand spindle (`SpindleDirection::Ccw`, M4 mode)
     /// flips the geometric winding so the user's climb intent matches
     /// physical chipload. Internal+climb on a RH spindle winds CCW;
     /// on a LH spindle the same intent must wind CW so the cutting edge
@@ -564,9 +564,9 @@ mod tests {
         );
     }
 
-    /// ttoa: short helices (|dz| < pitch) used to emit a single G1
+    /// Short helices (|dz| < pitch) used to emit a single G1
     /// diagonal across the bore because revolutions rounded to a
-    /// fraction. Post-ttoa the function clamps to at least one full
+    /// fraction. The function now clamps to at least one full
     /// revolution. dz=0.005, pitch=1.0 used to give 2 waypoints (a
     /// straight diagonal); now it emits a full helix's worth of
     /// waypoints on the helix circle.

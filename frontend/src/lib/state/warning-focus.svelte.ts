@@ -1,4 +1,4 @@
-/// Cross-component signal for "focus this op's warning" (4kzy). The
+/// Cross-component signal for "focus this op's warning". The
 /// per-op status badge in OperationsList sets it; GenerateBar's warnings
 /// panel reacts by opening, expanding, and scrolling to the matching
 /// row(s). Kept as a tiny rune-backed singleton so the two components

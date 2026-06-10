@@ -1,6 +1,6 @@
 //! Acceleration-aware (trapezoidal) program-time estimation.
 //!
-//! 7iej.14: this is a trapezoidal (constant-accel) model — jerk / S-curve
+//! This is a trapezoidal (constant-accel) model — jerk / S-curve
 //! limiting is NOT modeled (reserved for a Phase-2 refinement; see the
 //! algorithm note below). The header previously claimed "jerk-aware",
 //! which overstated the fidelity.
@@ -59,9 +59,9 @@ pub struct TimeEstimate {
 const DEFAULT_ACCEL_MM_S2: f64 = 250.0;
 const DEFAULT_RAPID_MM_MIN: f64 = 5000.0;
 const DIR_EPS: f64 = 1e-6;
-/// 7iej.14: last-resort cut feed used only when a program commands NO
-/// feedrate at all (every cut/plunge/arc segment resolves to 0). The
-/// pipeline normally blocks zero-feed programs (the critical
+/// Last-resort cut feed used only when a program commands NO feedrate at
+/// all (every cut/plunge/arc segment resolves to 0). The pipeline
+/// normally blocks zero-feed programs (the critical
 /// `zero_rate_emitted` warning), so this is a degenerate fallback that
 /// keeps the estimate finite rather than the old pathological 1 mm/min.
 const DEFAULT_CUT_MM_MIN: f64 = 600.0;
@@ -72,11 +72,10 @@ const DEFAULT_CUT_MM_MIN: f64 = 600.0;
 /// `n * machine.toolchange_s`); `spindle_warmup_s` is summed across all
 /// `tool.pause` per used tool.
 ///
-/// kg13: also scans the gcode for explicit `G4 P<sec>` / `G4 X<sec>`
+/// Also scans the gcode for explicit `G4 P<sec>` / `G4 X<sec>`
 /// dwell commands and adds them to the total cycle time. Drill dwell,
 /// post-finish dwell, and any other G4 P pause go through here.
-///
-/// 746b: reads `machine.post_profile.dwell_unit` to know whether the
+/// Reads `machine.post_profile.dwell_unit` to know whether the
 /// emitted G4 P value is seconds (`LinuxCNC`, Smoothieware) or
 /// milliseconds (Mach3/Mach4/Centroid and — despite a previous
 /// comment claiming otherwise — also GRBL when the profile opts in).
@@ -99,7 +98,7 @@ pub fn estimate_from_gcode(
     est
 }
 
-/// 746b: pluck the post profile's `dwell_unit` from the machine
+/// Pluck the post profile's `dwell_unit` from the machine
 /// config, defaulting to Seconds (`LinuxCNC` convention) when no
 /// profile or no `dwell_unit` is set.
 fn dwell_unit_for(machine: &MachineConfig) -> DwellUnit {
@@ -110,7 +109,7 @@ fn dwell_unit_for(machine: &MachineConfig) -> DwellUnit {
         .unwrap_or(DwellUnit::Seconds)
 }
 
-/// kg13: per-tool-change spindle dwell envelope. Each M6 toolchange in
+/// Per-tool-change spindle dwell envelope. Each M6 toolchange in
 /// real gcode triggers `M5 → spindle_stop_dwell → tool swap → M3 →
 /// spindle_start_dwell`. Multiply this sum by `tool_changes` to get the
 /// total envelope time. Use alongside the per-tool `ToolEntry.pause`
@@ -120,7 +119,7 @@ pub fn spindle_dwell_per_toolchange_s(machine: &MachineConfig) -> f64 {
     machine.effective_spindle_stop_dwell_sec() + machine.effective_spindle_start_dwell_sec()
 }
 
-/// wy4a: total spindle-warmup time = `tool_changes` × per-toolchange
+/// Total spindle-warmup time = `tool_changes` × per-toolchange
 /// dwell envelope + sum of per-tool `pause` warmups for each USED tool.
 /// `per_tool_warmup_sec` is one entry per used tool (e.g. derived from
 /// `tool.pause` for the tools that actually run in the program). The
@@ -139,14 +138,14 @@ pub fn spindle_warmup_total_s(
     toolchange_dwell + per_tool
 }
 
-/// kg13 + 746b: walk the gcode and sum every `G4 P<v>` / `G4 X<v>`
+/// Walk the gcode and sum every `G4 P<v>` / `G4 X<v>`
 /// dwell command, returning a total in SECONDS.
 ///
 /// `dwell_unit` describes how the active post emits the P/X value:
 ///   - `DwellUnit::Seconds` — `LinuxCNC` / Smoothieware convention.
 ///   - `DwellUnit::Milliseconds` — Mach3 / Mach4 / Centroid and GRBL
 ///     when the profile is configured for ms (the GRBL controller
-///     actually reads P in MILLISECONDS — pre-746b code mis-summed
+///     actually reads P in MILLISECONDS — prior code mis-summed
 ///     them as seconds and inflated GRBL timing estimates 1000×
 ///     compared to what the controller would honor).
 ///
@@ -193,8 +192,8 @@ fn sum_g4_dwell_seconds(gcode: &str, dwell_unit: DwellUnit) -> f64 {
     total
 }
 
-/// Per-op plunge / feed limits sourced from the project's tool library
-/// (v7f5). The timing estimator caps each segment's feedrate to the
+/// Per-op plunge / feed limits sourced from the project's tool library.
+/// The timing estimator caps each segment's feedrate to the
 /// declared `plunge_rate` for [`MoveKind::Plunge`] segments and to
 /// `feed_rate` for [`MoveKind::Cut`] / [`MoveKind::Arc`] segments — both
 /// from below modal F (so a post that emits a single `F<feed>` line at
@@ -214,16 +213,15 @@ pub struct OpRates {
 }
 
 /// Like [`estimate_from_gcode`] but also clamps per-segment feeds to
-/// the tool's declared plunge/cut rates (v7f5). `op_rates` is a small
-/// lookup of `op_id → (plunge_rate, feed_rate)`; segments whose `op_id`
-/// isn't present fall through to the modal-F behavior.
-///
-/// 746b: also folds G4 dwell into the total (was previously dropped on
-/// this code path — `estimate_from_gcode` summed it but the
-/// `_with_rates` variant skipped it, so the pipeline's wall-clock
-/// estimate underreported any drill/finish dwell). Honors the active
-/// post profile's `dwell_unit` so GRBL/Mach3 millisecond emissions
-/// sum to the correct number of seconds.
+/// the tool's declared plunge/cut rates. `op_rates` is a small lookup
+/// of `op_id → (plunge_rate, feed_rate)`; segments whose `op_id` isn't
+/// present fall through to the modal-F behavior.
+/// Also folds G4 dwell into the total (was previously dropped on this
+/// code path — `estimate_from_gcode` summed it but the `_with_rates`
+/// variant skipped it, so the pipeline's wall-clock estimate
+/// underreported any drill/finish dwell). Honors the active post
+/// profile's `dwell_unit` so GRBL/Mach3 millisecond emissions sum to
+/// the correct number of seconds.
 #[must_use]
 pub fn estimate_from_gcode_with_rates(
     gcode: &str,
@@ -334,7 +332,7 @@ fn estimate_trapezoidal(
     let mut feeds = vec![0.0_f64; n];
     let mut accels = vec![0.0_f64; n];
 
-    // 7iej.14: a cut/plunge/arc segment carries feed 0 only when it
+    // A cut/plunge/arc segment carries feed 0 only when it
     // precedes the program's first F word (modal F is sticky, so
     // `feeds_per_segment` forward-fills everywhere else). The old
     // `.max(1.0)` floor made those leading segments ~60× too slow at
@@ -369,7 +367,7 @@ fn estimate_trapezoidal(
     let mut v_out = vec![0.0_f64; n];
     for i in 0..n {
         if i + 1 < n {
-            // 7iej.14: a real controller decelerates to a full stop at the
+            // A real controller decelerates to a full stop at the
             // boundary between move TYPES — G0↔G1 exact-stop, and the
             // Z-direction reversals at plunge/retract edges. Only carry
             // junction velocity through when both segments are the same
@@ -500,12 +498,12 @@ fn estimate_naive(
     }
 }
 
-/// 7iej.14: whether motion blends through the junction between two
-/// consecutive moves, or the controller decelerates to a full stop. Speed
-/// only carries through between same-kind moves (a chain of cuts, a chain
-/// of rapids, peck plunges) or between the two cut-like kinds (Cut↔Arc,
-/// which flow through a corner). Every other transition — into/out of a
-/// rapid, a plunge, or a retract — is an exact stop on a real controller.
+/// Whether motion blends through the junction between two consecutive
+/// moves, or the controller decelerates to a full stop. Speed only carries
+/// through between same-kind moves (a chain of cuts, a chain of rapids,
+/// peck plunges) or between the two cut-like kinds (Cut↔Arc, which flow
+/// through a corner). Every other transition — into/out of a rapid, a
+/// plunge, or a retract — is an exact stop on a real controller.
 fn junction_blends(a: MoveKind, b: MoveKind) -> bool {
     use MoveKind::{Arc, Cut};
     let cut_like = |k| matches!(k, Cut | Arc);
@@ -576,7 +574,7 @@ fn trapezoidal_time(s: f64, v0: f64, v1: f64, vf: f64, a: f64) -> f64 {
 /// recover the F value modal at each segment. Segments produced by the
 /// arc tessellator share the F of the originating G2/G3 line.
 ///
-/// wox2: the scanner walks the raw character stream (not just
+/// The scanner walks the raw character stream (not just
 /// whitespace-split tokens) so an `F` glued to other words — e.g.
 /// `G1F800X10`, common in compact post output — is still found. Modal
 /// F is carried across lines so a standalone `F500` followed by a bare
@@ -609,12 +607,11 @@ fn feeds_per_segment(gcode: &str, segments: &[ToolpathSegment]) -> Vec<f64> {
         .collect()
 }
 
-/// wox2: scan a single gcode line (comments already stripped) for an
+/// Scan a single gcode line (comments already stripped) for an
 /// `F<number>` word, returning the LAST positive feed found. Handles
 /// the standard whitespace-separated `F800` form AND the glued
 /// `G1F800X10` form some compact post processors emit. Negative /
-/// zero / non-finite values are ignored (matches the prior behaviour
-/// — F is a positive modal rate).
+/// zero / non-finite values are ignored (F is a positive modal rate).
 fn scan_modal_f(line: &str) -> Option<f64> {
     let bytes = line.as_bytes();
     let mut last: Option<f64> = None;
@@ -703,8 +700,8 @@ mod tests {
         }
     }
 
-    /// 7iej.14: motion blends through same-kind and Cut↔Arc junctions but
-    /// must full-stop at every transition into/out of a rapid, plunge, or
+    /// Motion blends through same-kind and Cut↔Arc junctions but must
+    /// full-stop at every transition into/out of a rapid, plunge, or
     /// retract.
     #[test]
     fn junction_blends_only_within_cutting() {
@@ -917,7 +914,7 @@ mod tests {
 
     #[test]
     fn plunge_segment_uses_plunge_rate_when_modal_f_is_cutting_feed() {
-        // v7f5: A post that emits a single F<feed> at the start of
+        // A post that emits a single F<feed> at the start of
         // the op leaves the plunge G1 inheriting the cutting feed.
         // The estimator must clamp the plunge segment to the tool's
         // plunge_rate so the time prediction is realistic.
@@ -1016,7 +1013,7 @@ mod tests {
 
     #[test]
     fn g4_dwell_sums_into_total() {
-        // kg13: explicit G4 P-seconds dwell commands should add to the
+        // Explicit G4 P-seconds dwell commands should add to the
         // total cycle time AND show up in the new `dwell_s` field.
         // Three dwells: 1.5 s (drill), 0.25 s (finish dwell), 2.0 s
         // (program-end pause). Total = 3.75 s.
@@ -1047,7 +1044,7 @@ mod tests {
 
     #[test]
     fn g4_dwell_ignores_negative_and_non_dwell_p() {
-        // kg13: a stray P-prefixed value on a non-G4 line (e.g. canned
+        // A stray P-prefixed value on a non-G4 line (e.g. canned
         // cycle P-count) MUST NOT be summed as a dwell. Only lines
         // containing G4 / G04 contribute.
         let gcode = "G81 X10 Y0 Z-3 P2.0\nG4 P0.5\n";
@@ -1059,11 +1056,11 @@ mod tests {
         assert!(neg.abs() < 1e-9, "expected 0, got {neg}");
     }
 
-    /// 746b: P-values in a Mach3/Mach4/Centroid (and ms-configured
-    /// GRBL) profile are MILLISECONDS, not seconds. The scanner
-    /// must divide by 1000 before summing so the total time is in
-    /// pipeline seconds. Pre-746b code summed them as seconds and
-    /// inflated the run-time estimate by a factor of 1000.
+    /// P-values in a Mach3/Mach4/Centroid (and ms-configured GRBL)
+    /// profile are MILLISECONDS, not seconds. The scanner must divide
+    /// by 1000 before summing so the total time is in pipeline seconds.
+    /// Prior code summed them as seconds and inflated the run-time
+    /// estimate by a factor of 1000.
     #[test]
     fn g4_dwell_milliseconds_converts_to_seconds() {
         // Three dwells in ms: 1500 ms + 250 ms + 2000 ms = 3750 ms =
@@ -1087,7 +1084,7 @@ mod tests {
         );
     }
 
-    /// 746b: end-to-end via `estimate_from_gcode_with_rates` — the
+    /// End-to-end via `estimate_from_gcode_with_rates` — the
     /// production code path the pipeline calls. With a profile that
     /// emits dwell in milliseconds the GRBL total must reflect
     /// seconds, NOT the unconverted ms count.
@@ -1120,7 +1117,7 @@ mod tests {
 
     #[test]
     fn spindle_warmup_total_scales_with_toolchanges_and_per_tool() {
-        // wy4a: total spindle warmup should equal
+        // Total spindle warmup should equal
         //   tool_changes * (start_dwell + stop_dwell) + Σ per-tool pause.
         // With start=stop=0.5 and 3 toolchanges + 3 tools at 1s pause:
         // total = 3*1.0 + 3*1.0 = 6.0 s.
@@ -1151,13 +1148,10 @@ mod tests {
         assert!((est.total_s - 13.0).abs() < 1e-9);
     }
 
-    /// wox2: `scan_modal_f` picks up glued-token F values like
+    /// `scan_modal_f` picks up glued-token F values like
     /// `G1F800X10` that compact post output emits without whitespace.
     /// The line scanner walks the raw character stream so the F word is
-    /// found even when it's mid-token. (The upstream `interpret_with_index`
-    /// preview parser doesn't currently produce segments from such
-    /// compact lines — see follow-up wiaconstructor-tprev — but the
-    /// timing-side F scanner is now ready for the day it does.)
+    /// found even when it's mid-token.
     #[test]
     fn scan_modal_f_handles_glued_and_whitespace_tokens() {
         // Glued: F adjacent to a G-word.
@@ -1172,7 +1166,7 @@ mod tests {
         assert_eq!(scan_modal_f("G1 X10 Y0"), None);
     }
 
-    /// wox2: modal F set on a standalone F-only line must apply to
+    /// Modal F set on a standalone F-only line must apply to
     /// subsequent moves even when the move's own line has no F word.
     /// This is the canonical "set rate once, then a block of moves"
     /// pattern.
@@ -1188,7 +1182,7 @@ mod tests {
         assert_eq!(feeds[3], 900.0, "modal F=900 carries past the F change");
     }
 
-    /// wox2: `scan_modal_f` must ignore negative / non-finite F values
+    /// `scan_modal_f` must ignore negative / non-finite F values
     /// (defensive — gcode shouldn't emit them but a corrupted file
     /// shouldn't poison the modal state).
     #[test]

@@ -1,8 +1,8 @@
-//! Binary STL export of a carved [`Heightmap`] (9c34).
+//! Binary STL export of a carved [`Heightmap`].
 //!
 //! Produces a watertight triangle mesh of the simulated stock so users can
 //! inspect / 3-D print the post-cut geometry, and so future visual
-//! regression tests (notably v5az's chamfer cone-below-floor bug) can diff
+//! regression tests (e.g. the chamfer cone-below-floor bug) can diff
 //! against a reference STL instead of relying on screenshots.
 //!
 //! ## Mesh shape
@@ -152,7 +152,7 @@ pub fn heightmap_to_stl_binary(hm: &Heightmap, stock_bottom_z: f32) -> Vec<u8> {
 
 /// Right-hand-rule normal of a triangle. Degenerate (zero-area) triangles
 /// fall back to +Z so an STL viewer doesn't paint them black.
-// juvx: standard vector-math letters (a, b, c vertices; u, v edges;
+// Standard vector-math letters (a, b, c vertices; u, v edges;
 // n cross product). Renaming would obscure the textbook formula.
 #[allow(clippy::many_single_char_names)]
 fn triangle_normal(tri: &[[f32; 3]; 3]) -> [f32; 3] {

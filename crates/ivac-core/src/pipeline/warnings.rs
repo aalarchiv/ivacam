@@ -14,7 +14,7 @@ use crate::project::{ToolChangeStrategy, ToolOffset};
 
 use super::{op_includes_object, PipelineWarning};
 
-/// i5g4 (MVP): surface a warning when the imported geometry's
+/// Surface a warning when the imported geometry's
 /// bounding box does NOT contain the gcode origin (0,0). The full
 /// WCS / G54..G59 / per-fixture-origin fix is a feature (see the
 /// follow-up issue) — but the silent-misalignment case the audit
@@ -62,7 +62,7 @@ pub(super) fn push_wcs_origin_warning(project: &Project, warnings: &mut Vec<Pipe
     }
 }
 
-/// 1gty: warn when a program needs manual tool changes on a machine
+/// Warn when a program needs manual tool changes on a machine
 /// using the `M0`-pause strategy (`tool_change == ManualM0Pause`).
 /// A plain T1/T2 multi-op program emits `M0` pauses at every inter-op
 /// tool boundary, but only the INTERNAL dual-tool / stufenfase swaps
@@ -80,7 +80,7 @@ pub(super) fn push_manual_toolchange_warning(
     project: &Project,
     warnings: &mut Vec<PipelineWarning>,
 ) {
-    // cb5y: this warning is specifically about M0 program pauses, so it
+    // This warning is specifically about M0 program pauses, so it
     // fires only for the M0-pause strategy. ATC / M6-prompt swap without an
     // M0; `Ignore` emits no pause to warn about.
     if !matches!(
@@ -103,7 +103,7 @@ pub(super) fn push_manual_toolchange_warning(
     });
 }
 
-/// i185: GRBL + ATC footgun. Stock GRBL 1.1 does NOT support `M6`
+/// GRBL + ATC footgun. Stock GRBL 1.1 does NOT support `M6`
 /// (it returns `error:20`; tool change is the sender's job). When a
 /// user picks an M6-emitting strategy (`tool_change` = `Atc` or
 /// `ManualM6Prompt`) on the GRBL dialect WITHOUT a `tool_change` template
@@ -126,7 +126,7 @@ pub(super) fn push_grbl_atc_footgun_warning(
     if !matches!(post_kind, super::PostProcessorKind::Grbl) {
         return;
     }
-    // cb5y: the footgun is "stock GRBL got an M6 it can't run". Both Atc and
+    // The footgun is "stock GRBL got an M6 it can't run". Both Atc and
     // ManualM6Prompt emit `T<n> M6`, so warn for either on the GRBL post
     // when there's no macro template; M0-pause and Ignore emit no M6.
     if !project.machine.tool_change.emits_m6() {
@@ -155,7 +155,7 @@ pub(super) fn push_grbl_atc_footgun_warning(
     });
 }
 
-/// 7iej.1: GRBL + FixedSensor footgun. The `FixedSensor` post-change-Z
+/// GRBL + FixedSensor footgun. The `FixedSensor` post-change-Z
 /// strategy emits a real `G38.2` probe (`probe_toward_z`) followed by
 /// `apply_probed_tool_length` to apply the measured length as a
 /// tool-length offset. On the LinuxCNC post that second call emits
@@ -221,18 +221,7 @@ pub(super) fn push_grbl_fixed_sensor_warning(
     });
 }
 
-/// v0ez: post-emit work-area envelope scan. Until now the ONLY check
-/// that emitted cuts stay inside the machine travel box lived in the
-/// frontend (`GenerateBar.boundsScan`), so any non-frontend consumer
-/// (CLI / server / wasm called directly) got no soft-limit guard at all.
-/// This moves the work-area half of that scan into the pipeline so every
-/// transport is protected. The stock half stays frontend-side: the core
-/// `Project` has no stock model yet (stock dims live only in the
-/// frontend's `StockConfig`).
-///
-/// Mirrors the frontend logic exactly so behavior is unchanged for FE
-/// users (the frontend drops its own work-area synthesis now that this
-/// emits the same `out_of_work_area` kind): scan Cut / Plunge / Arc
+/// Post-emit work-area envelope scan. Scan Cut / Plunge / Arc
 /// segment END points against X ∈ [0, wa.x], Y ∈ [0, wa.y],
 /// Z ∈ [-wa.z, 0] (origin at stock top) with a 1e-6 mm slack. Rapids and
 /// retracts are excluded — they legitimately fly to clearance / park
@@ -289,13 +278,13 @@ pub(super) fn push_work_area_warning(
     });
 }
 
-/// vrrr: post-emit STOCK envelope scan — the second half of v0ez's
-/// envelope enforcement. `push_work_area_warning` moved the work-area
-/// check into the pipeline; the stock check stayed frontend-only because
-/// the core `Project` had no stock model. Now that `Project.stock`
-/// exists, this mirrors the old frontend scan (`GenerateBar.boundsScan`)
-/// so every transport — CLI / server / wasm called directly — gets an
-/// `out_of_stock` guard, and the frontend can drop its own synthesis.
+/// Post-emit STOCK envelope scan. `push_work_area_warning` moved the
+/// work-area check into the pipeline; the stock check stayed
+/// frontend-only because the core `Project` had no stock model. Now
+/// that `Project.stock` exists, this mirrors the old frontend scan
+/// (`GenerateBar.boundsScan`) so every transport — CLI / server / wasm
+/// called directly — gets an `out_of_stock` guard, and the frontend
+/// can drop its own synthesis.
 ///
 /// Mirrors the frontend logic exactly so behavior is unchanged for FE
 /// users: scan Cut / Plunge / Arc segment END points against the
@@ -323,7 +312,7 @@ pub(super) fn push_stock_warning(
     let max_x = stock.origin[0] + stock.width_mm;
     let min_y = stock.origin[1];
     let max_y = stock.origin[1] + stock.height_mm;
-    // ya00: the stock top sits at `top_z_mm` (default 0); the body
+    // The stock top sits at `top_z_mm` (default 0); the body
     // extends down by `thickness_mm`.
     let stock_top = stock.top_z_mm;
     let stock_bottom = stock.top_z_mm - stock.thickness_mm;
@@ -365,12 +354,12 @@ pub(super) fn push_stock_warning(
     });
 }
 
-/// tnxu: scan the enabled-op sequence for obviously wrong orderings —
+/// Scan the enabled-op sequence for obviously wrong orderings —
 /// the classic "Profile cuts the part free → Drill on the loose part
 /// fails" sequence. We don't auto-reorder (the user may have a real
 /// reason for the order, e.g. a jig + manual reset), but we surface
 /// a per-offender `op_order_suspect` warning so the
-/// `block_on_critical` gate (94sf) can refuse to ship gcode that's
+/// `block_on_critical` gate can refuse to ship gcode that's
 /// almost certainly going to misbehave. Two patterns:
 ///
 /// * `Drill` appearing AFTER a `Profile` (Outside / Inside or
@@ -384,7 +373,7 @@ pub(super) fn push_stock_warning(
 /// Same-tool-back-to-back Profile or Pocket ops are NOT flagged —
 /// that's a common pattern for layered passes and the user
 /// frequently does it on purpose.
-/// l8lk: `enabled` is the EFFECTIVE op order the pipeline will emit —
+/// `enabled` is the EFFECTIVE op order the pipeline will emit —
 /// already run through `order_ops_by_tool`, so when tool-grouping is on
 /// these checks reflect what actually ships (grouping could itself create a
 /// drill-after-profile, which this then catches), not the declared order.
@@ -477,7 +466,7 @@ pub(super) fn push_op_order_warnings(
     }
 }
 
-/// f60x-E: a relief (3D ball-nose) op is a FINISH pass — it shaves the
+/// A relief (3D ball-nose) op is a FINISH pass — it shaves the
 /// surface in tiny scallop steps. Running it on raw stock (no prior bulk
 /// clearance) means the ball-nose has to remove the full relief depth one
 /// scallop at a time: brutally slow and hard on a small-diameter tool that
@@ -534,7 +523,7 @@ fn ops_share_source(a: &Op, b: &Op) -> bool {
 /// boundary-crossing arcs as regular segments (instant Z descent at
 /// the arc's start), not as ramped sections. Users with ramp plunge
 /// on an arc-heavy source need to know the cutter dives at the arc
-/// instead of sloping through it (audit 8so).
+/// instead of sloping through it.
 pub(super) fn push_ramp_with_arcs_warning(
     op: &Op,
     objects: &[VcObject],
@@ -603,7 +592,7 @@ pub(super) fn push_trochoidal_warnings(op: &Op, warnings: &mut Vec<PipelineWarni
 
 /// Sanity warnings that don't depend on whether the offset cascade
 /// succeeded. Run before the heavy work.
-// juvx: long per-warning-category cascade; each block is a tiny
+// Long per-warning-category cascade; each block is a tiny
 // inline check that doesn't deserve its own helper, and splitting
 // would require shared `warnings` mutability across them.
 #[allow(clippy::too_many_lines)]
@@ -640,7 +629,7 @@ pub(super) fn push_tool_fit_kind_warnings(
             Some("pocket op assigned a drag knife (cut path won't carve area)")
         }
         (OpKind::Profile { .. }, ToolKind::Drill) => Some("profile op assigned a drill bit"),
-        // lo4j: Thread ops require a rotating side-cutting tool — drag
+        // Thread ops require a rotating side-cutting tool — drag
         // knives don't cut, laser beams can't form a helix, drills only
         // plunge axially.
         (OpKind::Thread { .. }, ToolKind::DragKnife) => {
@@ -652,19 +641,19 @@ pub(super) fn push_tool_fit_kind_warnings(
         (OpKind::Thread { .. }, ToolKind::Drill) => {
             Some("thread op assigned a drill bit (drill cuts axially, not helically)")
         }
-        // 3g6u: a T-slot op needs a T-slot / undercut cutter — any other
+        // A T-slot op needs a T-slot / undercut cutter — any other
         // kind has no wide head to carve the undercut, so it would just
         // cut a plain centerline groove of its nominal diameter.
         (OpKind::TSlot { .. }, k) if k != ToolKind::FormProfile => {
             Some("t-slot op assigned a non-form-profile cutter (no undercut head — author a T-slot profile)")
         }
-        // b7qz: a dovetail op needs a form / profile cutter — any other
+        // A dovetail op needs a form / profile cutter — any other
         // kind has straight walls, so it would just cut a plain
         // centerline groove of its nominal diameter (no undercut flanks).
         (OpKind::Dovetail { .. }, k) if k != ToolKind::FormProfile => {
             Some("dovetail op assigned a non-form-profile cutter (no angled undercut flanks)")
         }
-        // f60x / izvd: relief surfacing needs a round-tipped cutter — a
+        // Relief surfacing needs a round-tipped cutter — a
         // ball-nose (full hemisphere) or a bull-nose (flat centre + corner
         // fillet); the drop-cutter follows that tip profile. A flat / V /
         // other tool leaves the wrong floor shape.
@@ -685,7 +674,7 @@ pub(super) fn push_tool_fit_kind_warnings(
             ),
         });
     }
-    // 3cyf: op-kind ✗ machine-mode. The op-kind picker hides kinds that
+    // Op-kind ✗ machine-mode. The op-kind picker hides kinds that
     // don't fit the machine's capabilities at creation time, but a
     // machine-mode switch (MachineDialog never re-checks ops already in
     // the project) or the API can still leave e.g. a Pocket
@@ -737,7 +726,7 @@ pub(super) fn push_tool_fit_kind_warnings(
             }
         }
     }
-    // 1wir: plasma / laser pierce-on-edge. The pierce happens at the
+    // Plasma / laser pierce-on-edge. The pierce happens at the
     // lead-in START point (see gcode.rs `plasma_entry`), so a Profile
     // with NO lead-in — the default, LeadKind::Off — pierces directly on
     // the finished contour, where the rough pierce divot (severe on
@@ -766,7 +755,7 @@ pub(super) fn push_tool_fit_kind_warnings(
             });
         }
     }
-    // 3g6u: T-slot cuts ONLY the undercut at the floor Z. A T-slot cutter
+    // T-slot cuts ONLY the undercut at the floor Z. A T-slot cutter
     // can't mill the narrow stem (its head is the widest part, at the
     // tip), so the user must have cut a stem slot >= the neck width with
     // a prior endmill op for the neck to ride in — and the head needs
@@ -774,7 +763,7 @@ pub(super) fn push_tool_fit_kind_warnings(
     // stock / a pre-bored clearance hole, not a vertical plunge through
     // the narrow stem). Surface this as a non-blocking prerequisite note.
     if matches!(op.kind, OpKind::TSlot { .. }) {
-        // z5yw: the neck width is the narrowest radius in the folded-in
+        // The neck width is the narrowest radius in the folded-in
         // T-slot's (z, r) profile (the disk is the widest, the neck the
         // narrowest). Falls back to a generic phrasing when the tool
         // carries no profile samples.
@@ -797,7 +786,7 @@ pub(super) fn push_tool_fit_kind_warnings(
             ),
         });
     }
-    // b7qz: a dovetail op cuts ONLY the angled-flank undercut at the
+    // A dovetail op cuts ONLY the angled-flank undercut at the
     // floor Z. The undercut flank can't be safely plunged into, so the
     // user must rough a straight channel (≈ the profile's narrowest /
     // neck width, taken from the form-profile samples) down to depth
@@ -823,13 +812,13 @@ pub(super) fn push_tool_fit_kind_warnings(
             ),
         });
     }
-    // 4qeh / dhh0: a Compression (up/down-cut) bit cleans BOTH sheet faces
+    // A Compression (up/down-cut) bit cleans BOTH sheet faces
     // in a single full-depth pass — the up-cut flutes (the bottom
     // `compression_transition_mm` of the cutting length, above the tip)
     // shear the bottom face clean, the down-cut flutes (above the
     // transition) shear the top face clean. That only pays off if the
     // transition sits INSIDE the engaged material. The carved heightmap is
-    // identical to a plain endmill (pxv8 — a 2.5D sim can't show surface
+    // identical to a plain endmill (a 2.5D sim can't show surface
     // finish), so we can't visualize the fray; surface it as a planning
     // note instead. When the transition is at or above the top of the cut,
     // the WHOLE engagement is in the up-cut zone: the top face frays and
@@ -925,7 +914,7 @@ mod tests {
     use crate::project::ToolOffset;
     use crate::project::{DrillCycle, OpSource};
 
-    /// tnxu: a Profile op cutting the outline followed by a Drill op
+    /// A Profile op cutting the outline followed by a Drill op
     /// on the same source emits an `op_order_suspect` warning tagged
     /// `drill_after_profile`. The downstream Drill would be acting
     /// on a freed part — almost never intentional.
@@ -1017,7 +1006,7 @@ mod tests {
         );
     }
 
-    /// i5g4 MVP: geometry bbox that does NOT include the WCS origin
+    /// Geometry bbox that does NOT include the WCS origin
     /// (default 0,0) emits a `stock_origin_outside_geometry_bbox`
     /// warning. The canonical case is a DXF drawn off-origin —
     /// (100..200, 100..200) — with the machine zeroed at (0,0).
@@ -1038,7 +1027,7 @@ mod tests {
         assert_eq!(hit.op_id, None, "WCS warning is project-wide, not per-op");
     }
 
-    /// v0ez: a Cut segment whose endpoint leaves the machine work-area
+    /// A Cut segment whose endpoint leaves the machine work-area
     /// box emits exactly one project-wide `out_of_work_area` warning
     /// carrying the offending count + first gcode line. An in-bounds cut
     /// and an out-of-bounds RAPID are both ignored.
@@ -1088,7 +1077,7 @@ mod tests {
         );
     }
 
-    /// v0ez: a fully in-envelope toolpath produces no warning, and a
+    /// A fully in-envelope toolpath produces no warning, and a
     /// zeroed work area (unset machine) is skipped rather than flagging
     /// every move.
     #[test]
@@ -1150,7 +1139,7 @@ mod tests {
         );
     }
 
-    /// vrrr: a Cut endpoint that leaves the resolved stock box (past +X,
+    /// A Cut endpoint that leaves the resolved stock box (past +X,
     /// or below the stock bottom) emits exactly one project-wide
     /// `out_of_stock` warning; an in-bounds cut and an out-of-bounds RAPID
     /// are ignored. Mirrors the old frontend `GenerateBar.boundsScan`.
@@ -1209,7 +1198,7 @@ mod tests {
         );
     }
 
-    /// ya00: a non-zero stock `top_z_mm` shifts the in-stock Z band. With
+    /// A non-zero stock `top_z_mm` shifts the in-stock Z band. With
     /// the top raised to +10, the body spans z ∈ [0, 10], so a cut at
     /// z = -5 (fine when the top is at 0) is now BELOW the stock and a
     /// cut at z = +8 (above the stock when top = 0) is now INSIDE it.
@@ -1254,7 +1243,7 @@ mod tests {
         );
     }
 
-    /// vrrr: an in-stock toolpath produces no warning; `None` stock (no
+    /// An in-stock toolpath produces no warning; `None` stock (no
     /// model) and a zero-dimension stock are both skipped rather than
     /// flagging every move — matching the work-area scan's unset guard.
     #[test]
@@ -1323,7 +1312,7 @@ mod tests {
         );
     }
 
-    /// 4qeh: a Compression bit whose up/down-cut transition is taller than
+    /// A Compression bit whose up/down-cut transition is taller than
     /// the cut depth warns — the whole cut is in the up-cut zone so the top
     /// face frays (no compression benefit). A transition that fits inside
     /// the engaged depth does NOT warn, and a transition-less compression
@@ -1384,7 +1373,7 @@ mod tests {
         );
     }
 
-    /// 3cyf: an op kind that doesn't fit the machine mode warns
+    /// An op kind that doesn't fit the machine mode warns
     /// `op_machine_mode_mismatch` (mirrors the frontend picker gating); a
     /// compatible op stays silent, and the machine's CAPABILITY set — not
     /// just the primary mode — governs so a combo machine doesn't false-warn.
@@ -1444,7 +1433,7 @@ mod tests {
         );
     }
 
-    /// 1wir: a plasma/laser Profile with no lead-in pierces on the
+    /// A plasma/laser Profile with no lead-in pierces on the
     /// finished edge → warns `pierce_on_contour_no_lead`. A configured
     /// lead-in silences it; a mill machine (no pierce) is never affected.
     #[test]
@@ -1493,7 +1482,7 @@ mod tests {
         );
     }
 
-    /// f60x-E: a relief op with no preceding Pocket warns
+    /// A relief op with no preceding Pocket warns
     /// `relief_missing_roughing`; a Pocket before it silences the note; a
     /// Pocket AFTER it does not (the bulk is still uncleared at finish time).
     #[test]

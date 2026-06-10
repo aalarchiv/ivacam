@@ -81,26 +81,26 @@ interface FlatOp extends OpBase, ContourFields {
   sourceInsetMm?: VCarveOp['sourceInsetMm'];
   // PauseOp
   message?: string;
-  // 8n4k: HomingOp
+  // HomingOp
   retractToSafeZ?: boolean;
-  // 8n4k: ProbeOp
+  // ProbeOp
   axis?: 'x' | 'y' | 'z';
   distanceMm?: number;
   feedMmMin?: number;
-  // 8n4k: CycleMarkerOp
+  // CycleMarkerOp
   label?: string;
-  // rxm9: GcodeIncludeOp
+  // GcodeIncludeOp
   path?: string;
   content?: string;
-  // xi2g: GcodeIncludeOp verbose-warning flag
+  // GcodeIncludeOp verbose-warning flag
   verboseUnsimWarnings?: boolean;
-  // PocketOp (rt1.9)
+  // PocketOp
   pocketZigzagAngleDeg?: number;
   // ThreadOp
   threadPitchMm?: ThreadOp['threadPitchMm'];
   threadInternal?: ThreadOp['threadInternal'];
   threadClimb?: ThreadOp['threadClimb'];
-  // ReliefMillOp (f60x)
+  // ReliefMillOp
   sourceId?: ReliefMillOp['sourceId'];
   zMinMm?: ReliefMillOp['zMinMm'];
   zMaxMm?: ReliefMillOp['zMaxMm'];
@@ -109,7 +109,7 @@ interface FlatOp extends OpBase, ContourFields {
   stepoverMm?: ReliefMillOp['stepoverMm'];
   scanDirection?: ReliefMillOp['scanDirection'];
   alongStepMm?: ReliefMillOp['alongStepMm'];
-  // RasterEngraveOp (rt1.12) — sourceId / scanDirection shared above.
+  // RasterEngraveOp — sourceId / scanDirection shared above.
   resolutionMm?: RasterEngraveOp['resolutionMm'];
   powerCurve?: RasterEngraveOp['powerCurve'];
   link?: RasterEngraveOp['link'];
@@ -120,7 +120,7 @@ export type WireToolKind = Schemas['ToolKind'];
 
 /// Frontend ToolKind → wire (Rust ToolKind variant) value. The German
 /// `kegel` wire name lives on for backend compatibility; the frontend
-/// uses `cone` everywhere else (8njb). Apply this at EVERY seam where a
+/// uses `cone` everywhere else. Apply this at EVERY seam where a
 /// tool kind crosses into Rust — build-project's `buildTool` AND the
 /// WASM sim driver, the two we know of. A regression test sits next to
 /// each call site; if you add a third seam, add a third test.
@@ -138,13 +138,13 @@ type WireMachine = Schemas['MachineConfig'];
 
 type WireDrillCycle = Schemas['DrillCycle'];
 
-/// kbx5 step 3: per-kind params live inside the kind discriminator,
+/// Per-kind params live inside the kind discriminator,
 /// not on the parent `WireOp.params` bag. The shape mirrors
 /// `crate::project::OpKind` 1:1.
 
 type WireOpKind = Schemas['OpKind'];
 
-/// rt1.12: wire form of `PowerCurve` — tagged on `kind` with snake_case
+/// Wire form of `PowerCurve` — tagged on `kind` with snake_case
 /// variant names. Identical to the app `PowerCurve` except bayer's
 /// `matrix_size` (app: `matrixSize`); see `buildPowerCurve`.
 type WirePowerCurve = Schemas['PowerCurve'];
@@ -152,7 +152,7 @@ type WirePowerCurve = Schemas['PowerCurve'];
 type WireSourceCombine = Schemas['SourceCombine'];
 type WireSource = Schemas['OpSource'];
 
-/// kbx5 step 3: `WireOp.params` is universal-only (depth schedule,
+/// `WireOp.params` is universal-only (depth schedule,
 /// plunge, feed overrides). Every other field — tabs, leads, cut
 /// direction, pocket flags, frame, vcarve cap, drill chamfer-after,
 /// pattern — moved to its appropriate `WireOpKind` variant struct.
@@ -167,7 +167,7 @@ export type WireFixture = Schemas['Fixture'];
 
 type WireTextLayer = Schemas['TextLayer'];
 
-/// i5g4: wire shape for `ivac_core::project::WorkOffset`. Every field
+/// Wire shape for `ivac_core::project::WorkOffset`. Every field
 /// is serde-`skip_serializing_if = is_zero / is_default`, so we always
 /// omit the field entirely when at default (zero offset + G54) rather
 /// than emit `{x_mm:0, y_mm:0, ...}` — keeps payloads small and
@@ -176,21 +176,21 @@ export type WireWorkOffset = Schemas['WorkOffset'];
 
 export type WireProject = Schemas['Project'];
 
-/// f60x: wire shape of `ivac_core::project::ReliefSource`. `origin` is the
+/// Wire shape of `ivac_core::project::ReliefSource`. `origin` is the
 /// min-corner Point2 `{x, y}`; `brightness` is row-major normalized [0, 1].
 export type WireReliefSource = Schemas['ReliefSource'];
 
-/// vrrr: wire shape of `ivac_core::project::StockConfig` — an
+/// Wire shape of `ivac_core::project::StockConfig` — an
 /// axis-aligned stock box resolved in the geometry frame. `origin` is the
 /// min corner (x, y); the body spans z ∈ [top_z_mm − thickness_mm, top_z_mm].
 export type WireStock = Schemas['StockConfig'];
 
 interface ProjectStateView {
-  /// File-transform-applied combined view of every import (wrsu Phase 2).
+  /// File-transform-applied combined view of every import.
   /// The wire payload always sends this so the pipeline sees the same
   /// geometry the user sees on the canvas.
   transformedImport: ImportResponse | null;
-  /// 8jce: `transformedImport` plus the synthetic selectable stock
+  /// `transformedImport` plus the synthetic selectable stock
   /// outline (when stock is shown). Preferred for the wire payload so an
   /// op can cut the workpiece edge. Optional — falls back to
   /// `transformedImport` (so existing tests / callers without it work).
@@ -200,19 +200,19 @@ interface ProjectStateView {
   operations: OpEntry[];
   fixtures?: WireFixture[];
   textLayers?: TextLayer[];
-  /// i5g4 / j4tv: program-level WCS offset. Forwarded to the pipeline so
+  /// Program-level WCS offset. Forwarded to the pipeline so
   /// the sim can align its heightmap to the WCS frame.
   workOffset?: WorkOffset;
-  /// vrrr: stock UI config. Resolved against `transformedImport` (NOT the
+  /// Stock UI config. Resolved against `transformedImport` (NOT the
   /// stock-augmented `geometryView` — that would balloon the auto-mode
   /// bbox around the stock outline itself) + the machine work area into
   /// the wire `stock` box. Optional so legacy callers / tests that don't
   /// model stock simply omit the `out_of_stock` scan.
   stock?: StockConfig;
-  /// f60x: relief surface sources forwarded so `relief_mill` ops can
+  /// Relief surface sources forwarded so `relief_mill` ops can
   /// resolve their target surface. Optional.
   reliefSources?: ReliefSource[];
-  /// l8lk: opt-in tool-change-order optimization (group ops by tool).
+  /// Opt-in tool-change-order optimization (group ops by tool).
   /// Optional — defaults to declared order.
   groupOpsByTool?: boolean;
 }
@@ -223,7 +223,7 @@ function buildTextLayer(layer: TextLayer): WireTextLayer {
     kind: layer.kind,
     name: layer.name,
     text: layer.text,
-    // dya2: font rides as the base64 string the source already holds, not a
+    // Font rides as the base64 string the source already holds, not a
     // decoded integer array.
     font_bytes: layer.fontSource.bytes_b64,
     size_mm: layer.sizeMm,
@@ -258,7 +258,7 @@ function buildMachine(m: MachineSettings): WireMachine {
     // the shape is otherwise identical, so cast at this single boundary.
     ...(m.postProfile ? { post_profile: m.postProfile as Schemas['PostProfile'] } : {}),
     ...(m.workArea ? { work_area: { x: m.workArea.x, y: m.workArea.y, z: m.workArea.z } } : {}),
-    // 3nnj: spindle RPM clamps. Skip on undefined so the Rust serde
+    // Spindle RPM clamps. Skip on undefined so the Rust serde
     // default (no clamp) applies; zero is a meaningful explicit setting
     // (everything clamps up to 0 → effectively disabled spindle) but we
     // pass it through verbatim because the user typed it.
@@ -273,15 +273,15 @@ function buildMachine(m: MachineSettings): WireMachine {
     ...(m.spindleStopDwellSec !== undefined
       ? { spindle_stop_dwell_sec: m.spindleStopDwellSec }
       : {}),
-    // syol: park-at-home flag. Skip on the default (false) to keep the
+    // Park-at-home flag. Skip on the default (false) to keep the
     // wire compact.
     ...(m.parkAtHome ? { park_at_home: true } : {}),
-    // syol: explicit park XY. Per the audit spec we only emit this when
+    // Explicit park XY. We only emit this when
     // `parkAtHome === false` — when parkAtHome is true the G53 path
     // already pins the head to machine home, so an explicit WCS XY
     // would be ambiguous (and the Rust side ignores it anyway).
     ...(!m.parkAtHome && m.parkXy ? { park_xy: m.parkXy } : {}),
-    // 4lq5: optional-stop (M1) flag. Skip on the default (false).
+    // Optional-stop (M1) flag. Skip on the default (false).
     ...(m.optionalStop ? { optional_stop: true } : {}),
     // z9zh: GRBL dynamic-power (M4) laser mode. Skip on the default.
     ...(m.laserDynamicPower ? { laser_dynamic_power: true } : {}),
@@ -325,19 +325,19 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     ...(t.laserLeadInMm !== undefined && t.laserLeadInMm > 0
       ? { laser_lead_in_mm: t.laserLeadInMm }
       : {}),
-    // sm59: plasma pierce/cut-height entry sequence.
+    // Plasma pierce/cut-height entry sequence.
     ...(t.pierceHeightMm !== undefined ? { pierce_height_mm: t.pierceHeightMm } : {}),
     ...(t.cutHeightMm !== undefined ? { cut_height_mm: t.cutHeightMm } : {}),
     ...(t.pierceDelaySec !== undefined ? { pierce_delay_sec: t.pierceDelaySec } : {}),
     ...(t.cornerRadiusMm !== undefined && t.cornerRadiusMm > 0
       ? { corner_radius_mm: t.cornerRadiusMm }
       : {}),
-    // 1wit: form-profile samples. Emit only ≥2 rows (a single sample
+    // Form-profile samples. Emit only ≥2 rows (a single sample
     // isn't an interpolation domain — the sim falls back to its taper).
     ...(t.kind === 'form_profile' && t.formProfileMm !== undefined && t.formProfileMm.length >= 2
       ? { form_profile_mm: t.formProfileMm.map((s) => ({ z_mm: s.zMm, r_mm: s.rMm })) }
       : {}),
-    // Whirling overlay (ob3e: wire fields are now English `whirl*`,
+    // Whirling overlay (wire fields are English `whirl*`,
     // matching the renamed Rust serde fields).
     ...(t.whirl ? { whirl: true } : {}),
     ...(t.whirlStepoverMm !== undefined && t.whirlStepoverMm > 0
@@ -360,15 +360,15 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
       : {}),
     ...(t.threadPitchMm !== undefined ? { thread_pitch_mm: t.threadPitchMm } : {}),
     ...(t.shankDiameterMm !== undefined ? { shank_diameter_mm: t.shankDiameterMm } : {}),
-    // q0kc: stickout (mm). Skip on zero so the wire payload stays
+    // Stickout (mm). Skip on zero so the wire payload stays
     // compact for the legacy "collet sits on flutes" common case.
     ...(t.stickoutLengthMm !== undefined && t.stickoutLengthMm > 0
       ? { stickout_length_mm: t.stickoutLengthMm }
       : {}),
-    // mmu8: laser kerf width (mm). Skip on zero/undefined so the Rust
+    // Laser kerf width (mm). Skip on zero/undefined so the Rust
     // sim falls back to its 0.15 mm default.
     ...(t.kerfMm !== undefined && t.kerfMm > 0 ? { kerf_mm: t.kerfMm } : {}),
-    // z1y0: spindle direction. Skip the default ('cw') to keep the wire
+    // Spindle direction. Skip the default ('cw') to keep the wire
     // compact.
     ...(t.spindleDirection === 'ccw' ? { spindle_direction: 'ccw' as const } : {}),
     ...(t.holder !== undefined ? { holder: t.holder } : {}),
@@ -376,7 +376,7 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
 }
 
 /// Build the `contour` sub-object embedded in every closed-contour
-/// kind (Profile / Pocket / Engrave / DragKnife). kbx5 step 3: tabs /
+/// kind (Profile / Pocket / Engrave / DragKnife). Tabs /
 /// leads / cut direction / approach point all live on the kind now.
 function buildContourParams(op: FlatOp): Record<string, unknown> {
   const c: Record<string, unknown> = {};
@@ -399,7 +399,7 @@ function buildContourParams(op: FlatOp): Record<string, unknown> {
     c.tabs = tabs;
   }
   if (op.tabMode && op.tabMode.kind !== 'off') {
-    // 0euf: the FE op model is camelCase (autoCount); the wire stays
+    // The FE op model is camelCase (autoCount); the wire stays
     // snake_case. Convert here so the boundary is the network call.
     c.tab_mode =
       op.tabMode.kind === 'mixed'
@@ -530,8 +530,8 @@ function buildOpKind(opIn: OpEntry): WireOpKind {
       if (op.chamferAfterWidthMm !== undefined && op.chamferAfterWidthMm > 0) {
         drill.chamfer_after_width_mm = op.chamferAfterWidthMm;
       }
-      // Pattern repetition (kbx5: Drill-only now). 0euf: FE model is
-      // camelCase; convert to the snake_case wire shape here.
+      // Pattern repetition (Drill-only). FE model is camelCase;
+      // convert to the snake_case wire shape here.
       if (op.pattern && (op.pattern as { kind?: string }).kind) {
         const p = op.pattern;
         drill.pattern =
@@ -548,7 +548,7 @@ function buildOpKind(opIn: OpEntry): WireOpKind {
                 }
               : p;
       }
-      // r2af / u64o: spot-drill pre-pass.
+      // Spot-drill pre-pass.
       if (op.spotFirst && op.spotFirst.spotToolId > 0) {
         drill.spot_first = {
           spot_depth_mm: op.spotFirst.spotDepthMm,
@@ -635,7 +635,7 @@ function buildOpKind(opIn: OpEntry): WireOpKind {
   }
 }
 
-/// rt1.12: map an app `PowerCurve` to its wire shape. The only
+/// Map an app `PowerCurve` to its wire shape. The only
 /// translation is bayer's `matrixSize` → `matrix_size`; every other
 /// variant passes through 1:1. `undefined` (a legacy save without the
 /// field) falls back to the GRBL-default linear ramp.
@@ -689,7 +689,7 @@ function buildOp(opIn: OpEntry, machine: MachineSettings): WireOp {
   // xy_overlap, etc.) flow into the kind discriminator's nested
   // `contour` / `pocket` / `vcarve` / drill `pattern` sub-objects via
   // `buildOpKind`. `params` carries only the universal depth-schedule +
-  // overrides bag (kbx5 step 3 cleanup).
+  // overrides bag.
   const op = opIn as FlatOp;
   return {
     id: opIn.id,
@@ -702,7 +702,7 @@ function buildOp(opIn: OpEntry, machine: MachineSettings): WireOp {
       : {}),
     source: buildSource(opIn),
     params: {
-      // 4dxb: program-only ops (Pause, Homing, Probe, CycleMarker,
+      // Program-only ops (Pause, Homing, Probe, CycleMarker,
       // GcodeInclude) construct without `depth` / `startDepth` —
       // they have no meaningful depth schedule. Emit explicit 0
       // fallbacks so the wire payload is well-formed even for
@@ -737,16 +737,16 @@ function buildOp(opIn: OpEntry, machine: MachineSettings): WireOp {
         : {}),
       ...(op.depthList && op.depthList.length > 0 ? { depth_list: op.depthList } : {}),
     },
-    // dp6b: emit `group` only when set and non-empty. The Rust serde
+    // Emit `group` only when set and non-empty. The Rust serde
     // tag is `skip_serializing_if = "Option::is_none"`, so omit it
     // entirely when unset.
     ...(op.group && op.group.length > 0 ? { group: op.group } : {}),
-    // l8lk: emit pin_order only when set (Rust skips the default false).
+    // Emit pin_order only when set (Rust skips the default false).
     ...(op.pinOrder ? { pin_order: true } : {}),
   };
 }
 
-/// i5g4 / j4tv: convert the FE WorkOffset into its wire shape. Emits
+/// Convert the FE WorkOffset into its wire shape. Emits
 /// only the non-default scalars + a `wcs` field when not at G54 — the
 /// Rust serde derive uses `skip_serializing_if = is_zero_f64` /
 /// `Wcs::is_default` so this mirrors the canonical Rust payload.
@@ -762,7 +762,7 @@ function buildWorkOffset(w: WorkOffset): WireWorkOffset | null {
   return out;
 }
 
-/// vrrr: resolve the frontend stock UI config into the wire stock box.
+/// Resolve the frontend stock UI config into the wire stock box.
 /// Mirrors the old `GenerateBar.boundsScan` footprint exactly — resolved
 /// against `transformedImport` (the raw geometry, NOT the stock-augmented
 /// `geometryView`) + the machine work area, with the same
@@ -777,13 +777,13 @@ function buildStock(state: ProjectStateView): WireStock | null {
     width_mm: fp.maxX - fp.minX,
     height_mm: fp.maxY - fp.minY,
     thickness_mm: Math.max(0.01, stock.thickness),
-    // ya00: stock-top Z placement. Omit at the default (0) to keep the
+    // Stock-top Z placement. Omit at the default (0) to keep the
     // wire compact.
     ...(stock.offsetZ ? { top_z_mm: stock.offsetZ } : {}),
   };
 }
 
-/// f60x: map a frontend ReliefSource to its wire shape (origin object →
+/// Map a frontend ReliefSource to its wire shape (origin object →
 /// `[x, y]` tuple; everything else passes through).
 function buildReliefSource(rs: ReliefSource): WireReliefSource {
   return {
@@ -806,7 +806,7 @@ function buildReliefSource(rs: ReliefSource): WireReliefSource {
 /// back to the legacy segments+setup path.
 export function buildProject(state: ProjectStateView): WireProject | null {
   if (state.operations.length === 0) return null;
-  // 8jce: prefer the augmented view (imports + selectable stock outline)
+  // Prefer the augmented view (imports + selectable stock outline)
   // so an op targeting the stock edge is cut. Falls back to the raw
   // import for callers/tests that don't supply geometryView.
   const imp = state.geometryView ?? state.transformedImport;

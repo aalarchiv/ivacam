@@ -17,8 +17,7 @@
 // `skip_serializing_if = "is_default_…"` helpers take `&T` because that's
 // the signature serde requires. `OpParams` is the user-facing
 // per-op config bag — one bool per UI checkbox, so the JSON contract
-// flattens the bool fields by design (see audit issue kbx5 for the
-// planned move-to-OpKind-variants refactor).
+// flattens the bool fields by design (see the planned move-to-OpKind-variants refactor).
 #![allow(
     clippy::similar_names,
     clippy::trivially_copy_pass_by_ref,
@@ -227,8 +226,8 @@ impl Wcs {
         matches!(v, Self::G54)
     }
 
-    /// The gcode word that activates this WCS (`G54`..`G59`). e2mq:
-    /// consumed by the post-processor prologue so the controller's
+    /// The gcode word that activates this WCS (`G54`..`G59`).
+    /// Consumed by the post-processor prologue so the controller's
     /// active WCS matches `Project.work_offset.wcs` even when the
     /// boot-default isn't G54.
     #[must_use]
@@ -245,7 +244,7 @@ impl Wcs {
 
     /// The `P<n>` operand for `G10 L20 P<n>` that targets this WCS.
     /// `G54 = P1`, `G55 = P2`, …, `G59 = P6` per RS-274 / Mach3 / GRBL
-    /// >= 1.1 / LinuxCNC convention. e2mq: GRBL's `tool_z_shift`
+    /// >= 1.1 / LinuxCNC convention. GRBL's `tool_z_shift`
     /// > previously hardcoded `P1`, so a user-active G55 had its
     /// > z-shift written into the wrong WCS.
     #[must_use]
@@ -350,7 +349,7 @@ mod tests {
 }
 
 /// Register this module's wire types in the OpenAPI components map.
-/// Co-located with the type definitions (kb1y) so adding a wire type is
+/// Co-located with the type definitions so adding a wire type is
 /// a same-file edit; `crate::schema::components_schemas` composes these.
 pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
     crate::schema::insert::<Project>(map, "Project");

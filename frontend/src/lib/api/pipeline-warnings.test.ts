@@ -1,4 +1,4 @@
-/// 94sf: tests for the pipeline-warning severity classifier. The
+/// Tests for the pipeline-warning severity classifier. The
 /// classifier is what wires the GenerateBar safety gate into the
 /// pipeline's planning-time warnings, so the rules need to stay
 /// strict and stable.
@@ -51,19 +51,19 @@ describe('pipelineWarningSeverity', () => {
   });
 
   it('keeps out_of_work_area a non-blocking warning but out_of_stock critical', () => {
-    // ujs2: the work-area limits are often a conservative default that
+    // The work-area limits are often a conservative default that
     // doesn't match the real machine — exceeding them informs, it must
     // not block Generate. Cutting past the stock box stays critical.
     expect(pipelineWarningSeverity(w('out_of_work_area'))).toBe('warning');
     expect(pipelineWarningSeverity(w('out_of_stock'))).toBe('critical');
   });
 
-  /// fj88 round-2 audit: lock the silent-corruption kinds that the
-  /// pipeline emits but the original CRITICAL_KINDS set missed. Each
-  /// of these reflects "the pipeline returned a generate response but
-  /// the toolpath is substantively missing / wrong" — they must
-  /// register as critical so the safety gate blocks shipping.
-  describe('fj88 round-2: silent-corruption kinds are critical', () => {
+  /// Lock the silent-corruption kinds that the pipeline emits but
+  /// the original CRITICAL_KINDS set missed. Each of these reflects
+  /// "the pipeline returned a generate response but the toolpath is
+  /// substantively missing / wrong" — they must register as critical
+  /// so the safety gate blocks shipping.
+  describe('silent-corruption kinds are critical', () => {
     const SILENT_CORRUPTION_KINDS = [
       'zero_rate_emitted',
       'op_source_empty',
@@ -80,7 +80,7 @@ describe('pipelineWarningSeverity', () => {
       'halfpipe_radius_mismatch',
       'parallel_offset_panicked',
       'dual_tool_no_toolchange',
-      // l7ze: stufenfase (drill → hole-rim chamfer) internal swap on a
+      // Stufenfase (drill → hole-rim chamfer) internal swap on a
       // machine that can't tool-change is the same hazard class.
       'stufenfase_no_toolchange',
       'grbl_atc_no_toolchange_template',
@@ -110,7 +110,7 @@ describe('countCriticalPipelineWarnings', () => {
     expect(countCriticalPipelineWarnings(ws)).toBe(2);
   });
 
-  /// 94sf acceptance: a Pocket with tool_too_large + blockOnCriticalSimWarnings
+  /// A Pocket with tool_too_large + blockOnCriticalSimWarnings
   /// MUST register at least one critical warning, so the GenerateBar
   /// safety gate that aggregates this count refuses to ship gcode.
   it('critical_pipeline_warning_blocks_generate', () => {

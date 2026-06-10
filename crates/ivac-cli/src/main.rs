@@ -194,7 +194,7 @@ fn build_offsets(
         }
         // Otherwise emit a single contour pass — the Rust core derives
         // direction from the user's tool_offset choice once the chain is
-        // CCW-oriented (av1 importer ensures this for closed contours via
+        // CCW-oriented (the importer ensures this for closed contours via
         // dxf-rs's CCW convention for ARC / CIRCLE).
         let delta = match tool_offset {
             ToolOffset::None | ToolOffset::On => 0.0,

@@ -1,4 +1,4 @@
-//! 020s: Golden snapshot coverage for drill / tabs / whirl gcode.
+//! Golden snapshot coverage for drill / tabs / whirl gcode.
 //!
 //! Pins the exact emitted gcode for four representative pipeline
 //! configurations so future refactors can't silently change drill /
@@ -6,7 +6,7 @@
 //! regression filed against the May audit wouldn't have been caught
 //! by current `assert!(contains("G81"))`-style tests).
 //!
-//! The fixtures cover (audit brief 020s):
+//! The fixtures cover:
 //!  1. Drill + Stufenfase + `ToolChange` — verifies G81/G82 + the
 //!     toolchange envelope (M5/M6/M3) + the rim chamfer revolution.
 //!  2. Profile with Rectangle tabs + helix entry — verifies the
@@ -14,7 +14,7 @@
 //!  3. Profile with Ramp tabs — verifies the trapezoidal Z profile
 //!     over the tab footprint.
 //!  4. Whirl tool walking a closed contour — verifies the face-
-//!     mill helical-spiral overlay (7z7w: misnamed historically as
+//!     mill helical-spiral overlay (historically misnamed as
 //!     "whirl") produces dense G1 stamps with the cutter
 //!     centerline displaced.
 //!
@@ -153,7 +153,7 @@ fn run_to_gcode(project: Project) -> String {
     }
 }
 
-/// 020s.a: drill + stufenfase rim chamfer + distinct finish tool.
+/// Drill + stufenfase rim chamfer + distinct finish tool.
 /// Pins the G82 / G80 / M6 toolchange / rim G1 revolution sequence.
 #[test]
 fn snapshot_drill_with_stufenfase_and_toolchange() {
@@ -226,7 +226,7 @@ fn snapshot_drill_with_stufenfase_and_toolchange() {
     );
 }
 
-/// 020s.b: profile with Rectangle tabs + helix entry.
+/// Profile with Rectangle tabs + helix entry.
 /// Pins the helix plunge + tab-lift sequence.
 #[test]
 fn snapshot_profile_rectangle_tabs_and_helix_entry() {
@@ -300,7 +300,7 @@ fn snapshot_profile_rectangle_tabs_and_helix_entry() {
     );
 }
 
-/// 020s.c: profile with Ramp tabs.
+/// Profile with Ramp tabs.
 /// Pins the trapezoid Z profile (ramp-up, plateau, ramp-down).
 #[test]
 fn snapshot_profile_ramp_tabs() {
@@ -365,7 +365,7 @@ fn snapshot_profile_ramp_tabs() {
     );
 }
 
-/// 020s.d: face-mill overlay (historical name "whirl") on a closed
+/// Face-mill overlay (historical name "whirl") on a closed
 /// contour. Pins the dense G1 stamp output that the helical-spiral
 /// overlay produces.
 #[test]
@@ -430,7 +430,7 @@ fn snapshot_whirl_walks_closed_contour() {
 // Recorded digests; refresh with IVAC_UPDATE_SNAPSHOTS=1 when an
 // intentional change shifts emitted gcode.
 //
-// olgj — these digests are REGRESSION LOCKS, not correctness proofs. The
+// These digests are REGRESSION LOCKS, not correctness proofs. The
 // first run captured them from the live pipeline; they were never hand-
 // verified against a real controller or a known-good reference program.
 // A match only proves the output is byte-identical to whatever the

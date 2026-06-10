@@ -20,7 +20,7 @@ use super::{
     effective_step, ordered_selection, source_combine_mode, PipelineError, PipelineWarning,
 };
 
-/// 3nnj: clamp a single resolved RPM into the machine's
+/// Clamp a single resolved RPM into the machine's
 /// `[spindle_rpm_min, spindle_rpm_max]` window. Either bound may be
 /// `None` (unset = no clamp on that side). Emits a warning per
 /// clamp event tagged with which side fired + which pass it came
@@ -65,7 +65,7 @@ fn clamp_spindle_rpm(
     clamped
 }
 
-/// jcmx: clamp a resolved feed (mm/min) DOWN to the machine's
+/// Clamp a resolved feed (mm/min) DOWN to the machine's
 /// `max_feed_mm_min` ceiling. `None` (unset) disables the clamp. Used
 /// for both cutting and plunge feeds — a single ceiling is the safe
 /// limit (plunge is normally well under it, so it rarely fires there).
@@ -186,7 +186,7 @@ pub(in crate::pipeline) fn synthesize_op_setup(
 
     let mut setup = Setup {
         machine: project.machine.clone(),
-        // e2mq: thread the project's active WCS into Setup so the
+        // Thread the project's active WCS into Setup so the
         // post's program_begin can emit the explicit G54..G59 word
         // and GRBL's tool_z_shift maps to the right G10 L20 P<n>.
         wcs: project.work_offset.wcs,
@@ -212,7 +212,7 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     } else {
         crate::project::resolve_tool_rates(tool, crate::project::PassKind::Finish)
     };
-    // 3nnj: clamp each pass's resolved RPM into the machine's
+    // Clamp each pass's resolved RPM into the machine's
     // [spindle_rpm_min, spindle_rpm_max] window so an emitted S<x>
     // is always physically reachable. Clamp + warn rather than fail
     // hard — the user keeps the program but sees the substitution.
@@ -228,7 +228,7 @@ pub(in crate::pipeline) fn synthesize_op_setup(
             warnings,
         )
     };
-    // rt1.29: laser tools get their per-tool pierce-time threaded
+    // Laser tools get their per-tool pierce-time threaded
     // into ToolConfig so emit_offset can emit a G4 P<sec> dwell
     // before each plunge. Non-laser tools collapse to 0.
     let pierce_sec = if matches!(tool.kind, crate::project::ToolKind::LaserBeam) {
@@ -236,7 +236,7 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     } else {
         0.0
     };
-    // 3e5: Whirl helical overlay parameters. Off when the tool isn't
+    // Whirl helical overlay parameters. Off when the tool isn't
     // tagged, or when extra-width is 0 / unset. Stepover defaults to
     // half the spiral radius (one-revolution overlap → smooth motion).
     let (whirl_radius, whirl_stepover, whirl_osc) = if tool.whirl {
@@ -262,7 +262,7 @@ pub(in crate::pipeline) fn synthesize_op_setup(
         mist: matches!(tool.coolant, crate::project::Coolant::Mist),
         flood: matches!(tool.coolant, crate::project::Coolant::Flood),
         dragoff: tool.dragoff,
-        // 0t9o: resolve the drag-knife self-alignment threshold. None ⇒
+        // Resolve the drag-knife self-alignment threshold. None ⇒
         // 30° default (real drag knives self-align below this angle).
         // 0° forces the legacy "swivel every corner" behaviour. Negative
         // / non-finite values clamp to 0 so the dot-product compare in
@@ -277,9 +277,9 @@ pub(in crate::pipeline) fn synthesize_op_setup(
         // for finishing passes or hard materials without editing the
         // tool entry itself.
         //
-        // c0pm: the override is applied to BOTH rough and finish slots.
-        // Pre-c0pm Profile ops emitted at rough rates, so the override
-        // only needed to win over `rate_h` / `rate_v`. Post-c0pm a
+        // The override is applied to BOTH rough and finish slots.
+        // Pre-fix Profile ops emitted at rough rates, so the override
+        // only needed to win over `rate_h` / `rate_v`. Post-fix a
         // single-pass Profile emits at finish rates (it IS the finish
         // pass) and the override has to flow through to the finish
         // slot too — otherwise a user-set feed override would be
@@ -288,7 +288,7 @@ pub(in crate::pipeline) fn synthesize_op_setup(
         // whether the user configured separate per-tool finish rates:
         // they explicitly typed the override at the op level, that's
         // the value they want.
-        // jcmx: clamp the FINAL feed (after op override) to the machine
+        // Clamp the FINAL feed (after op override) to the machine
         // ceiling so even a fat-fingered override can't emit an
         // out-of-range F-word. Plunge + cut, rough + finish.
         rate_v: clamp_feed(
@@ -339,20 +339,20 @@ pub(in crate::pipeline) fn synthesize_op_setup(
         tip_angle_deg: tool.tip_angle_deg,
         tip_diameter_mm: effective_tip_diameter_mm(tool),
         spindle_direction: tool.spindle_direction,
-        // zpuk: plasma pierce / cut heights / pierce delay. 0.0
+        // Plasma pierce / cut heights / pierce delay. 0.0
         // sentinels fall through to plasma defaults at cut time.
         // Resolved unconditionally — the cut emitter gates on
         // `setup.machine.mode == Plasma` before consulting them.
         pierce_height_mm: tool.pierce_height_mm.unwrap_or(0.0).max(0.0),
         cut_height_mm: tool.cut_height_mm.unwrap_or(0.0).max(0.0),
         pierce_delay_sec: tool.pierce_delay_sec.unwrap_or(0.0).max(0.0),
-        // ot80: V-Carve lead-in ramp angle. 0.0 sentinel = inherit the
+        // V-Carve lead-in ramp angle. 0.0 sentinel = inherit the
         // legacy 10° at emit time inside `ratchet_emit`. Clamp to the
         // physically meaningful open interval (0°, 90°); anything else
         // means "use the default".
         vcarve_lead_in_angle_deg: resolve_vcarve_lead_in_angle_deg(tool.vcarve_lead_in_angle_deg),
     };
-    // 2606 / b15k: plasma + laser kerf compensation. For a torch or a
+    // Plasma + laser kerf compensation. For a torch or a
     // beam the cut width is the kerf, not a physical tool diameter — so
     // override the effective cutting diameter to `kerf_mm`. The offset
     // cascade then compensates the cut path by `kerf_mm / 2` (Profile
@@ -370,7 +370,7 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     let offset = match &op.kind {
         OpKind::Profile { offset, .. } => *offset,
         OpKind::Pocket { .. } => ToolOffset::None,
-        // 3g6u / b7qz: T-slot and dovetail both ride ON the centerline
+        // T-slot and dovetail both ride ON the centerline
         // like Engrave — the cutter's own cross-section (not a radius
         // offset) defines the undercut groove width.
         OpKind::Engrave { .. }
@@ -401,7 +401,7 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     } else {
         op.params.plunge
     };
-    // kbx5 step 2: read per-kind fields from the embedded variant
+    // Read per-kind fields from the embedded variant
     // structs. ContourParams covers Profile/Pocket/Engrave/DragKnife;
     // ProfileParams covers Profile-only fields (overcut, reverse,
     // helix). Non-applicable kinds fall back to defaults — same
@@ -440,7 +440,7 @@ pub(in crate::pipeline) fn synthesize_op_setup(
         _ => PocketConfig::default(),
     };
     setup.tabs = contour.map(|c| c.tabs.clone()).unwrap_or_default();
-    // C8 (rt1.21 followup): drive `setup.tabs.active` from the single
+    // Drive `setup.tabs.active` from the single
     // source of truth — `tab_mode != Off`. The `tabs.active` boolean is
     // a separate hand-mirrored flag; honor it (logical OR) so a setup
     // that only set `tabs.active` still emits tabs.
@@ -453,10 +453,10 @@ pub(in crate::pipeline) fn synthesize_op_setup(
         setup.tabs.active = false;
     }
     setup.leads = contour.map(|c| c.leads.clone()).unwrap_or_default();
-    // Laser lead-in (rt1.29 follow-up, kkhf): when the tool is a
-    // laser and the op didn't set its own lead-in, fall back to the
-    // per-tool `laser_lead_in_mm`. Reduces edge burn at the entry
-    // point. Off / `LeadKind::Off` keeps the op's explicit decision.
+    // Laser lead-in: when the tool is a laser and the op didn't set
+    // its own lead-in, fall back to the per-tool `laser_lead_in_mm`.
+    // Reduces edge burn at the entry point. Off / `LeadKind::Off`
+    // keeps the op's explicit decision.
     if matches!(tool.kind, crate::project::ToolKind::LaserBeam) && setup.leads.in_length <= 0.0 {
         if let Some(lead_mm) = tool.laser_lead_in_mm.filter(|v| *v > 0.0) {
             setup.leads.in_length = lead_mm;
@@ -468,25 +468,25 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     if matches!(op.kind, OpKind::DragKnife { .. }) {
         setup.machine.mode = MachineMode::Drag;
     }
-    // Chamfer ops (rt1.18) carve at a final depth computed from the
+    // Chamfer ops carve at a final depth computed from the
     // V-bit cone math. The contour is constant-Z (the cutter walks
     // the source path at the pinned final Z), but the descent FROM
     // start_depth TO that final Z must follow the normal stepdown
     // schedule (`setup.mill.step` + `finish_step`) — otherwise the
     // V-bit plunges in one shot into solid stock on deep chamfers
-    // and snaps (00ia). depth / start_depth / through_depth / the
+    // and snaps. depth / start_depth / through_depth / the
     // explicit depth_list get pinned here so a stale user value
     // doesn't sneak through; step + finish_step pass through.
     //
     // The requested chamfer width is also clamped to the V-bit's
     // physical reach (`(diameter - tip_diameter) / 2`). Without the
     // clamp a width > diameter/2 produces a Z that drives the shank
-    // into stock — see uo1t and the vcarve driver's tool_reach_r.
-    // 8xan: if any resolved rate is exactly zero, emit a critical warning.
+    // into stock — see the vcarve driver's tool_reach_r.
+    // If any resolved rate is exactly zero, emit a critical warning.
     // F0 / S0 is silently legal gcode but is never the user's intent —
     // it means the tool library + op overrides combined left the field
     // unset. Don't clamp to a default here (that hides the misconfig);
-    // surface it loudly so the 94sf critical-warning gate blocks Generate.
+    // surface it loudly so the critical-warning gate blocks Generate.
     {
         let feed = setup.tool.rate_h;
         let plunge = setup.tool.rate_v;
@@ -504,7 +504,7 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     }
     if let OpKind::Chamfer { width_mm, .. } = op.kind {
         let tip_diameter_mm = tool.tip_diameter.unwrap_or(0.0);
-        // 7rt2: surface a `tool_tip_angle_clamped` warning when the user's
+        // Surface a `tool_tip_angle_clamped` warning when the user's
         // configured tip angle lies outside [1°, 179°] and the cone math
         // silently clamped it. Mirrors the V-Carve driver — the same
         // chamfer_depth() call clamps internally, but the user never sees
@@ -557,7 +557,7 @@ pub(in crate::pipeline) fn synthesize_op_setup(
             });
         }
     }
-    // 3g6u: a T-slot op cuts the undercut in ONE pass at the floor Z. The
+    // A T-slot op cuts the undercut in ONE pass at the floor Z. The
     // cutting head sits at a single plane — there is no step-down (and it
     // can't plunge through the narrow stem to reach intermediate levels
     // anyway). Collapse the Z schedule to a single full-range pass so the
@@ -565,7 +565,7 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     // would (that head-at-every-depth cascade is exactly the bug this op
     // kind fixes). Unlike Chamfer — which keeps the step-down so a V-bit
     // ramps in gently — the T-slot head MUST arrive at the floor directly.
-    // b7qz: a dovetail op is the angled-wall sibling — same single-Z
+    // A dovetail op is the angled-wall sibling — same single-Z
     // floor pass. The bit arrives at the floor (via the roughing
     // channel) and traverses once; its flanks carve the undercut. No
     // Z cascade for the same reason as T-slot.
@@ -656,20 +656,20 @@ pub fn fit_helix_radius_for_selection(
 /// first enabled op so `machine.unit`, `mill.fast_move_z`,
 /// `tool.rate_h` pick up the user's actual values rather than struct
 /// defaults.
-// juvx: long sequential field-set walk; splitting would scatter the
+// Long sequential field-set walk; splitting would scatter the
 // "pick first matching enabled op for X" decisions across helpers
 // and hide their precedence.
 #[allow(clippy::too_many_lines)]
 pub(super) fn header_setup_for(project: &Project) -> Setup {
     let mut setup = Setup {
         machine: project.machine.clone(),
-        // e2mq: mirror synthesize_op_setup so the program-header path
+        // Mirror synthesize_op_setup so the program-header path
         // (which routes through program_begin / program_end) sees the
         // same active WCS as the per-op cut blocks.
         wcs: project.work_offset.wcs,
         ..Setup::default()
     };
-    // lo7b: pick the first enabled op THAT ACTUALLY CUTS. Pause ops have
+    // Pick the first enabled op THAT ACTUALLY CUTS. Pause ops have
     // no tool / source / setup of their own and don't emit any header-
     // relevant tool-setup gcode, so falling back to them produces a
     // header that advertises whatever tool happened to live on the
@@ -679,7 +679,7 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
     if let Some(op) = project
         .operations
         .iter()
-        // 8n4k: skip every program-only op so the header's S<rpm> /
+        // Skip every program-only op so the header's S<rpm> /
         // F<feed> reflect the first ACTUAL cut, not whatever the
         // resolver would invent for a Homing / Probe / CycleMarker
         // op that doesn't carry a tool.
@@ -697,7 +697,7 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
             } else {
                 crate::project::resolve_tool_rates(tool, crate::project::PassKind::Finish)
             };
-            // 3nnj: keep the header S<x> consistent with the per-op
+            // Keep the header S<x> consistent with the per-op
             // clamp. The synth path already pushed the warning when
             // this op ran through synthesize_op_setup; silently clamp
             // here so the header doesn't ship a different (unreachable)
@@ -718,7 +718,7 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
                 name: tool.name.clone(),
                 diameter: tool.diameter,
                 speed: rs,
-                // lay8: read the tool's actual spindle-warmup pause
+                // Read the tool's actual spindle-warmup pause
                 // rather than hard-coding 1 s. The header_setup_for path
                 // is currently a structural inert (header gcode emission
                 // routes through the per-op envelopes), but consumers
@@ -728,7 +728,7 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
                 mist: matches!(tool.coolant, crate::project::Coolant::Mist),
                 flood: matches!(tool.coolant, crate::project::Coolant::Flood),
                 dragoff: tool.dragoff,
-                // 0t9o: same self-align threshold as the per-op path —
+                // Same self-align threshold as the per-op path —
                 // header_setup is rarely the active drag-knife setup, but
                 // keeping the field consistent across resolution paths
                 // prevents a stale 0° leaking through if the header_setup
@@ -739,10 +739,10 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
                     .unwrap_or(30.0)
                     .max(0.0)
                     .to_radians(),
-                // Per-op overrides (9vr) carry through into the program-
+                // Per-op overrides carry through into the program-
                 // header feed too — otherwise the header emits the tool
                 // default and the user sees an extra `F800` line at the
-                // top despite the override. c0pm: the override also
+                // top despite the override. The override also
                 // applies to the finish slot so single-pass Profile ops
                 // (which now emit at finish rates) honour the override.
                 rate_v: clamp_feed_silent(
@@ -763,7 +763,7 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
                     &project.machine,
                 ),
                 pierce_sec,
-                // Whirl (3e5) is a cut-time overlay only — the
+                // Whirl is a cut-time overlay only — the
                 // header_setup_for path is for program header emission
                 // and never reaches the cut walker, so the resolved
                 // params here are inert defaults.
@@ -775,7 +775,7 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
                 tip_angle_deg: tool.tip_angle_deg,
                 tip_diameter_mm: effective_tip_diameter_mm(tool),
                 spindle_direction: tool.spindle_direction,
-                // zpuk: header_setup_for-path plasma fields — same
+                // Header-path plasma fields — same
                 // resolution as the per-op path so any consumer that
                 // inspects the header setup sees consistent values.
                 pierce_height_mm: tool.pierce_height_mm.unwrap_or(0.0).max(0.0),
@@ -804,7 +804,7 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
             name: tool.name.clone(),
             diameter: tool.diameter,
             speed: rs,
-            // lay8: same as above — read tool.pause rather than 1.
+            // Same as above — read tool.pause rather than 1.
             pause: tool.pause,
             mist: matches!(tool.coolant, crate::project::Coolant::Mist),
             flood: matches!(tool.coolant, crate::project::Coolant::Flood),
@@ -840,7 +840,7 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
     setup
 }
 
-/// ot80: clamp the tool's optional V-Carve lead-in angle into the
+/// Clamp the tool's optional V-Carve lead-in angle into the
 /// physically meaningful open interval (0°, 90°). `None` or
 /// non-finite values → 0.0 (the sentinel that
 /// [`crate::cam::vcarve_emit::ratchet_emit`] interprets as
@@ -903,11 +903,11 @@ mod tests {
     use crate::project::ToolOffset;
     use crate::project::{resolve_tool_rates, PassKind};
 
-    /// ot80: the lead-in-angle resolver clamps into the physical
+    /// The lead-in-angle resolver clamps into the physical
     /// (1°, 89°) band, treats unset / out-of-range / non-finite
     /// inputs as the 0.0 sentinel, and passes valid values through.
     #[test]
-    fn ot80_resolve_vcarve_lead_in_angle_handles_edge_cases() {
+    fn resolve_vcarve_lead_in_angle_handles_edge_cases() {
         // None → 0.0 (inherit default at emit time).
         assert_eq!(resolve_vcarve_lead_in_angle_deg(None), 0.0);
         // Valid 5° lands in (1°, 89°) — bumped up to 5° (no clamp).
@@ -963,7 +963,7 @@ mod tests {
         assert!(effective_step(&op, &tool).is_err());
     }
 
-    /// 2606 / b15k: in Plasma AND Laser mode the effective cutting
+    /// In Plasma AND Laser mode the effective cutting
     /// diameter the offset cascade uses is the KERF (cut width), not the
     /// nominal / dummy tool diameter — so a Profile cut is compensated by
     /// kerf/2. No kerf configured ⇒ the nominal diameter stands. Mill
@@ -1035,7 +1035,7 @@ mod tests {
     }
 
     /// `resolve_tool_rates`: unset finish/drill variants fall back to the
-    /// general triplet (rt1.27).
+    /// general triplet.
     #[test]
     fn resolve_tool_rates_falls_back_when_unset() {
         let t = endmill(1, 3.0);
@@ -1058,9 +1058,9 @@ mod tests {
         assert_eq!(resolve_tool_rates(&t, PassKind::Drill), (8_000, 50, 200));
     }
 
-    /// 8xan: when the resolved tool rates contain a zero — feed, plunge,
+    /// When the resolved tool rates contain a zero — feed, plunge,
     /// or spindle — the pipeline emits a `zero_rate_emitted` warning so
-    /// the 94sf critical gate blocks F0 / S0 from shipping silently.
+    /// the critical gate blocks F0 / S0 from shipping silently.
     #[test]
     fn zero_feed_rate_emits_warning() {
         let mut tool = endmill(1, 3.0);
@@ -1083,7 +1083,7 @@ mod tests {
         );
     }
 
-    /// 8xan: a zero spindle speed also triggers the warning.
+    /// A zero spindle speed also triggers the warning.
     #[test]
     fn zero_spindle_speed_emits_warning() {
         let mut tool = endmill(1, 3.0);
@@ -1106,7 +1106,7 @@ mod tests {
         );
     }
 
-    /// lo7b: `header_setup_for` skips a leading Pause op so the header's
+    /// `header_setup_for` skips a leading Pause op so the header's
     /// S<rpm> / F<feed> reflects the first ACTUAL cut. The Pause op
     /// has no tool / source of its own; falling back to it produced a
     /// header that advertised whichever `ToolEntry` happened to share its
@@ -1147,7 +1147,7 @@ mod tests {
         assert_eq!(header.tool.speed, 9876, "header spindle should be tool 2's");
     }
 
-    /// lay8: `header_setup_for` reads the first cutting tool's `pause`
+    /// `header_setup_for` reads the first cutting tool's `pause`
     /// instead of hard-coding 1. A tool with `pause = 7` should round-trip
     /// into `header.tool.pause`.
     #[test]
@@ -1166,7 +1166,7 @@ mod tests {
         );
     }
 
-    /// lay8: the no-op fallback branch (no enabled cutting ops) also
+    /// The no-op fallback branch (no enabled cutting ops) also
     /// reads `tool.pause` from the first tool rather than hard-coding 1.
     #[test]
     fn header_setup_fallback_branch_reads_tool_pause() {
@@ -1178,7 +1178,7 @@ mod tests {
         assert_eq!(header.tool.pause, 4);
     }
 
-    /// 3nnj: tool RPM above the machine spindle ceiling clamps to the
+    /// Tool RPM above the machine spindle ceiling clamps to the
     /// ceiling and emits a `spindle_speed_clamped_above_max` warning.
     /// The emitted `M3 S<n>` reflects the clamped value, not the raw
     /// tool speed.
@@ -1219,7 +1219,7 @@ mod tests {
         );
     }
 
-    /// jcmx: a cutting feed above the machine's `max_feed_mm_min` ceiling
+    /// A cutting feed above the machine's `max_feed_mm_min` ceiling
     /// clamps DOWN at the output boundary and emits a
     /// `feed_clamped_above_max` warning — the raw F-word never reaches
     /// the controller.
@@ -1259,7 +1259,7 @@ mod tests {
         );
     }
 
-    /// jcmx: an op-level feed override above the ceiling is ALSO clamped
+    /// An op-level feed override above the ceiling is ALSO clamped
     /// — the clamp sits after the override merge, so a fat-fingered
     /// override can't bypass the machine limit.
     #[test]

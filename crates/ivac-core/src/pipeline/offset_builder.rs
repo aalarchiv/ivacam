@@ -7,7 +7,7 @@
 //! [`build_op_offsets`]; V-Carve / Halfpipe / Thread route through
 //! dedicated drivers in [`super::op_drivers`].
 //!
-//! Extracted from `pipeline.rs` (audit 55o4) so the orchestrator
+//! Extracted from `pipeline.rs` so the orchestrator
 //! ([`super::run_pipeline_impl`]) and per-op driver
 //! ([`super::run_per_op`]) read straight-through and the offset cascade
 //! can grow new branches without bloating the top-level file.
@@ -70,7 +70,7 @@ fn object_bbox_center(obj: &VcObject) -> Option<Point2> {
 // The offset-cascade pass per op covers Profile / Pocket / Drill /
 // DualTool / Engrave / DragKnife — splitting it would scatter the
 // "compute pocket regions → apply offsets → attach tabs → cut order"
-// pipeline across multiple files. 55o4 tracks future per-kind splits.
+// pipeline across multiple files.
 #[allow(clippy::too_many_lines)]
 pub(super) fn build_op_offsets(
     op: &Op,
@@ -93,21 +93,21 @@ pub(super) fn build_op_offsets(
     push_tool_fit_kind_warnings(op, project, setup, warnings);
     push_trochoidal_warnings(op, warnings);
     push_ramp_with_arcs_warning(op, objects, warnings);
-    // Per-op tab positions (rt1.10): the op's `tab_mode` +
+    // Per-op tab positions: the op's `tab_mode` +
     // `tab_placements` drive Manual / Auto / Mixed; Off ⇒ no tabs.
     // Resolves to a (object_idx → Vec<TabPoint>) map the existing
     // attach_tabs_to_offsets consumes verbatim.
     let mut tabs_by_object: HashMap<usize, Vec<TabPoint>> =
         build_op_tabs_by_object(op, objects, warnings);
 
-    // Pattern repetition (5fz): when the op carries a PatternConfig, expand
+    // Pattern repetition: when the op carries a PatternConfig, expand
     // the source set into N transformed clones BEFORE the per-object loops
     // run. After expansion, every clone is "selected" (so the inner loops
     // see them via OpSource::All on the effective op), and tabs
     // attached to the original objects are translated/rotated alongside
     // the geometry so each instance keeps its tab placement.
     //
-    // jzpl Phase 1: the expansion now owns a local `Vec<VcObject>` instead
+    // The expansion now owns a local `Vec<VcObject>` instead
     // of mutating an input `&mut Vec<VcObject>`. The caller can pass the
     // imported chain by shared reference and skip the per-op `.to_vec()`
     // it used to do defensively.
@@ -130,7 +130,7 @@ pub(super) fn build_op_offsets(
                 clone.inner_objects.clear();
                 let new_idx = expanded.len();
                 if let Some(src_tabs) = tabs_by_object.get(&idx) {
-                    // 1ztc: each instance's tab is re-anchored on the
+                    // Each instance's tab is re-anchored on the
                     // rotated/translated geometry via
                     // `apply_pattern_to_point`. Tabs aren't "shared with
                     // the original" — every instance gets its own
@@ -168,18 +168,18 @@ pub(super) fn build_op_offsets(
     // View after pattern expansion (input borrow otherwise — no clone).
     let after_pattern: &[VcObject] = pattern_expanded.as_deref().unwrap_or(objects);
 
-    // Pocket-Outside (rt1.3): when an op carries `frame_shape`, the
+    // Pocket-Outside: when an op carries `frame_shape`, the
     // pipeline auto-prepends a synthetic frame VcObject derived from
     // the op's current selection and rewrites the op source to put the
     // frame's id FIRST, with SourceCombine::Difference. The frame is not
     // persisted on the project (no Frame_<n> layer) so there's nothing
     // stale to clean up — recomputed every generate from the op params.
     //
-    // jzpl Phase 1: produces a locally-owned Vec instead of mutating the
-    // caller's input. After kbx5 patterns are Drill-only so pattern +
-    // frame can't both fire on the same op; the code still composes
-    // correctly if that constraint ever loosens (frame builds from
-    // `after_pattern`, which is the pattern-expanded view when active).
+    // Produces a locally-owned Vec instead of mutating the
+    // caller's input. Patterns are Drill-only so pattern + frame can't
+    // both fire on the same op; the code still composes correctly if that
+    // constraint ever loosens (frame builds from `after_pattern`, which is
+    // the pattern-expanded view when active).
     let cur_op_for_frame: &Op = effective_op_storage.as_ref().unwrap_or(op);
     let pocket_for_frame = cur_op_for_frame.pocket_params();
     let (frame_expanded, frame_op_storage): (Option<Vec<VcObject>>, Option<Op>) =
@@ -232,7 +232,7 @@ pub(super) fn build_op_offsets(
     // No clone — `&[VcObject]` borrow through the chain.
     let objects: &[VcObject] = frame_expanded.as_deref().unwrap_or(after_pattern);
 
-    // ldu2: arc-fit the SOURCE geometry before the offset cascade. When a
+    // Arc-fit the SOURCE geometry before the offset cascade. When a
     // circle (or any smooth curve) arrives tessellated as many short LINE
     // segments — the usual shape of an SVG/DXF import — cavalier_contours
     // offsets it with a tool-radius round join at EVERY vertex, producing
@@ -270,12 +270,12 @@ pub(super) fn build_op_offsets(
     let objects: &[VcObject] = fitted_storage.as_deref().unwrap_or(objects);
 
     // (Removed: `for obj in objects.iter_mut() { obj.tool_offset = setup.mill.offset; }`.
-    //  `obj.tool_offset` has no production reader post-55o4 — only a test
+    //  `obj.tool_offset` has no production reader — only a test
     //  asserts on a frame's tool_offset, which `synthesize_pocket_outside_objects`
     //  sets directly. Removing this loop was the unblock to taking `objects`
     //  by shared reference.)
 
-    // 1mlv: stock_to_leave_mm shifts the cutter centerline farther from
+    // stock_to_leave_mm shifts the cutter centerline farther from
     // the geometric wall on EVERY offset-cascade op (Profile + Pocket).
     // For Profile-Inside the cutter walks `tool_radius + stock_to_leave`
     // inside the boundary; for Pocket the inset wall sits at the same
@@ -290,12 +290,12 @@ pub(super) fn build_op_offsets(
     // looser for faster cuts. Clamp to a sane envelope so a stray 1.0
     // (= no advance) doesn't loop forever and a stray 0 doesn't pin to
     // the lower bound forever either.
-    // kbx5 step 2: xy_overlap lives on PocketParams. Non-Pocket ops
-    // fall through to the 0.5 default (was the prior behavior since
-    // OpParams::default initialised xy_overlap to 0.0 → 0.5 fallback).
-    // dr5: when the op leaves it at 0 ("use default") and the tool
-    // carries a `default_xy_overlap`, the tool value wins; otherwise
-    // fall through to the global 0.5.
+    // xy_overlap lives on PocketParams. Non-Pocket ops fall through to
+    // the 0.5 default (was the prior behavior since OpParams::default
+    // initialised xy_overlap to 0.0 → 0.5 fallback). When the op leaves
+    // it at 0 ("use default") and the tool carries a
+    // `default_xy_overlap`, the tool value wins; otherwise fall through
+    // to the global 0.5.
     let overlap_setting = effective_op.pocket_params().map_or(0.0, |p| p.xy_overlap);
     let overlap = if overlap_setting > 0.0 {
         overlap_setting.clamp(0.05, 0.95)
@@ -305,12 +305,12 @@ pub(super) fn build_op_offsets(
         0.5
     };
     let xy_step = setup.tool.diameter * (1.0 - overlap);
-    // 3e5: Whirl no longer clamps the cascade step. The v1
-    // implementation (xy_step ≤ tool_radius / 2) bounded engagement
-    // by reducing stepover, which slowed every cut. The 3e5 helical
-    // overlay applied at gcode-emit time bounds engagement directly
-    // by making the cutter rotate around the toolpath centerline —
-    // the cascade can stay at the user's xy_step regardless.
+    // Whirl no longer clamps the cascade step. The v1 implementation
+    // (xy_step ≤ tool_radius / 2) bounded engagement by reducing
+    // stepover, which slowed every cut. The helical overlay applied at
+    // gcode-emit time bounds engagement directly by making the cutter
+    // rotate around the toolpath centerline — the cascade can stay at
+    // the user's xy_step regardless.
     let mut offsets: Vec<PolylineOffset> = Vec::new();
     let mut closed = 0usize;
     let mut emitted_objects = 0usize;
@@ -351,7 +351,7 @@ pub(super) fn build_op_offsets(
                 let synthetic = synthesize_region_object(region);
                 let finish_ring_r = dual_tool_finish_radius(effective_op, project);
                 let pocket_for_kind = effective_op.pocket_params();
-                // knd4: pocket_zigzag / pocket_cascade_with_islands /
+                // pocket_zigzag / pocket_cascade_with_islands /
                 // stitch_rings_to_polyline all document their `islands`
                 // input as "pre-inflated by tool_radius" — they use the
                 // outline as the centerline safe boundary. Pipeline used
@@ -453,7 +453,7 @@ pub(super) fn build_op_offsets(
                 // what's selected matters — match that here for every
                 // pocket strategy.
                 //
-                // 473k: when source=All AND every nested inner object is
+                // When source=All AND every nested inner object is
                 // closed, auto-detect the donut/annular intent without
                 // requiring the user to flip `pocket_islands`. The
                 // canonical case: a frame plate with a center hole +
@@ -484,7 +484,7 @@ pub(super) fn build_op_offsets(
                 if obj.closed {
                     let finish_ring_r = dual_tool_finish_radius(effective_op, project);
                     let pocket_for_kind = effective_op.pocket_params();
-                    // knd4: inflate inner-object islands by tool_radius
+                    // Inflate inner-object islands by tool_radius
                     // before handing them to pocket_for_object. The
                     // pocket emitters treat the island input as the
                     // centerline safe boundary; passing raw inner
@@ -531,7 +531,7 @@ pub(super) fn build_op_offsets(
                     ToolOffset::Outside => parallel_offset_outward(obj, radius),
                     ToolOffset::Inside => parallel_offset_inward(obj, radius),
                 };
-                // c0pm: a single-pass Profile op IS the finishing wall pass
+                // A single-pass Profile op IS the finishing wall pass
                 // — there's no "rough then finish" split, the lone offset
                 // defines the final wall. Tag every emitted offset as
                 // is_finish so the gcode emitter substitutes the tool's
@@ -551,8 +551,8 @@ pub(super) fn build_op_offsets(
             | OpKind::Dovetail { .. } => {
                 // All follow the source path with no offset. Engrave
                 // rides the centerline; drag-knife adds trail compensation
-                // in the emitter; 3g6u/b7qz: T-slot and dovetail ride the
-                // centerline too but at the op's floor Z, where the
+                // in the emitter; T-slot and dovetail ride the centerline
+                // too but at the op's floor Z, where the
                 // cutter's head / angled flanks sweep the undercut (a
                 // single-Z pass — the multi-level cascade that a
                 // Profile/Pocket would run is exactly the
@@ -618,7 +618,7 @@ pub(super) fn build_op_offsets(
                 }
             }
             OpKind::Chamfer { finish_pass, .. } => {
-                // Chamfer (rt1.18): the V-bit walks the source path
+                // Chamfer: the V-bit walks the source path
                 // verbatim — no XY offset — and the depth comes from
                 // the bit's cone math computed at synth time. The
                 // first offset is the rough cut; if finish_pass is
@@ -667,24 +667,23 @@ pub(super) fn build_op_offsets(
                 // dispatcher already produced the toolpath.
             }
             OpKind::ReliefMill { .. } => {
-                // f60x: relief surfacing runs through `run_relief_op` (its
+                // Relief surfacing runs through `run_relief_op` (its
                 // own drop-cutter driver), never the offset cascade. Skip.
             }
             OpKind::RasterEngrave { .. } => {
-                // rt1.12: raster engrave runs through its own scanline
-                // driver (phase 3), never the offset cascade. Skip.
+                // Raster engrave runs through its own scanline driver,
+                // never the offset cascade. Skip.
             }
             OpKind::Pause { .. }
             | OpKind::Homing { .. }
             | OpKind::Probe { .. }
             | OpKind::CycleMarker { .. }
             | OpKind::GcodeInclude { .. } => {
-                // rt1.34 / 8n4k / rxm9: program-only kinds are emitted
-                // inline by the pipeline op loop (M5 + M0, G28, G38.2,
-                // raw comment, included G-code) before this offset-
-                // cascade path ever runs. Reach here means a
-                // programming error upstream; skip silently to keep
-                // the program intact.
+                // Program-only kinds are emitted inline by the pipeline
+                // op loop (M5 + M0, G28, G38.2, raw comment, included
+                // G-code) before this offset-cascade path ever runs.
+                // Reaching here means a programming error upstream;
+                // skip silently to keep the program intact.
             }
         }
     }
@@ -711,7 +710,7 @@ pub(super) fn build_op_offsets(
     Ok((offsets, closed))
 }
 
-/// 1ao5: drain any early-termination events stashed by `pocket_trochoidal`
+/// Drain any early-termination events stashed by `pocket_trochoidal`
 /// for the current op and surface them as `trochoidal_incomplete`
 /// warnings. The emitter terminates when a centerline vertex's loop disc
 /// strays outside the safe interior — chopping the unsafe tail
@@ -736,7 +735,7 @@ fn drain_trochoidal_incompletes(op: &Op, warnings: &mut Vec<PipelineWarning>) {
 fn drain_offset_diagnostics(op: &Op, warnings: &mut Vec<PipelineWarning>) {
     let diag = crate::cam::offsets::take_offset_diagnostics();
 
-    // z4t6: cavalier_contours panics trapped by parallel_offset_object —
+    // Cavalier_contours panics trapped by parallel_offset_object —
     // already caught (the pipeline kept running); this makes them VISIBLE.
     for panic in diag.parallel_offset_panics {
         warnings.push(PipelineWarning {
@@ -752,7 +751,7 @@ fn drain_offset_diagnostics(op: &Op, warnings: &mut Vec<PipelineWarning>) {
         let _ = panic.color;
     }
 
-    // mdpo: ring-cap truncations from pocket_cascade_with_islands — inner
+    // Ring-cap truncations from pocket_cascade_with_islands — inner
     // rings of a very large pocket weren't carved (hollow doughnut).
     for ev in diag.pocket_cascade_truncations {
         warnings.push(PipelineWarning {
@@ -765,7 +764,7 @@ fn drain_offset_diagnostics(op: &Op, warnings: &mut Vec<PipelineWarning>) {
         });
     }
 
-    // kzz9: far approach-point rotations — usually a stale approach point
+    // Far approach-point rotations — usually a stale approach point
     // after the user moved the source contour.
     for ev in diag.approach_point_far {
         warnings.push(PipelineWarning {
@@ -778,7 +777,7 @@ fn drain_offset_diagnostics(op: &Op, warnings: &mut Vec<PipelineWarning>) {
         });
     }
 
-    // 0tsy: nocontour+allowance conflict folded by pocket_for_object (the
+    // nocontour+allowance conflict folded by pocket_for_object (the
     // allowance had no finish pass to remove it).
     for ev in diag.nocontour_allowance_ignored {
         warnings.push(PipelineWarning {
@@ -791,8 +790,8 @@ fn drain_offset_diagnostics(op: &Op, warnings: &mut Vec<PipelineWarning>) {
         });
     }
 
-    // cpym: degenerate zigzag stride bailed by pocket_zigzag (sub-fp stride
-    // would have been silently clamped pre-cpym).
+    // Degenerate zigzag stride bailed by pocket_zigzag (sub-fp stride
+    // would have been silently clamped before this check was added).
     for ev in diag.zigzag_stride_degenerate {
         warnings.push(PipelineWarning {
             op_id: Some(op.id),
@@ -809,7 +808,7 @@ fn drain_offset_diagnostics(op: &Op, warnings: &mut Vec<PipelineWarning>) {
 /// emitter, including the trochoidal-specific climb/conventional and
 /// loop parameters.
 ///
-/// q57s: `PocketEmit::Trochoidal { climb }` stores the user's climb
+/// `PocketEmit::Trochoidal { climb }` stores the user's climb
 /// intent unchanged; `pocket_trochoidal` XORs that with the spindle
 /// direction internally so the geometric loop winding matches physical
 /// climb on either M3 / M4.
@@ -1455,7 +1454,7 @@ mod tests {
         );
     }
 
-    // ─── Lead-in (p31) ─────────────────────────────────────────────────
+    // ─── Lead-in ───────────────────────────────────────────────────────
 
     /// Profile + Outside + Arc lead-in emits a G2/G3 arc between the
     /// surface plunge and the cut plunge.
@@ -2253,7 +2252,7 @@ mod tests {
         );
     }
 
-    /// Pocket-Outside (rt1.3): a Pocket op carrying `frame_shape` should
+    /// Pocket-Outside: a Pocket op carrying `frame_shape` should
     /// auto-prepend a frame around the selection at pipeline time and
     /// emit a toolpath that fills the area BETWEEN the frame and the
     /// selection — not the area inside the selection.
@@ -2344,7 +2343,7 @@ mod tests {
         );
     }
 
-    /// Pocket-Outside (rt1.3) regression: when the user enters a frame
+    /// Pocket-Outside regression: when the user enters a frame
     /// padding smaller than the cutter radius, the pipeline must clamp
     /// the padding up to (at least) the tool radius and emit a warning
     /// — otherwise the synthetic frame's "Inside" offset puts the
@@ -2805,7 +2804,7 @@ mod tests {
         assert!(resp.warnings.iter().any(|w| w.kind == "tool_kind_mismatch"));
     }
 
-    // Plunge tests moved to pipeline/offset_builder.rs (bvzj).
+    // Plunge tests moved to pipeline/offset_builder.rs.
 
     /// A 10x10 pocket with a 6mm endmill: tool fits the boundary
     /// offset (4x4 left after a 3mm offset) but no cascade ring fits
@@ -3135,7 +3134,7 @@ mod tests {
     }
 
     // ─── Drill ops ─────────────────────────────────────────────────────
-    // Moved to pipeline/op_drivers/drill.rs (vk77 phase 2).
+    // Moved to pipeline/op_drivers/drill.rs.
 
     /// Per-op feedrate overrides win over the tool's defaults.
     #[test]
@@ -3192,8 +3191,7 @@ mod tests {
     }
 
     /// Pocket op with a slower finish feed: the gcode must contain the
-    /// finish feedrate before the wall-defining (level=0) ring is cut
-    /// (rt1.27).
+    /// finish feedrate before the wall-defining (level=0) ring is cut.
     #[test]
     fn pocket_finish_ring_emits_finish_feedrate() {
         let mut tool = endmill(1, 3.0);
@@ -3244,8 +3242,7 @@ mod tests {
     }
 
     /// Pocket op WITHOUT a finish override: rough feed is used
-    /// everywhere — no surprise feed change before the level=0 ring
-    /// (rt1.27 fallback behavior).
+    /// everywhere — no surprise feed change before the level=0 ring.
     #[test]
     fn pocket_without_finish_override_uses_rough_throughout() {
         let mut tool = endmill(1, 3.0);
@@ -3351,7 +3348,7 @@ mod tests {
     /// Pocket with `xy_finish_allowance` emits an extra wall ring at
     /// the actual contour (`tool_radius` offset) AND the rough rings
     /// step inward from (`tool_radius` + allowance) — leaving stock at
-    /// the wall that the finish ring removes (rt1.24).
+    /// the wall that the finish ring removes.
     #[test]
     fn pocket_finish_xy_allowance_emits_extra_boundary_pass() {
         use crate::cam::offsets::{pocket_for_object, PocketEmit};
@@ -3414,7 +3411,7 @@ mod tests {
 
     /// Pocket with `xy_finish_allowance` produces gcode that visits the
     /// rough rings at the tool's general feed and the finish ring at
-    /// the finish-set feed (rt1.24 × rt1.27).
+    /// the finish-set feed.
     #[test]
     fn pocket_with_xy_allowance_finish_ring_uses_finish_feed() {
         let mut tool = endmill(1, 3.0);
@@ -3464,7 +3461,7 @@ mod tests {
         assert!(resp.gcode.contains("F400"), "finish feed missing");
     }
 
-    /// 1mlv: `OpParamsCommon.stock_to_leave_mm` enlarges the effective
+    /// `OpParamsCommon.stock_to_leave_mm` enlarges the effective
     /// cutter radius on Profile/Pocket offset cascades. Verify a Pocket
     /// with 1.0 mm stock-to-leave produces an inset boundary that sits
     /// further from the geometric wall than a baseline pocket without
@@ -3516,7 +3513,7 @@ mod tests {
         // tool_radius=1 + stock_to_leave=1 the cutter centerline
         // sits at min/max coordinates {2, 18}. We pick the minimum
         // X across cut moves and verify it's ≥ 1.8 (with a small
-        // float slack) — pre-1mlv it would have been ~1.0.
+        // float slack) — without stock_to_leave it would have been ~1.0.
         let min_cut_x = resp
             .toolpath
             .iter()
@@ -3534,7 +3531,7 @@ mod tests {
     use crate::pipeline::test_helpers::{closed_circle, profile_op, project_with};
     use crate::project::PocketStrategy;
 
-    /// Approach point (rt1.26): when set on a Pocket op, each closed
+    /// Approach point: when set on a Pocket op, each closed
     /// offset's segment list rotates so the start (where plunge
     /// happens) is the vertex closest to the user-picked XY.
     #[test]
@@ -3745,7 +3742,7 @@ mod tests {
         );
     }
 
-    /// w91: in a non-convex pocket the straight bridge between cascade
+    /// In a non-convex pocket the straight bridge between cascade
     /// rings can cut through a re-entrant pocket wall. The fix detects
     /// the bad bridge and silently falls back to cascade emission
     /// (separate closed rings, no bridges) rather than emitting a wrong
@@ -4179,7 +4176,7 @@ mod tests {
         assert!(resp_b.warnings.iter().all(|w| w.kind != "step_unspecified"));
     }
 
-    /// 473k regression: under `OpSource::All`, two nested closed contours
+    /// Regression: under `OpSource::All`, two nested closed contours
     /// (outer rectangle + inner circle) should auto-build an annular
     /// (donut) pocket — the inner closed contour becomes an island
     /// without the user needing to flip `pocket_islands`. Pre-fix the
@@ -4277,7 +4274,7 @@ mod tests {
         }
     }
 
-    /// knd4 regression: a Zigzag pocket with an island must keep the
+    /// Regression: a Zigzag pocket with an island must keep the
     /// cutter CENTERLINE at least `tool_radius` away from the raw
     /// island wall. Pre-fix the pipeline passed the raw island
     /// polygons into `pocket_for_object`, but the pocket emitters
@@ -4354,8 +4351,7 @@ mod tests {
         // pipeline computes is a chord polygon that sits up to
         // ~arc_tol inside the perfect tool-radius circle around the
         // raw island. We allow that tolerance here — anything more
-        // than that is a knd4 regression (the pipeline forgot to
-        // inflate islands at all).
+        // than that means the pipeline forgot to inflate islands at all.
         let safe_min_distance = island_radius + tool_radius - 0.30;
         let cuts: Vec<&crate::gcode::preview::ToolpathSegment> = resp
             .toolpath
@@ -4380,7 +4376,7 @@ mod tests {
         }
     }
 
-    /// c0pm regression: a single-pass Profile op is by definition the
+    /// Regression: a single-pass Profile op is by definition the
     /// finishing wall pass — the tool's finish-set rates
     /// (`rate_h_finish` / `speed_finish` / `rate_v_finish`) must drive the
     /// emitted gcode, not the rough-set rates. Pre-fix the Profile
@@ -4453,7 +4449,7 @@ mod tests {
         );
     }
 
-    /// 0tsy regression: `pocket_nocontour=true` + `finish_xy_allowance_mm` > 0
+    /// Regression: `pocket_nocontour=true` + `finish_xy_allowance_mm` > 0
     /// is a meaningless combination — there's no wall ring to absorb the
     /// allowance, so the rough cascade would walk `allowance` mm inboard
     /// of the wall and leave that stock behind forever. We fold allowance

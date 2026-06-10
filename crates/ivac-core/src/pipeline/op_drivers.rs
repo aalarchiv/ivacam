@@ -44,24 +44,23 @@ use crate::project::{Op, OpKind, Project};
 /// the kind-specific sub-driver:
 ///
 /// * **Drill** → [`drill::run_drill`] — canned drill cycle, optional
-///   Stufenfase (rt1.20) rim chamfer.
+///   Stufenfase rim chamfer.
 /// * **Profile / Pocket / Engrave / `DragKnife` / Chamfer** →
 ///   [`dual_tool::run_dual_tool_or_single`] — single
 ///   `emit_polylines_block` for the rough offsets, with an optional
-///   dual-tool finish ring (rt1.33).
+///   dual-tool finish ring.
 ///
 /// Returns `(closed_count, offset_count, swapped)` so the caller can
 /// fold the numbers into [`super::PipelineStats`] without re-walking
 /// the returned offsets. `swapped` is `true` when the kind-specific
 /// sub-driver actually emitted an internal dual-tool toolchange
 /// (rough→finish, drill→chamfer); used by `run_per_op` to bias
-/// `prev_tool_id` only when a real swap happened (nguf).
+/// `prev_tool_id` only when a real swap happened.
 ///
-/// jzpl Phase 1: `build_op_offsets` now takes `&[VcObject]` and produces
-/// pattern / frame expansions in locally-owned `Vec<VcObject>`s. The
-/// caller no longer needs a defensive `.to_vec()` clone per op — a
-/// 50-op project on a 5000-segment DXF used to clone the full vec 50
-/// times every Generate.
+/// `build_op_offsets` takes `&[VcObject]` and produces pattern / frame
+/// expansions in locally-owned `Vec<VcObject>`s. The caller no longer
+/// needs a defensive `.to_vec()` clone per op — a 50-op project on a
+/// 5000-segment DXF used to clone the full vec 50 times every Generate.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::pipeline) fn run_standard_op<P: PostProcessor>(
     op: &Op,

@@ -139,7 +139,7 @@
     requireSelectionForPocketOutside && project.sel.selectedObjects.size === 0,
   );
 
-  /// h0tx: each op kind's required machine capability. The picker
+  /// Each op kind's required machine capability. The picker
   /// hides kinds whose required capability isn't in the machine's
   /// effective set (empty `machine.capabilities` ⇒ `[mode]` — the
   /// default when capabilities is absent).
@@ -158,12 +158,12 @@
     dovetail: ['mill'],
     vcarve: ['mill'],
     relief_mill: ['mill'],
-    // rt1.12: laser raster engraving is laser-only (matches the backend
+    // Laser raster engraving is laser-only (matches the backend
     // laser gate + the op×mode warning).
     raster_engrave: ['laser'],
     // Pause carries no tool / motion — every machine can pause.
     pause: ['mill', 'laser', 'drag', 'plasma'],
-    // 8n4k: program-only building blocks (Homing / Probe / CycleMarker)
+    // Program-only building blocks (Homing / Probe / CycleMarker)
     // emit raw G-code and don't depend on a cutter mode. Show them on
     // every machine.
     homing: ['mill', 'laser', 'drag', 'plasma'],

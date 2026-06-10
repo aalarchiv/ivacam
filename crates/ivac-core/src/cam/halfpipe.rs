@@ -1,4 +1,4 @@
-//! Halfpipe slot machining (rt1.19 — Estlcam `Prog_Halfpipe`).
+//! Halfpipe slot machining (Estlcam `Prog_Halfpipe`).
 //!
 //! Walk the closed region's medial axis at varying Z so the cut floor
 //! matches the configured cross-section profile. The slot's width at
@@ -32,11 +32,11 @@ use crate::project::HalfpipeProfile;
 
 /// Compute the Z depth for one medial-axis vertex `v` under `profile`,
 /// then clamp to `z_cap` (the op's max depth, absolute value;
-/// `Some(d)` ⇒ result ≥ `-|d|`) and to `tool_reach_z` (898l — the
+/// `Some(d)` ⇒ result ≥ `-|d|`) and to `tool_reach_z` (the
 /// tool's flute length: a ball-nose's shank starts engaging stock past
 /// the flutes, so we cap to keep the shank above z=0).
 ///
-/// `at_corner` (mchy): true when `v` sits near a re-entrant boundary
+/// `at_corner`: true when `v` sits near a re-entrant boundary
 /// corner (the two nearest boundary footings are on different segments,
 /// subtending an angle < ~170° at `v`). At such points the floor must
 /// match the *corner-arc* radius (= the configured profile R for
@@ -51,7 +51,7 @@ use crate::project::HalfpipeProfile;
 /// `z_cap` clipped the result. `tool_reach_limited` is true iff
 /// `tool_reach_z` clipped the result — surfaced separately so the
 /// pipeline can emit a distinct `halfpipe_tool_reach_exceeded`
-/// warning (898l).
+/// warning.
 #[must_use]
 pub fn depth_at(
     v: &VPoint,
@@ -67,7 +67,7 @@ pub fn depth_at(
             if radius < 1e-9 {
                 (0.0, true)
             } else if at_corner {
-                // mchy: at a re-entrant corner the floor is a ball-nose
+                // At a re-entrant corner the floor is a ball-nose
                 // fillet of radius = the profile R, not a chord of the
                 // local-slot half-circle. Use -R directly.
                 (-radius, false)
@@ -83,7 +83,7 @@ pub fn depth_at(
         HalfpipeProfile::VBottom { included_angle_deg } => {
             let half = (included_angle_deg.clamp(1.0, 179.0) * 0.5).to_radians();
             let t = half.tan().max(1e-9);
-            // mchy: VBottom is depth = -r / tan(half). At a corner the
+            // VBottom is depth = -r / tan(half). At a corner the
             // depth corresponds to the bit's apex point sitting at the
             // bisector terminus; the natural mapping is the same
             // formula evaluated at the inscribed radius the corner
@@ -120,13 +120,13 @@ pub fn depth_at(
 /// `(points, depth_limited_anywhere, tool_reach_limited_anywhere)`.
 ///
 /// `boundary` is the flattened set of boundary edges (outer ring + any
-/// hole rings concatenated as `(start, end)` segments). Used by mchy
+/// hole rings concatenated as `(start, end)` segments). Used by
 /// corner detection: a vertex whose two nearest boundary footings sit
 /// on different segments subtending a sharp angle is treated as a
 /// re-entrant corner. Pass `None` to disable corner detection (back-
 /// compat for tests / non-corner-aware callers).
 ///
-/// `tool_reach_z` (898l) is the ball-nose tool's flute length — the
+/// `tool_reach_z` is the ball-nose tool's flute length — the
 /// maximum |z| the cutting flutes can engage stock before the shank
 /// starts dragging. Passes `None` to skip the cap (test compat).
 /// Return of [`polyline_to_z`]: the per-sample `(x, y, z, width)` track
@@ -158,7 +158,7 @@ pub fn polyline_to_z(
     (out, any_limited, any_reach_limited)
 }
 
-/// mchy: a medial-axis vertex sits at a re-entrant corner iff its two
+/// A medial-axis vertex sits at a re-entrant corner iff its two
 /// nearest boundary footings are on different (non-adjacent in the
 /// equidistant-witness sense) segments AND the angle the two footings
 /// subtend at the vertex is sharper than ~150°. At a straight-slot
@@ -305,7 +305,7 @@ mod tests {
         assert!(lim);
     }
 
-    /// 898l: a ball-nose tool with a 5mm flute length cutting a
+    /// A ball-nose tool with a 5mm flute length cutting a
     /// profile R=20 must clip Z to -5mm and report `tool_reach_limited`
     /// at the deepest medial-axis vertex.
     #[test]
@@ -318,7 +318,7 @@ mod tests {
         assert!(reach_lim, "expected tool_reach_limited=true");
     }
 
-    /// 898l: when the profile depth is shallower than the tool flute,
+    /// When the profile depth is shallower than the tool flute,
     /// the cap doesn't fire.
     #[test]
     fn tool_reach_cap_does_not_fire_when_deeper_flute_available() {
@@ -330,7 +330,7 @@ mod tests {
         assert!(!reach_lim);
     }
 
-    /// 898l: `polyline_to_z` propagates the tool-reach flag.
+    /// `polyline_to_z` propagates the tool-reach flag.
     #[test]
     fn polyline_propagates_tool_reach_flag() {
         let axis = vec![vp(0.0, 0.0, 1.0), vp(1.0, 0.0, 20.0), vp(2.0, 0.0, 0.5)];
@@ -339,7 +339,7 @@ mod tests {
         assert!(reach_lim);
     }
 
-    /// mchy: at a re-entrant corner the ball-nose floor depth must be
+    /// At a re-entrant corner the ball-nose floor depth must be
     /// the *corner-arc* radius (= profile R), not the incircle r. Use
     /// `at_corner = true` on a small-r vertex and verify the depth
     /// equals -R instead of the slot-width formula.
@@ -362,7 +362,7 @@ mod tests {
         );
     }
 
-    /// mchy: `is_at_reentrant_corner` returns true for a vertex on the
+    /// `is_at_reentrant_corner` returns true for a vertex on the
     /// bisector of a 60° re-entrant corner, and false for a vertex
     /// inside a straight slot.
     #[test]

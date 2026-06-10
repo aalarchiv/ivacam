@@ -46,7 +46,7 @@ export type OpKind =
   | 'relief_mill'
   | 'raster_engrave';
 
-/// gseb: the program-only op family — Pause, Homing, Probe,
+/// The program-only op family — Pause, Homing, Probe,
 /// CycleMarker, GcodeInclude. These ops emit fixed gcode
 /// sequences (M0 / G28 / G38.2 / a comment / an included file)
 /// and never touch a cutter, so the tool-existence validator
@@ -64,13 +64,13 @@ export function isProgramOnlyOp(kind: OpKind): boolean {
   );
 }
 
-/// 8n4k: axis selector for ProbeOp. Wire is the bare lowercase
+/// Axis selector for ProbeOp. Wire is the bare lowercase
 /// letter for direct concatenation into the G38.2 word.
 export type ProbeAxis = 'x' | 'y' | 'z';
 
 export type ScanDirection = 'along_x' | 'along_y';
 
-/// rt1.12: brightness → laser-power (`S`) mapping for raster engraving.
+/// Brightness → laser-power (`S`) mapping for raster engraving.
 /// Tagged union on `kind`, mirroring the wire `PowerCurve` 1:1 — the
 /// only field-name difference is bayer's `matrixSize` ↔ wire
 /// `matrix_size`, translated in build-project.ts. Convention: dark
@@ -87,7 +87,7 @@ export type PowerCurve =
 
 export type PowerCurveKind = PowerCurve['kind'];
 
-/// rt1.12: how consecutive raster rows are connected — lift-between
+/// How consecutive raster rows are connected — lift-between
 /// (every row same direction) vs boustrophedon (alternating, no lift).
 export type RasterLink = 'lift_between' | 'bidirectional';
 
@@ -126,13 +126,13 @@ export interface OpBase {
   /// overrides `step` / `finishStep` / `throughDepth`.
   depthList?: number[];
   pattern?: PatternConfig;
-  /// dp6b: optional group label. Consecutive enabled ops sharing the
+  /// Optional group label. Consecutive enabled ops sharing the
   /// same value belong to the same logical phase ("rough",
   /// "finish", …); the pipeline emits a `; === GROUP: <name> ===`
   /// boundary marker in the G-code at every transition. Empty
   /// string is treated the same as undefined.
   group?: string;
-  /// l8lk: pin this op's position when the project-level
+  /// Pin this op's position when the project-level
   /// `groupOpsByTool` reorder is on. A pinned op (like any program-only
   /// op) is a fixed barrier: it keeps its slot and grouping never moves
   /// another op across it. Use it to lock a stability-critical cut order
@@ -160,7 +160,7 @@ export interface ContourFields {
   tabsActive?: boolean;
   tabMode?: TabPlacementMode;
   tabPlacements?: TabPlacement[];
-  /// Anfahrpunkt (rt1.26): user-picked XY where the cutter enters
+  /// User-picked XY where the cutter enters
   /// each closed offset.
   approachPoint?: [number, number];
 }
@@ -186,12 +186,12 @@ export interface PocketOp extends OpBase, ContourFields {
   engagementAngleDeg?: number;
   /// Trochoidal loop radius as a fraction of tool radius.
   loopRadiusFactor?: number;
-  /// rt1.9: zigzag raster angle in degrees. 0 (default) = horizontal
+  /// Zigzag raster angle in degrees. 0 (default) = horizontal
   /// sweeps; 90 = vertical; 45 = diagonal. Honored when
   /// `pocketStrategy === 'zigzag'`. Wire-compatible: 0 serialises as
   /// the bare `"zigzag"` string, non-zero as a tagged object.
   pocketZigzagAngleDeg?: number;
-  /// Halfpipe cross-section profile (rt1.19). Honored when
+  /// Halfpipe cross-section profile. Honored when
   /// `pocketStrategy === 'halfpipe'`.
   halfpipeProfile?: HalfpipeProfile;
   /// Dual-tool finish: when set to a tool distinct from `toolId`, the
@@ -199,9 +199,9 @@ export interface PocketOp extends OpBase, ContourFields {
   /// wall ring with the finish tool's finish-set feed/speed.
   finishToolId?: number;
   /// XY stock allowance (positive, mm) left UNCUT at the wall by the
-  /// roughing pass, removed by a dedicated finish ring (rt1.24).
+  /// roughing pass, removed by a dedicated finish ring.
   finishXyAllowanceMm?: number;
-  /// Pocket-Outside (rt1.3): when set, the op carves the area between
+  /// Pocket-Outside: when set, the op carves the area between
   /// a synthetic frame and the source selection.
   frameShape?: FrameShape;
   framePaddingMm?: number;
@@ -214,21 +214,21 @@ export interface PocketOp extends OpBase, ContourFields {
 export interface DrillOp extends OpBase {
   kind: 'drill';
   drillCycle: DrillCycle;
-  /// Stufenfase (rt1.20): drilled-hole rim chamfer width. After the
+  /// Post-drill rim chamfer width. After the
   /// drill cycle, the cutter walks a constant-Z revolution at each
   /// hole's edge at `z = -width / tan(tipAngle / 2)`.
   chamferAfterWidthMm?: number;
   /// Dedicated chamfer tool for Stufenfase. When unset, the drill
   /// tool itself is used.
   finishToolId?: number;
-  /// r2af: optional spot-drill pre-pass — a shallow centre spot with a
+  /// Optional spot-drill pre-pass — a shallow centre spot with a
   /// stiffer tool before the main drill, to stop a twist drill walking
   /// on hard / polished stock. Undefined = no spot pass. `spotDepthMm`
   /// is negative (depth below stock).
   spotFirst?: { spotDepthMm: number; spotToolId: number };
 }
 
-/// Chamfer op (rt1.18) — single-pass constant-Z bevel along the
+/// Chamfer op — single-pass constant-Z bevel along the
 /// selected closed contour, depth driven by V-bit cone math
 /// (`z = -width / tan(tipAngle / 2)`).
 export interface ChamferOp extends OpBase {
@@ -238,7 +238,7 @@ export interface ChamferOp extends OpBase {
   /// as zero-width = no chamfer.
   chamferWidthMm?: number;
   /// Optional second pass at finish-set feed/speed for surface
-  /// quality (rt1.27).
+  /// quality.
   chamferFinishPass?: boolean;
 }
 
@@ -250,14 +250,14 @@ export interface VCarveOp extends OpBase {
   carveMaxWidthMm?: number;
   /// Multi-pass refinement toggle.
   multiPassRefine?: boolean;
-  /// r8ut: trace the full medial axis. Default (undefined / false) =
+  /// Trace the full medial axis. Default (undefined / false) =
   /// Estlcam-style perimeter-only — the cutter traces the boundary
   /// offset inward by `R = effective_r_cap` at constant depth, leaving
   /// the centre plateau untouched. Set true for the rare "carve a depth
   /// gradient across the entire interior" workflow — the full medial
   /// axis (Aspire-style relief).
   fullMedialAxis?: boolean;
-  /// rt1.7: extra inward offset applied to the source region BEFORE
+  /// Extra inward offset applied to the source region BEFORE
   /// the V-Carve pass. Used to build the "plug" side of an inlay pair —
   /// the plug is `sourceInsetMm` smaller per side than the pocket so
   /// it wedges into the pocket walls with that clearance when glued in.
@@ -266,7 +266,7 @@ export interface VCarveOp extends OpBase {
   sourceInsetMm?: number;
 }
 
-/// Thread op (rt1.17) — helical pass cutting an internal or external
+/// Thread op — helical pass cutting an internal or external
 /// thread at the given pitch.
 export interface ThreadOp extends OpBase {
   kind: 'thread';
@@ -295,7 +295,7 @@ export interface DragKnifeOp extends OpBase {
   offset: ProfileOffset;
 }
 
-/// 3g6u: T-slot / undercut op — drives a T-slot / keyway cutter along
+/// T-slot / undercut op — drives a T-slot / keyway cutter along
 /// the source path as the slot centerline, at a single floor Z, so its
 /// wide head carves the undercut. `offset` is always `'on'`; the head
 /// width comes from the tool. Behaviorally a single-Z centerline follow
@@ -306,7 +306,7 @@ export interface TSlotOp extends OpBase {
   offset: ProfileOffset;
 }
 
-/// b7qz: dovetail / form-profile undercut op — drives a `form_profile`
+/// Dovetail / form-profile undercut op — drives a `form_profile`
 /// cutter (e.g. a dovetail bit, widest at the bottom) along the source
 /// path as the groove centerline, at a single floor Z, so its angled
 /// flanks carve the undercut walls. `offset` is always `'on'`; the
@@ -318,7 +318,7 @@ export interface DovetailOp extends OpBase {
   offset: ProfileOffset;
 }
 
-/// rt1.34: program-level optional-stop op. Emits M5 → M0 → M3 at the
+/// Program-level optional-stop op. Emits M5 → M0 → M3 at the
 /// op's slot in the operations list, with the message rendered as a
 /// gcode comment. No tool, no source — the op exists purely to pause
 /// the controller so the operator can intervene (manual tool change,
@@ -330,7 +330,7 @@ export interface PauseOp extends OpBase {
   message: string;
 }
 
-/// 8n4k: machine-home building block. Emits `G28` then (by default) a
+/// Machine-home building block. Emits `G28` then (by default) a
 /// rapid retract to the op's safe Z. No tool / source / cut schedule —
 /// program-only scaffolding so a project can express its shop
 /// workflow (start of program, mid-program parking, end of program)
@@ -343,7 +343,7 @@ export interface HomingOp extends OpBase {
   retractToSafeZ: boolean;
 }
 
-/// 8n4k: touch-probe building block. Emits a single `G38.2 <axis>
+/// Touch-probe building block. Emits a single `G38.2 <axis>
 /// <distance> F<feed>` line — probing move that halts when the
 /// trigger fires. Used at program start (zero WCS Z to the stock
 /// top), between ops, or as a repeatability sanity check.
@@ -358,7 +358,7 @@ export interface ProbeOp extends OpBase {
   feedMmMin: number;
 }
 
-/// 8n4k: navigation marker. Emits ONLY a wrapped comment line at the
+/// Navigation marker. Emits ONLY a wrapped comment line at the
 /// op's slot — no controller motion, no modal change. Pendants and
 /// gcode viewers that index by program line can jump to the next
 /// marker; also useful as a long-form note ("Flip stock NOW") that
@@ -369,17 +369,17 @@ export interface CycleMarkerOp extends OpBase {
   label: string;
 }
 
-/// rxm9: external G-code include block. Splices an externally-
+/// External G-code include block. Splices an externally-
 /// authored gcode file into the program stream at the op's slot,
 /// with `{x}` / `{y}` / `{z}` / `{f}` / `{s}` / `{safe_z}` token
 /// substitution against the post's live state. Program-only kind —
 /// no tool, no source, no Z schedule.
 ///
-/// Sim coverage (yhen): the heightmap-side simulator classifies the
+/// Sim coverage: the heightmap-side simulator classifies the
 /// included body line-by-line. G0/G1/G2/G3 + canned cycles
 /// G73/G81/G82/G83 are carved by the unified preview-interpret pass;
 /// everything else fires a counted `gcode_include_lines_skipped`
-/// summary warning. When `verboseUnsimWarnings` is set (xi2g), each
+/// summary warning. When `verboseUnsimWarnings` is set, each
 /// skipped line additionally fires a `gcode_include_unsim_line`
 /// warning so the user can pinpoint exactly which lines were
 /// skipped and why.
@@ -391,14 +391,14 @@ export interface GcodeIncludeOp extends OpBase {
   /// The G-code body to splice in, verbatim except for `{name}`
   /// variable substitution at emit time.
   content: string;
-  /// xi2g: when true, fan out one `gcode_include_unsim_line` warning
+  /// When true, fan out one `gcode_include_unsim_line` warning
   /// per skipped line in addition to the
   /// `gcode_include_lines_skipped` summary. Off by default so the
   /// warnings panel doesn't drown on a multi-skip block.
   verboseUnsimWarnings?: boolean;
 }
 
-/// f60x: 3-axis ball-nose relief surfacing. Finishes a curved Z(x,y)
+/// 3-axis ball-nose relief surfacing. Finishes a curved Z(x,y)
 /// surface (a `ReliefSource` referenced by `sourceId`, e.g. a grayscale
 /// image) with a ball-nose cutter. The source's brightness maps to Z in
 /// `[zMinMm, zMaxMm]`; `scallopHeightMm` drives the stepover unless
@@ -424,7 +424,7 @@ export interface ReliefMillOp extends OpBase {
   alongStepMm: number;
 }
 
-/// rt1.12: laser raster engraving. Burns a grayscale image (a
+/// Laser raster engraving. Burns a grayscale image (a
 /// `ReliefSource` referenced by `sourceId`) row-by-row, modulating
 /// laser power (`S`) per pixel through `powerCurve`. Like ReliefMill it
 /// follows an image-derived field rather than source geometry, so it has
@@ -452,7 +452,7 @@ export interface RasterEngraveOp extends OpBase {
 /// on `op.kind === '<value>'` so reads of kind-specific fields are
 /// only valid inside the matching branch — wrong-kind reads (e.g.
 /// `op.chamferWidthMm` on a ProfileOp) become compile-time errors
-/// instead of silently undefined (audit-sue).
+/// instead of silently undefined.
 export type OpEntry =
   | ProfileOp
   | PocketOp

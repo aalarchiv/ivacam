@@ -1,4 +1,4 @@
-// 5ue0: message protocol shared by the wasm Web Worker host
+// Message protocol shared by the wasm Web Worker host
 // (`wasm.worker.ts`) and the main-thread client (`wasm-worker-client.ts`).
 // Kept in its own module so both sides — and the unit test's fake worker
 // — agree on the wire shape without the client importing the worker or

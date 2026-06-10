@@ -1,5 +1,5 @@
 // Single-source tool-capability table (Phase 1 of the tool-library
-// family-model refactor, epic wiaconstructor-l9zn).
+// family-model refactor).
 //
 // Before this module, "which settings apply to which tool kind" was
 // hand-maintained in two places that drifted: `fieldApplies()` in
@@ -50,7 +50,7 @@ export type ToolAttr =
   | 'defaultStep'
   | 'cornerRadius' // bull-nose corner radius
   | 'dragoff' // drag-knife trailing offset
-  | 'formProfile' // (z, r) sample table (incl. folded-in T-slot, z5yw)
+  | 'formProfile' // (z, r) sample table (incl. folded-in T-slot)
   | 'compressionTransition' // compression up/down flute-split height
   | 'threadPitch' // thread-mill pitch
   | 'laser'; // pierce / lead-in / kerf

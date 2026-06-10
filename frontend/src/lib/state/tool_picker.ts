@@ -1,6 +1,5 @@
-/// dx8p: best-fit tool selection when an op is added against a
-/// selection. Pure-logic; vitest exercises it without booting the
-/// rune runtime.
+/// Best-fit tool selection when an op is added against a selection.
+/// Pure-logic; vitest exercises it without booting the rune runtime.
 ///
 /// Heuristic per op kind:
 ///   * Drill: square-ish selection (length ≈ width) → tool whose

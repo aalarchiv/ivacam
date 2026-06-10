@@ -1,4 +1,4 @@
-/// Fixture color helpers shared by the 2D canvas and 3D scene (7iej.12).
+/// Fixture color helpers shared by the 2D canvas and 3D scene.
 /// A fixture's `color` is a packed 0xRRGGBBAA integer; both renderers
 /// unpacked it inline with the same default, so the unpack lives here now.
 /// The alpha *treatment* stays per-renderer (the 2D overlay fill is more

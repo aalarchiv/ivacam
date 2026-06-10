@@ -385,7 +385,7 @@
           cell.
         </p>
 
-        <!-- 27ng / rpas: exact 3D rewind toggle. Default ON
+        <!-- Exact 3D rewind toggle. Default ON
              because the post-Generate `playhead = 1.0` hop means
              the user lands at the END-OF-PROGRAM state right
              after Generate — without exact rewind, dragging the

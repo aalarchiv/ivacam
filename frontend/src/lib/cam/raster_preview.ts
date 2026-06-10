@@ -1,4 +1,4 @@
-/// rt1.12: TS port of `crates/ivac-core/src/cam/raster.rs` — the pure
+/// TS port of `crates/ivac-core/src/cam/raster.rs` — the pure
 /// brightness-grid → laser-power (`S`) mapping that drives the
 /// RasterEngraveSection live preview + histogram. The Rust module is the
 /// ORACLE: its unit tests (linear midpoint, threshold binary, F-S ~50%

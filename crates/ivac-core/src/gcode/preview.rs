@@ -78,7 +78,7 @@ const NO_SEGMENT: u32 = u32::MAX;
 ///
 /// `ccw` is true for G3 (counter-clockwise), false for G2 (clockwise). The
 /// center lies on the perpendicular bisector of the chord, on the side that
-/// produces the requested direction + minor/major selection. (u7jn)
+/// produces the requested direction + minor/major selection.
 #[must_use]
 fn arc_center_from_radius(
     sx: f64,
@@ -180,7 +180,7 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
         // these in the same variable since they're mutually exclusive
         // per line.
         let mut r_val: Option<f64> = None;
-        // ad0v / hat3: a non-cutting controller move the previewer can't
+        // A non-cutting controller move the previewer can't
         // place in the work frame —
         //   * `G53` (machine-coords move): no WCS↔machine offset is
         //     known here, so machine X/Y misread as WCS would draw to
@@ -231,7 +231,7 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
                 _ => {}
             }
         }
-        // ad0v / hat3: non-cutting controller move (G53 machine-coords
+        // Non-cutting controller move (G53 machine-coords
         // or G38.x probe) — skip without touching the work-frame `state`
         // or emitting a segment. See the flag's declaration above for
         // why. Also resets `active_code` so a bare following motion
@@ -320,7 +320,7 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
             // the source line").
             //
             // Center comes from the I/J offset form when present;
-            // otherwise (u7jn) reconstruct it from the radius form
+            // otherwise reconstruct it from the radius form
             // (`G2/G3 X Y R<r>`, no I/J). ivac's own emitters always
             // use I/J, but raw `GcodeInclude` bodies may use R-form —
             // without this they'd be drawn / carved as a straight chord.
@@ -376,7 +376,7 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
             // ~2° per chord — chord error r·(1-cos(1°)) ≈ 0.00015·r,
             // i.e. <0.0015 mm error on a 10 mm arc. The previous 10°
             // setting left visible scallop "teeth" in ball-nose
-            // finishing-pass heightmaps (audit biot — 0.04 mm on a 10
+            // finishing-pass heightmaps (0.04 mm on a 10
             // mm arc). 2° is fine enough to vanish into normal sim
             // cell_size choice yet only ~5× the chord count of 10°.
             // With a 4-chord minimum a quarter-circle gets at least
@@ -448,7 +448,7 @@ pub fn interpret_with_index(gcode: &str) -> (Vec<ToolpathSegment>, GcodeIndex) {
 /// e.g. `; OP 2 (gcode include: /tmp/return_home.nc)`. We must accept the
 /// trailing parenthesized label, otherwise the `active_op` switch is
 /// missed and every segment born from the program-only block silently
-/// inherits the previous CAM op's id (qls1). We take the first
+/// inherits the previous CAM op's id. We take the first
 /// whitespace-separated token after `OP` and parse THAT — the label
 /// after the first space is ignored.
 fn parse_op_marker(raw: &str) -> Option<u32> {
@@ -515,7 +515,7 @@ mod tests {
         assert!(matches!(segs[2].kind, MoveKind::Retract));
     }
 
-    /// ad0v: a `G53 G0 X.. Y..` machine-coords reposition (the
+    /// A `G53 G0 X.. Y..` machine-coords reposition (the
     /// tool-change-station move) must NOT draw a segment to those
     /// coordinates in the work frame, and must NOT corrupt the tracked
     /// position — the next absolute move re-establishes WCS. Here the
@@ -540,7 +540,7 @@ mod tests {
         assert!(matches!(last.kind, MoveKind::Cut));
     }
 
-    /// hat3: a `G38.2 Z<dist>` probe must NOT draw a segment to the full
+    /// A `G38.2 Z<dist>` probe must NOT draw a segment to the full
     /// search distance (the head stops at an unknown trigger, not at the
     /// commanded depth) — otherwise the previewer fabricates a deep
     /// phantom plunge. The cut after the probe runs from the pre-probe
@@ -552,7 +552,7 @@ mod tests {
         // No segment should dive toward the -50 search limit. The floor is
         // a generous -1.0 so a real phantom plunge (z ≈ -50) is caught
         // while the legitimate opening rapid from the machine origin
-        // (z = 0) and the z = 2 work moves both pass — vl7w: the prior
+        // (z = 0) and the z = 2 work moves both pass — the prior
         // `>= 2.0` floor wrongly rejected that origin rapid (from.z = 0).
         assert!(
             segs.iter().all(|s| s.to.z > -1.0 && s.from.z > -1.0),
@@ -718,7 +718,7 @@ mod tests {
         assert_eq!(segs[2].op_id, 2);
     }
 
-    /// qls1: program-only ops (Pause, Homing, Probe, `CycleMarker`,
+    /// Program-only ops (Pause, Homing, Probe, `CycleMarker`,
     /// `GcodeInclude`) emit `; OP <n> (<label>)` headers — the trailing
     /// parenthesized label must not block the `active_op` switch.
     /// Before the fix, `parse_op_marker` ran `parse::<u32>` against the
@@ -793,7 +793,7 @@ mod tests {
 }
 
 /// Register this module's wire types in the OpenAPI components map.
-/// Co-located with the type definitions (kb1y) so adding a wire type is
+/// Co-located with the type definitions so adding a wire type is
 /// a same-file edit; `crate::schema::components_schemas` composes these.
 pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
     crate::schema::insert::<ToolpathSegment>(map, "ToolpathSegment");

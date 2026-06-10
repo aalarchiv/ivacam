@@ -60,7 +60,7 @@
   /// report to the exact binary. Format: "ivaCAM v<pkg>
   /// (<git-describe>)" — package version comes from
   /// frontend/package.json via the `__IVAC_PKG_VERSION__` define
-  /// baked by vite.config.ts (audit qcvl), git-describe via
+  /// baked by vite.config.ts, git-describe via
   /// `__IVAC_BUILD_VERSION__`. `document.title` updates on every
   /// paint that touches the effect, but it's cheap.
   const pkgVersion = typeof __IVAC_PKG_VERSION__ === 'string' ? __IVAC_PKG_VERSION__ : '0.0.0';
@@ -135,7 +135,7 @@
   // Pane-transition logic lives in lib/state/sidebar-pane.ts (pure +
   // unit-tested). `activateSidebarPane` is the caret-click TOGGLE;
   // `revealSidebarPane` is the non-toggling "show me this pane now"
-  // used by programmatic flows (ervd).
+  // used by programmatic flows.
   let activeSidebarPane = $state<SidebarPane>('layers');
   /// Last non-current pane. Initial value matches "user hasn't
   /// switched yet but wants Operations" — the most likely return
@@ -555,17 +555,17 @@
     }
     return null;
   });
-  /// pbi4: when the canvas selection is non-empty, the status bar
-  /// shows the union bbox of selected objects as (center · L × W).
-  /// Empty selection falls back to the import-wide bbox + segment
-  /// count so the user still sees the drawing's extent.
+  /// When the canvas selection is non-empty, the status bar shows the
+  /// union bbox of selected objects as (center · L × W). Empty
+  /// selection falls back to the import-wide bbox + segment count so
+  /// the user still sees the drawing's extent.
   const statusInfoText = $derived.by<string>(() => {
     const imp = project.transformedImport;
     if (!imp) return 'Ready';
     const meta = imp.object_meta ?? [];
     const sel = project.sel.selectedObjects;
     if (sel.size > 0 && meta.length > 0) {
-      // 7iej.7: object ids are NOT a dense 1-based index into `meta` —
+      // Object ids are NOT a dense 1-based index into `meta` —
       // combineImports namespaces later drawings' ids by an offset, so
       // `meta[id - 1]` reads the wrong (or no) entry once a second drawing
       // is added. Resolve by id, like seriesSelectTo does.
@@ -689,7 +689,7 @@
       <span>Text</span>
     </button>
     <span class="tb-sep"></span>
-    <!-- anvm: always-visible entries for the three config dialogs that
+    <!-- Always-visible entries for the three config dialogs that
          otherwise only live under the Tools menu. Frequent edits, easy
          to miss behind menu bar. Menu items stay for keyboard / muscle
          memory. -->
@@ -1009,9 +1009,9 @@
     align-items: center;
     gap: 0.35rem;
   }
-  /* anvm: single-glyph config-dialog buttons (M / T / ⚙). Slightly
-     bigger glyph + square button so they read as icons rather than
-     truncated text. */
+  /* Single-glyph config-dialog buttons (M / T / ⚙). Slightly bigger
+     glyph + square button so they read as icons rather than truncated
+     text. */
   .tb-btn.icon.config {
     min-width: 1.8rem;
     justify-content: center;
@@ -1234,14 +1234,13 @@
     text-overflow: ellipsis;
   }
   footer.footer-pick {
-    /* n79: active canvas-pick mode — accent-tinted status bar
-       grabs the eye so the user knows the canvas isn't in its
-       normal selection mode. */
+    /* Active canvas-pick mode — accent-tinted status bar grabs the eye
+       so the user knows the canvas isn't in its normal selection mode. */
     background: color-mix(in srgb, var(--accent) 18%, var(--bg-panel));
     color: var(--text);
     font-weight: 600;
   }
-  /* dteo: drop overlay while user is dragging a file over the window. */
+  /* Drop overlay while user is dragging a file over the window. */
   .drop-overlay {
     position: fixed;
     inset: 0;

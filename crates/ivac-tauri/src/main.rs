@@ -36,7 +36,7 @@ fn main() {
 /// Mesa's `libgallium` registers an atexit destructor that, when run
 /// from inside the `WebKit` renderer's normal `exit()` path on Arch /
 /// recent Mesa, double-frees an internal allocation; glibc's malloc
-/// heap-corruption detector catches it and SIGABRTs (bd issue 2re4).
+/// heap-corruption detector catches it and SIGABRTs.
 ///
 /// Killing the children with SIGKILL while we're still alive means the
 /// renderer dies via signal before its `main()` can return, so
@@ -181,7 +181,7 @@ fn run() -> tauri::Result<()> {
             commands::is_debug,
             commands::clear_pipeline_cache_cmd,
         ])
-        // qjec: intercept window close so the user can confirm
+        // Intercept window close so the user can confirm
         // discarding unsaved work. First CloseRequested call emits an
         // event to the frontend and prevents close; the frontend
         // responds by either invoking `confirm_close` (which flips the
@@ -218,7 +218,7 @@ fn run() -> tauri::Result<()> {
         })
         .build(tauri::generate_context!())?
         .run(|_app, event| {
-            // 2re4: SIGKILL WebKit's helper processes the moment we
+            // SIGKILL WebKit's helper processes the moment we
             // know the app is about to exit, so the renderer dies via
             // signal instead of returning from `main()` and tripping
             // Mesa's broken atexit destructor. ExitRequested fires

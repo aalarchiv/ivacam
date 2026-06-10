@@ -1,11 +1,11 @@
-/// UI-selection slice of ProjectState (audit 6cpl). Owns every
+/// UI-selection slice of ProjectState. Owns every
 /// "what's the user currently looking at" field plus the simple
 /// mutation methods. The cross-slice walks (series-select, which
 /// reads `imported.object_meta` + `visibleLayers`) stay on the
 /// parent `ProjectState` as orchestrators that call the slice's
 /// `selectObjects` here.
 ///
-/// 80gv: object selection (`selectedObjects` + `selectionAnchorObjectId`)
+/// Object selection (`selectedObjects` + `selectionAnchorObjectId`)
 /// is now in the undo/redo stack via a marksDirty=false Command —
 /// `ProjectState.selectObjects` etc. push through History. Other
 /// view-state fields (selectedOpId, hoverSegment, …) are still NOT
@@ -58,7 +58,7 @@ export function selectionsEqual(a: ReadonlySet<number>, b: ReadonlySet<number>):
 /// affordance ("Pick on canvas" buttons in OpPropertiesPanel) and the
 /// 2D canvas / status-bar swap to the matching interaction while it's
 /// non-null. Sticky: stays active across multiple picks until the user
-/// presses Escape or clicks the panel button again (n79).
+/// presses Escape or clicks the panel button again.
 export type PickMode = { kind: 'approach-point'; opId: number };
 
 export class SelectionState {
@@ -97,7 +97,7 @@ export class SelectionState {
   /// whose id matches. Cleared by the dialog on close.
   toolsDialogFocusId = $state<number | null>(null);
 
-  /// Active canvas-pick interaction (n79). When set, the 2D canvas
+  /// Active canvas-pick interaction. When set, the 2D canvas
   /// behaves as a picker for the named target on the named op, and
   /// the status bar prompts "ESC to finalize". Cleared on Escape, on
   /// clicking the panel button a second time, or when the op /
@@ -121,7 +121,7 @@ export class SelectionState {
   ///   * `'add'`     — union into the current selection (Shift+…)
   ///   * `'toggle'`  — flip each id (Ctrl+… / Cmd+…)
   ///
-  /// Updates `selectionAnchorObjectId` per the audit-eqxd rules:
+  /// Updates `selectionAnchorObjectId` per the selection rules:
   /// a single-id replace or add lands the anchor on that id; a
   /// bulk replace (box-select) clears it; a toggle that adds the
   /// id sets it, a toggle that removes the id leaves it alone.

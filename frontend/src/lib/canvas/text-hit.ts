@@ -1,6 +1,6 @@
-// fx06: precise stroke-distance hit-test for text layers on the 2D
-// canvas. A text layer's bbox is mostly whitespace, so selecting/grabbing
-// it by bbox would steal clicks meant for geometry around the glyphs.
+// Precise stroke-distance hit-test for text layers on the 2D canvas.
+// A text layer's bbox is mostly whitespace, so selecting/grabbing it
+// by bbox would steal clicks meant for geometry around the glyphs.
 // Instead we measure the distance to the rendered glyph STROKES (the
 // same `previewSegmentsFor` segments drawn on the canvas) and only hit
 // when the cursor is within the pixel tolerance of an actual stroke.

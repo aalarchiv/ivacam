@@ -3,9 +3,9 @@
 //!
 //! Run from [`super::run_standard_op`] when the op kind matches
 //! `OpKind::Drill { cycle }`. Emits the canned cycle via
-//! `emit_drill_block`, then — when `chamfer_after_width_mm` is set
-//! (rt1.20 Stufenfase) — walks a single revolution at each hole's
-//! rim at the V-bit chamfer depth.
+//! `emit_drill_block`, then — when `chamfer_after_width_mm` is set —
+//! walks a single Stufenfase revolution at each hole's rim at the
+//! V-bit chamfer depth.
 
 // CAM/sim pedantic-lint exemption: lead-ramp sample counts are
 // bounded by a tiny constant; the f64 cast for trig math is fine.
@@ -24,9 +24,9 @@ use crate::pipeline::{
 use crate::project::{DrillCycle, Op, OpKind, Project, SpotConfig};
 
 /// Returns `true` when the driver actually emitted an internal
-/// drill→chamfer toolchange envelope (nguf). Used by `run_per_op` to
-/// decide whether to bias `prev_tool_id` to `finish_tool_id` for the
-/// next op's M6 decision.
+/// drill→chamfer toolchange envelope. Used by `run_per_op` to decide
+/// whether to bias `prev_tool_id` to `finish_tool_id` for the next
+/// op's M6 decision.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn run_drill<P: PostProcessor>(
     op: &Op,
@@ -39,10 +39,10 @@ pub(super) fn run_drill<P: PostProcessor>(
     last_pos: &mut Point2,
     warnings: &mut Vec<PipelineWarning>,
 ) -> Result<bool, PipelineError> {
-    // r2af: optional spot/centerdrill pre-pass BEFORE the main drill
-    // block. Twist drills walk on hard / polished stock — the spot
-    // dimple locks the chisel edge so the main bit drops on-nominal.
-    // The pre-pass runs at every hole center the offset list contains
+    // Optional spot/centerdrill pre-pass BEFORE the main drill block.
+    // Twist drills walk on hard / polished stock — the spot dimple
+    // locks the chisel edge so the main bit drops on-nominal. The
+    // pre-pass runs at every hole center the offset list contains
     // (Simple G81 cycle, depth = spot_depth_mm).
     if let OpKind::Drill {
         spot_first: Some(spot),
@@ -55,10 +55,9 @@ pub(super) fn run_drill<P: PostProcessor>(
     // when the op's own peck_step_mm is unset (== 0).
     let resolved_cycle = resolve_peck_step(cycle, project, op);
     emit_drill_block(setup, offsets, resolved_cycle, post, last_pos);
-    // rt1.20 (Stufenfase): when the drill op carries a
-    // chamfer-after width, walk a single revolution at each hole's
-    // rim at the V-bit chamfer depth.
-    // kbx5 step 2: Stufenfase width is now on the OpKind::Drill variant.
+    // When the drill op carries a chamfer-after width, walk a single
+    // revolution at each hole's rim at the V-bit chamfer depth.
+    // Stufenfase width lives on the OpKind::Drill variant.
     if let Some(w) = op.drill_chamfer_after_width_mm() {
         if w > 0.0 {
             return emit_stufenfase(op, project, objects, setup, w, post, last_pos, warnings);
@@ -67,16 +66,16 @@ pub(super) fn run_drill<P: PostProcessor>(
     Ok(false)
 }
 
-/// r2af: emit the spot/centerdrill pre-pass at every hole the main
-/// drill op targets. Runs BEFORE the main drill block. Uses a
-/// Simple G81 cycle (no peck — at 0.3-1.0 mm depths the peck would
-/// retract above stock between every micro-peck, pointless). When
-/// `spot.spot_tool_id` differs from `op.tool_id` the function emits
-/// the standard safety envelope around both swaps (main → spot at
-/// entry, spot → main on exit) so the operator hand-changes both
-/// times. Positive / zero / non-finite `spot_depth_mm` collapses
-/// the spot to a no-op (early return) — the field gate is
-/// `Option<SpotConfig>` but we still defend against bogus values.
+/// Emit the spot/centerdrill pre-pass at every hole the main drill op
+/// targets. Runs BEFORE the main drill block. Uses a Simple G81 cycle
+/// (no peck — at 0.3-1.0 mm depths the peck would retract above stock
+/// between every micro-peck, pointless). When `spot.spot_tool_id`
+/// differs from `op.tool_id` the function emits the standard safety
+/// envelope around both swaps (main → spot at entry, spot → main on
+/// exit) so the operator hand-changes both times. Positive / zero /
+/// non-finite `spot_depth_mm` collapses the spot to a no-op (early
+/// return) — the field gate is `Option<SpotConfig>` but we still
+/// defend against bogus values.
 #[allow(clippy::too_many_arguments)]
 fn emit_spot_pre_pass<P: PostProcessor>(
     op: &Op,
@@ -158,7 +157,7 @@ fn emit_spot_pre_pass<P: PostProcessor>(
             spot_tool.id,
             false,
             // Spot pre-pass runs at the spot tool's library speed — no
-            // finish-pass override here (liyy).
+            // finish-pass override here.
             None,
         );
     }
@@ -188,7 +187,7 @@ fn emit_spot_pre_pass<P: PostProcessor>(
             Some(main_tool),
             main_tool.id,
             false,
-            // Returning to the main drill tool's own speed (liyy).
+            // Returning to the main drill tool's own speed.
             None,
         );
     }
@@ -199,8 +198,8 @@ fn emit_spot_pre_pass<P: PostProcessor>(
 /// V-bit depth comes from the cutter's tip angle and the user-set
 /// chamfer width. Honors `op.finish_tool_id` for dual-tool
 /// drill+chamfer setups. Returns `true` when an actual drill→chamfer
-/// toolchange envelope was emitted (nguf).
-// juvx: small consts live near their use sites; the chamfer-after-
+/// toolchange envelope was emitted.
+// Small consts live near their use sites; the chamfer-after-
 // drill flow has natural top-to-bottom math that hoisting splits.
 #[allow(
     clippy::too_many_arguments,
@@ -217,7 +216,7 @@ fn emit_stufenfase<P: PostProcessor>(
     last_pos: &mut Point2,
     warnings: &mut Vec<PipelineWarning>,
 ) -> Result<bool, PipelineError> {
-    // sq8z: rim chamfer is now emitted as a single G2/G3 full-circle
+    // Rim chamfer is now emitted as a single G2/G3 full-circle
     // (via `emit_stufenfase_rim_block`) plus a short angled lead-in
     // ramp. The legacy 64-chord-G1 polyline path is gone.
     let cutter_id = op.finish_tool_id.unwrap_or(op.tool_id);
@@ -226,11 +225,11 @@ fn emit_stufenfase<P: PostProcessor>(
         .iter()
         .find(|t| t.id == cutter_id)
         .ok_or(PipelineError::UnknownTool(op.id, cutter_id))?;
-    // e63q: pass tip_diameter so the cone math accounts for the
-    // bit's nose-flat (engraver-style V-bits have a small flat that
-    // shifts the cone's z=0 width).
+    // Pass tip_diameter so the cone math accounts for the bit's
+    // nose-flat (engraver-style V-bits have a small flat that shifts
+    // the cone's z=0 width).
     //
-    // 2wx2: use the tool-reach-aware variant (mirrors the Chamfer
+    // Use the tool-reach-aware variant (mirrors the Chamfer
     // setup_resolver path). An over-large rim-chamfer width would
     // otherwise drive the V-bit shank — not the cone — into stock.
     // The cap clamps the width to (diameter - tip) / 2 and reports
@@ -277,7 +276,7 @@ fn emit_stufenfase<P: PostProcessor>(
             continue;
         };
         if !matches!(first.kind, SegmentKind::Circle) {
-            // s43q: stufenfase only chamfers true Circle objects today.
+            // Stufenfase only chamfers true Circle objects today.
             // Closed contours that are arcs / lines / polygons get
             // dropped without complaint, leaving the user wondering why
             // their square holes got no rim chamfer. Warn explicitly so
@@ -292,16 +291,16 @@ fn emit_stufenfase<P: PostProcessor>(
         if r < 0.05 {
             continue;
         }
-        // x412: insert a spiral lead-in BEFORE the flat revolution so
-        // the V-bit doesn't plunge vertically at the rim. Match the pmpk
-        // pattern: ramp Z from 0 down to chamfer_z at LEAD_IN_ANGLE_DEG
-        // (10°) from horizontal along the rim, then walk one full
-        // revolution at chamfer_z. If the rim's circumference is too
-        // short for the 10° ramp, the lead-in occupies the full
-        // circumference and the slope steepens (depth still reaches
-        // chamfer_z — still better than a vertical plunge).
+        // Insert a spiral lead-in BEFORE the flat revolution so
+        // the V-bit doesn't plunge vertically at the rim. Ramp Z from 0
+        // down to chamfer_z at LEAD_IN_ANGLE_DEG (10°) from horizontal
+        // along the rim, then walk one full revolution at chamfer_z.
+        // If the rim's circumference is too short for the 10° ramp,
+        // the lead-in occupies the full circumference and the slope
+        // steepens (depth still reaches chamfer_z — still better than
+        // a vertical plunge).
         //
-        // sq8z: emit the flat revolution as a single G2/G3 full-circle
+        // Emit the flat revolution as a single G2/G3 full-circle
         // (handled by `emit_stufenfase_rim_block`) rather than the
         // pre-fix 64-chord G1 polyline. Only the ramp's varying-Z piece
         // still needs polyline samples — at LEAD_RAMP_STEPS the chord
@@ -373,7 +372,7 @@ fn emit_stufenfase<P: PostProcessor>(
                 "; stufenfase: toolchange to {} for hole-rim chamfer",
                 finish_setup.tool.number
             ));
-            // bd rwv8: wrap the drill→chamfer M6 in the safety envelope
+            // Wrap the drill→chamfer M6 in the safety envelope
             // (safe-Z → M5+dwell → M6 → z-shift → M3+dwell). The
             // previous code emitted `T<n> M6` immediately after the
             // drill block ended, with the spindle still spinning and
@@ -385,7 +384,7 @@ fn emit_stufenfase<P: PostProcessor>(
                 Some(cutter),
                 finish_setup.tool.number,
                 false,
-                // liyy: the rim-chamfer block emits at the resolved finish
+                // The rim-chamfer block emits at the resolved finish
                 // RPM — spin up to it directly to avoid a transient M3 at
                 // the rough speed.
                 Some(finish_setup.tool.speed),
@@ -703,8 +702,7 @@ mod tests {
         );
     }
 
-    /// Drill op picks the per-tool _drill speed/feed/plunge variants
-    /// (rt1.27).
+    /// Drill op picks the per-tool _drill speed/feed/plunge variants.
     #[test]
     fn drill_op_uses_drill_set() {
         let mut tool = endmill(1, 3.0);
@@ -752,7 +750,7 @@ mod tests {
     }
 
     /// Drill op with peck cycle and `peck_step_mm=0` falls back to the
-    /// tool's `default_peck_step_mm` (rt1.27).
+    /// tool's `default_peck_step_mm`.
     #[test]
     fn drill_peck_uses_tool_default_when_op_step_zero() {
         let mut tool = endmill(1, 3.0);
@@ -792,9 +790,9 @@ mod tests {
         );
     }
 
-    /// Stufenfase (rt1.20): a drill op with `chamfer_after_width_mm`
-    /// follows the drill cycle with a constant-Z revolution at each
-    /// hole's rim, computed from the cutter's tip angle.
+    /// A drill op with `chamfer_after_width_mm` follows the drill cycle
+    /// with a constant-Z revolution at each hole's rim, computed from
+    /// the cutter's tip angle.
     #[test]
     fn drill_with_chamfer_after_emits_constant_z_revolution() {
         let mut vbit_drill = vbit();
@@ -849,19 +847,19 @@ mod tests {
             "expected drill cycle (G81/G82):\n{}",
             resp.gcode
         );
-        // e63q: with the vbit's 0.1mm tip flat, chamfer revolution Z
-        // = -(1 - 0.05) / tan(45°) = -0.95 (not -1; the pre-e63q
+        // With the vbit's 0.1mm tip flat, chamfer revolution Z
+        // = -(1 - 0.05) / tan(45°) = -0.95 (not -1; the earlier
         // formula ignored the tip flat).
         assert!(
             resp.gcode.contains("Z-0.95"),
-            "expected chamfer revolution at Z-0.95 (90° tip + 1mm width, e63q tip-flat correction):\n{}",
+            "expected chamfer revolution at Z-0.95 (90° tip + 1mm width, tip-flat correction):\n{}",
             resp.gcode
         );
     }
 
-    /// 2wx2: an over-large rim-chamfer width must be clamped to the
-    /// V-bit's physical reach `(diameter - tip) / 2` (so the cone, not
-    /// the shank, does the cutting) AND surface a
+    /// An over-large rim-chamfer width must be clamped to the V-bit's
+    /// physical reach `(diameter - tip) / 2` (so the cone, not the
+    /// shank, does the cutting) AND surface a
     /// `chamfer_width_clamped_to_reach` warning — mirroring the Chamfer
     /// op's setup_resolver path. Pre-fix this drove an un-capped Z
     /// straight into stock with no warning.
@@ -930,8 +928,7 @@ mod tests {
     }
 
     /// Drill with `chamfer_after` AND a distinct `finish_tool_id` emits
-    /// the toolchange between the drill cycle and the chamfer
-    /// revolution (rt1.20 × rt1.33).
+    /// the toolchange between the drill cycle and the chamfer revolution.
     #[test]
     fn drill_chamfer_after_with_tool_override_emits_m6() {
         let mut drill = vbit();
@@ -993,7 +990,7 @@ mod tests {
         );
     }
 
-    /// olpn: a drill op followed by a profile op must emit G80 (cancel
+    /// A drill op followed by a profile op must emit G80 (cancel
     /// canned cycle) inside the drill block before the next op's first
     /// G0. Otherwise FANUC / Mach3 reinterpret that G0 as another
     /// invocation of the same drill cycle at the modal Z / R.
@@ -1073,15 +1070,14 @@ mod tests {
         );
     }
 
-    /// x412: a stufenfase chamfer must not begin with a vertical
-    /// G1 plunge at the rim XY. Pre-fix `emit_stufenfase` built a
-    /// flat 64-point polyline at `chamfer_z` directly, and
-    /// `emit_vcarve_block` then drove the cutter G1 down from
-    /// `start_depth=0` to `chamfer_z` at the SAME XY as the first
-    /// rim point — a vertical plunge that snaps sharp V-bit tips on
-    /// hardwood / aluminum. The fix prepends a spiral lead-in
-    /// (`LEAD_IN_ANGLE_DEG=10`°) so the first G1 with a Z change also
-    /// moves in XY.
+    /// A stufenfase chamfer must not begin with a vertical G1 plunge
+    /// at the rim XY. Pre-fix `emit_stufenfase` built a flat 64-point
+    /// polyline at `chamfer_z` directly, and `emit_vcarve_block` then
+    /// drove the cutter G1 down from `start_depth=0` to `chamfer_z` at
+    /// the SAME XY as the first rim point — a vertical plunge that snaps
+    /// sharp V-bit tips on hardwood / aluminum. The fix prepends a
+    /// spiral lead-in (`LEAD_IN_ANGLE_DEG=10`°) so the first G1 with a
+    /// Z change also moves in XY.
     #[test]
     fn stufenfase_first_g1_is_not_vertical_plunge_at_rim() {
         let mut vbit_drill = vbit();
@@ -1173,20 +1169,19 @@ mod tests {
             .unwrap_or_else(|| panic!("x412: expected a chamfer-descent G1 in:\n{chamfer}"));
         assert!(
             first.contains('X') || first.contains('Y'),
-            "x412: first chamfer descent must include XY motion (spiral lead-in), \
+            "first chamfer descent must include XY motion (spiral lead-in), \
              got pure vertical plunge: `{first}`\nchamfer block:\n{chamfer}"
         );
     }
 
-    /// sq8z: the rim revolution emits as a single G2/G3 full-circle
-    /// (which the linuxcnc / grbl posts may split into two half-arcs
-    /// for full-circle handling) rather than the legacy 64-chord G1
-    /// polyline. The total G2+G3 lines for the rim should be a small
-    /// number (1 or 2 from full-circle splitting); the chamfer block
-    /// should contain at most a handful of G1 moves (the lead-in
-    /// ramp).
+    /// The rim revolution emits as a single G2/G3 full-circle (which the
+    /// linuxcnc / grbl posts may split into two half-arcs for full-circle
+    /// handling) rather than the legacy 64-chord G1 polyline. The total
+    /// G2+G3 lines for the rim should be a small number (1 or 2 from
+    /// full-circle splitting); the chamfer block should contain at most a
+    /// handful of G1 moves (the lead-in ramp).
     #[test]
-    fn sq8z_stufenfase_rim_emits_g2_full_circle_not_64_g1() {
+    fn stufenfase_rim_emits_g2_full_circle_not_64_g1() {
         let mut vbit_drill = vbit();
         vbit_drill.kind = ToolKind::Drill;
         vbit_drill.diameter = 3.0;
@@ -1302,12 +1297,11 @@ mod tests {
         );
     }
 
-    /// r2af: a Drill op with `spot_first` set emits a spot pre-pass
-    /// at every hole center BEFORE the main drill block. The spot
-    /// block uses a Simple G81 cycle (no peck) and runs at the
-    /// configured `spot_depth_mm`. When the spot tool differs from
-    /// the main drill tool, two toolchanges fire (main → spot, then
-    /// spot → main).
+    /// A Drill op with `spot_first` set emits a spot pre-pass at every
+    /// hole center BEFORE the main drill block. The spot block uses a
+    /// Simple G81 cycle (no peck) and runs at the configured
+    /// `spot_depth_mm`. When the spot tool differs from the main drill
+    /// tool, two toolchanges fire (main → spot, then spot → main).
     #[test]
     fn drill_with_spot_first_emits_spot_pre_pass_block() {
         let center = Point2::new(5.0, 7.0);
@@ -1399,8 +1393,8 @@ mod tests {
         );
     }
 
-    /// r2af: a Drill op WITHOUT `spot_first` set must NOT emit any
-    /// spot block — the legacy path is exactly preserved.
+    /// A Drill op WITHOUT `spot_first` set must NOT emit any spot block —
+    /// the legacy path is exactly preserved.
     #[test]
     fn drill_without_spot_first_emits_no_spot_block() {
         let project = Project {

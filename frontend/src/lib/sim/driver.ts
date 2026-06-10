@@ -1,4 +1,4 @@
-/// Glue between the WASM Simulator (jbj) and the HeightfieldMesh (hvv):
+/// Glue between the WASM Simulator and the HeightfieldMesh:
 /// owns one Simulator + one HeightfieldMesh per active project.gen.generated,
 /// drives advance() on playhead change, and refreshes the affected mesh
 /// region using the Float32Array view re-taken after every advance.
@@ -43,7 +43,7 @@ interface SimulatorWasm {
     topZ: number,
   ): SimulatorWasm;
   reset(): void;
-  /// wpzm: record that the JS driver coarsened cell_size to fit the
+  /// Record that the JS driver coarsened cell_size to fit the
   /// user's maxSimulationCells budget. The warning rides out via
   /// take_diagnostics() so the UI surfaces it like any other sim
   /// warning instead of silently smoothing out small features.
@@ -56,7 +56,7 @@ interface SimulatorWasm {
   /// Carve only chunk `[t_start, t_end]` of segment `seg_idx`. Used per
   /// render frame so the heightfield destruction follows the cutter
   /// inside long segments (drill plunges) instead of popping at segment
-  /// boundaries (pi8r).
+  /// boundaries.
   partial_advance(tool: unknown, seg_idx: number, t_start: number, t_end: number): Uint32Array;
   set_fixtures(fixtures: unknown): void;
   set_toolpath(segments: unknown): number;
@@ -70,7 +70,7 @@ interface SimulatorWasm {
   origin_y(): number;
   top_z(): number;
   data_ptr(): number;
-  /// 9c34: serialize the carved heightfield as a binary STL. The mesh
+  /// Serialize the carved heightfield as a binary STL. The mesh
   /// drops to `stock_bottom_z` at every perimeter sample so the result
   /// is watertight.
   export_stl(stock_bottom_z: number): Uint8Array;
@@ -136,8 +136,7 @@ async function loadWasm(): Promise<WasmHandle> {
 /// IMPORTANT: this is the SECOND wire seam after `buildTool`, both of
 /// them feeding the same Rust `ToolKind` deserializer. The kind name
 /// must go through `toWireToolKind` so the frontend `cone` becomes the
-/// backend `kegel` (8njb / regression filed and fixed after the first
-/// rollout missed this seam).
+/// backend `kegel`.
 export function toWireTool(t: ToolEntry): Record<string, unknown> {
   return {
     id: t.id,
@@ -163,7 +162,7 @@ export function toWireTool(t: ToolEntry): Record<string, unknown> {
     // Per-kind sim/holder metadata so the heightfield simulator can
     // pick the right cutter profile and holder-check uses the right
     // shank dims. Bull-nose collapses to a fillet profile in the sim;
-    // form-profile (incl. the folded-in T-slot, z5yw) carves its (z, r)
+    // form-profile (incl. the folded-in T-slot) carves its (z, r)
     // sample list when ≥2 rows are present.
     ...(t.cornerRadiusMm !== undefined ? { corner_radius_mm: t.cornerRadiusMm } : {}),
     ...(t.kind === 'form_profile' && t.formProfileMm !== undefined && t.formProfileMm.length >= 2
@@ -173,13 +172,13 @@ export function toWireTool(t: ToolEntry): Record<string, unknown> {
   };
 }
 
-/// vrrr: `computeFootprint` moved to the THREE-free `./footprint`
+/// `computeFootprint` moved to the THREE-free `./footprint`
 /// module so the API layer can resolve the stock box without importing
 /// this THREE-heavy driver. Imported for this module's own `build()` use
 /// and re-exported for the existing 3D-scene import sites.
 export { computeFootprint };
 
-/// 5v1b: the in-browser (`?api=wasm`) trial runs the sim single-threaded
+/// The in-browser (`?api=wasm`) trial runs the sim single-threaded
 /// on the main thread, so a too-fine heightfield makes `set_toolpath` /
 /// `advance` / mesh upload stutter the UI. Cap the grid harder there.
 /// This is the single fidelity knob: a lower-res carve PREVIEW is an
@@ -211,7 +210,7 @@ export interface DriverOptions {
   requestRender: () => void;
 }
 
-/// 9c34: module-level reference to the live driver, set by Scene3D on
+/// Module-level reference to the live driver, set by Scene3D on
 /// mount / cleared on dispose. Lets file_ops trigger an STL export
 /// without circular imports or threading a driver handle through every
 /// component. There is only ever one Scene3D in the app.
@@ -234,11 +233,11 @@ export class HeightfieldDriver {
   /// Reference to the toolpath array that's currently cached on the
   /// WASM Simulator. Used to detect identity drift (e.g. a stale
   /// driver picking up a new Generate response) and trigger a single
-  /// re-cache rather than re-deserializing per frame (audit-9l52).
+  /// re-cache rather than re-deserializing per frame.
   private cachedToolpath: ToolpathSegment[] | null = null;
   /// Position in the toolpath that the heightfield is fully carved up
   /// to. Semantics: segments `[0, appliedSeg)` are bulk-carved; segment
-  /// `appliedSeg` is carved up to `partialT ∈ [0, 1]` (pi8r). Together
+  /// `appliedSeg` is carved up to `partialT ∈ [0, 1]`. Together
   /// they fully describe the rendered destruction state and let the
   /// driver issue tiny partial carves per render frame.
   private appliedSeg = 0;
@@ -269,7 +268,7 @@ export class HeightfieldDriver {
     this.group = new THREE.Group();
     this.group.visible = false;
     opts.scene.add(this.group);
-    // 9c34: register as the live driver so file_ops can reach it.
+    // Register as the live driver so file_ops can reach it.
     // eslint-disable-next-line @typescript-eslint/no-this-alias -- singleton registry
     currentDriver = this;
   }
@@ -292,7 +291,7 @@ export class HeightfieldDriver {
       thickness: number;
       customX: number;
       customY: number;
-      /// ya00: Z of the stock top plane (default 0 = top at WCS z=0).
+      /// Z of the stock top plane (default 0 = top at WCS z=0).
       offsetZ?: number;
     };
     settings: AppSettings;
@@ -311,9 +310,9 @@ export class HeightfieldDriver {
     // (4 bytes / cell). Halve cell density only when the user's
     // setting is exceeded — accurately reflecting their preference.
     // The GPU-side cap is handled separately by the LOD pyramid
-    // (9tba) via `maxRenderTriangles`, so high sim accuracy no
+    // via `maxRenderTriangles`, so high sim accuracy no
     // longer forces a coarse mesh.
-    // 5v1b: in the in-browser wasm trial the sim is single-threaded on
+    // In the in-browser wasm trial the sim is single-threaded on
     // the main thread, so clamp harder to keep rebuild + scrub smooth.
     const isWasm = isWasmTransport();
     const simCellCap = effectiveSimCellCap(input.settings.maxSimulationCells, isWasm);
@@ -324,7 +323,7 @@ export class HeightfieldDriver {
       effectiveCellSize = cellSize * scale;
       coarsened = true;
     }
-    // ya00: stock top plane Z (default 0). Carving descends from here;
+    // Stock top plane Z (default 0). Carving descends from here;
     // the floor is topZ − thickness. Toolpath Z is absolute (WCS), so a
     // raised top models zeroing below the stock surface.
     const topZ = input.stock.offsetZ ?? 0;
@@ -335,10 +334,10 @@ export class HeightfieldDriver {
     const stockThickness = input.stock.thickness > 0 ? input.stock.thickness : 10.0;
     this.dispose();
     this.sim = new this.wasm.Simulator(fp.minX, fp.minY, fp.maxX, fp.maxY, effectiveCellSize, topZ);
-    // wpzm: surface the coarsening as a sim warning so it shows up in
+    // Surface the coarsening as a sim warning so it shows up in
     // the diagnostics panel — silently coarsening the grid hid
     // tool-engagement and small-feature issues from the user.
-    // ujs2/5v1b: but ONLY when it's user-config-driven (a low
+    // But ONLY when it's user-config-driven (a low
     // maxSimulationCells the user can raise). The wasm-trial cap
     // coarsens by design and isn't user-actionable — warning there just
     // floods the diagnostics window (it's a sticky warning re-emitted
@@ -346,7 +345,7 @@ export class HeightfieldDriver {
     if (coarsened && !isWasm && typeof this.sim.push_cell_size_coarsened === 'function') {
       this.sim.push_cell_size_coarsened(cellSize, effectiveCellSize, 'max_simulation_cells');
     }
-    // 9tba: pick the lowest LOD level whose mesh fits the user's
+    // Pick the lowest LOD level whose mesh fits the user's
     // `maxRenderTriangles` budget. Skip building finer (heavier)
     // levels so total GPU memory stays predictable.
     const simCols = this.sim.cols();
@@ -376,8 +375,8 @@ export class HeightfieldDriver {
       this.sim.set_fixtures([]);
     }
     // Cache the toolpath on the WASM side ONCE per Generate so per-frame
-    // advance() doesn't re-deserialize the whole segment array
-    // (audit-9l52). The cached toolpath is the reference identity tracked
+    // advance() doesn't re-deserialize the whole segment array.
+    // The cached toolpath is the reference identity tracked
     // by `cachedToolpath` below.
     this.sim.set_toolpath(input.generated.toolpath);
     this.cachedToolpath = input.generated.toolpath;
@@ -399,7 +398,7 @@ export class HeightfieldDriver {
     this.partialT = 0;
     this.diagnostics = { warnings: [] };
     this.notifyDiagnostics();
-    // 9tba: clear the LOD pyramid's coarse pools so the next
+    // Clear the LOD pyramid's coarse pools so the next
     // updateHeights doesn't pick up stale carved data from before
     // the reset.
     this.mesh?.reset();
@@ -430,7 +429,7 @@ export class HeightfieldDriver {
   ///
   /// Carving happens at sub-segment resolution: segment `appliedSeg` is
   /// carved up to `partialT` and segments `[0, appliedSeg)` are fully
-  /// done (pi8r). Forward steps issue a small `partial_advance` to
+  /// done. Forward steps issue a small `partial_advance` to
   /// extend the in-flight segment, finalize it when crossing a
   /// boundary, and bulk-`advance` any skipped segments in between.
   advanceTo(
@@ -444,7 +443,7 @@ export class HeightfieldDriver {
     toolForSeg: ToolEntry | ((segIdx: number) => ToolEntry),
     cumLen?: Float64Array | null,
     totalLen?: number,
-    /// 27ng: when false (the default), a backward scrub leaves the
+    /// When false (the default), a backward scrub leaves the
     /// heightfield untouched — cells retain their deepest-ever
     /// cuts, and the cursor (`appliedSeg` / `partialT`) does not
     /// move backward, so subsequent forward scrubs resume from the
@@ -452,7 +451,7 @@ export class HeightfieldDriver {
     /// reset + forward-replay path so the heightfield exactly
     /// reflects the cuts up to the new playhead. Replay is O(N)
     /// in segments-replayed and currently has a known visual
-    /// artifact on chunked / LOD meshes (5w9z), so it lives behind
+    /// artifact on chunked / LOD meshes, so it lives behind
     /// a Settings toggle.
     exactRewind: boolean = false,
   ): boolean {
@@ -479,7 +478,7 @@ export class HeightfieldDriver {
     const plan = planAdvance(this.appliedSeg, this.partialT, segIdx, segT, total);
     if (!plan) return false;
 
-    // 27ng: a backward scrub asks the planner to emit `reset: true`
+    // A backward scrub asks the planner to emit `reset: true`
     // plus a forward-replay sequence from t=0 to the new playhead.
     // Default behavior (exactRewind=false) skips the whole advance:
     // the heightmap is forward-monotone (cuts only deepen), so
@@ -487,7 +486,7 @@ export class HeightfieldDriver {
     // subsequent forward scrubs correctly resume from the previous
     // max position. exactRewind=true runs the reset + replay so
     // the visible heights track the playhead — slow on long
-    // programs and currently has a chunked-mesh artifact (5w9z),
+    // programs and currently has a chunked-mesh artifact,
     // which is why it lives behind a Settings toggle.
     if (plan.reset && !exactRewind) {
       // Leave appliedSeg / partialT untouched. The heightmap and
@@ -505,7 +504,7 @@ export class HeightfieldDriver {
       this.sim.reset();
       this.diagnostics = { warnings: [] };
       this.notifyDiagnostics();
-      // 9tba: clear coarse pool data before the forward replay so
+      // Clear coarse pool data before the forward replay so
       // the active LOD level draws an uncut block to start.
       this.mesh?.reset();
       this.refreshHeightView();
@@ -527,7 +526,7 @@ export class HeightfieldDriver {
     // Defensive re-cache if the toolpath identity drifts from the
     // build()-time snapshot (e.g. a Generate response replaced
     // `project.gen.generated.toolpath` without going through build()).
-    // The common path is a no-op compare (audit-9l52).
+    // The common path is a no-op compare.
     if (segments !== this.cachedToolpath) {
       this.sim.set_toolpath(segments);
       this.cachedToolpath = segments;
@@ -580,7 +579,7 @@ export class HeightfieldDriver {
     this.refreshHeightView();
     if (this.heightView) {
       const a = unionAabb as [number, number, number, number] | null;
-      // 5w9z: after a reset-driven backstep replay, do a FULL mesh
+      // After a reset-driven backstep replay, do a FULL mesh
       // re-upload regardless of how small the forward replay's
       // dirty AABB came out. The partial-AABB path leaves cells
       // outside the AABB at whatever the pre-replay state was —
@@ -633,7 +632,7 @@ export class HeightfieldDriver {
     this.opts.requestRender();
   }
 
-  /// 9tba: drive the LOD pyramid's active level. Caller is Scene3D's
+  /// Drive the LOD pyramid's active level. Caller is Scene3D's
   /// render loop, which feeds `pixelsPerL0Cell` from the camera
   /// projection and `maxRenderTriangles` from settings; the pyramid
   /// picks the coarser of the distance- and budget-recommended
@@ -683,7 +682,7 @@ export class HeightfieldDriver {
     return this.sim ? this.sim.cell_size() : null;
   }
 
-  /// 9c34: serialize the carved heightfield as a binary STL. Returns
+  /// Serialize the carved heightfield as a binary STL. Returns
   /// `null` when there is no live simulator (no project loaded yet, or
   /// the driver was disposed). Walls drop to `stockBottomZ` at every
   /// perimeter sample for a watertight mesh.
@@ -718,7 +717,7 @@ export class HeightfieldDriver {
     }
     this.dispose();
     this.opts.scene.remove(this.group);
-    // 9c34: deregister so a stale handle can't be reached.
+    // Deregister so a stale handle can't be reached.
     if (currentDriver === this) currentDriver = null;
   }
 

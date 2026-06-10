@@ -13,7 +13,7 @@
   ///
   /// Drag-and-drop lives entirely in App.svelte (richer drag visual +
   /// the unsaved-changes guard). A duplicate window 'drop' listener here
-  /// used to double-import every dropped file — removed (944t).
+  /// used to double-import every dropped file — removed.
 
   import { onMount } from 'svelte';
   import { wireFileAssociationOpen } from '../state/desktop';

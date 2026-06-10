@@ -37,15 +37,15 @@
     path: string;
     /// CSS @font-face family name registered at mount time; the
     /// dropdown row + sample chip render in this family so the user
-    /// previews the actual font glyphs before choosing (6y3m). For
+    /// previews the actual font glyphs before choosing. For
     /// SVG single-line fonts the browser can't render the glyphs
     /// natively — the family stays unregistered and the dropdown row
     /// falls back to a system-font preview with a 'single-line' chip.
     family: string;
-    /// e3kg: SVG 1.1 single-line fonts (ISO 3098, Hershey, …) emit
-    /// one stroke per centerline at engrave time, vs TTF's filled
-    /// outlines. The UI shows a 'single-line' chip on these rows and
-    /// skips the FontFace registration (browsers can't render them).
+    /// SVG 1.1 single-line fonts (ISO 3098, Hershey, …) emit one stroke
+    /// per centerline at engrave time, vs TTF's filled outlines. The UI
+    /// shows a 'single-line' chip on these rows and skips the FontFace
+    /// registration (browsers can't render them).
     singleLine?: boolean;
   }
 
@@ -73,15 +73,15 @@
   /// pick visually based on the shapes that actually matter.
   const FONT_SAMPLE = 'AaBb 0123 äöß€';
 
-  /// Every editable field, composed into one DialogDraft (kdfh) so a
-  /// single dirty check + discard guard covers the whole form: the
-  /// close path detects "user has typed something" and prompts instead
-  /// of silently discarding the draft.
+  /// Every editable field, composed into one DialogDraft so a single
+  /// dirty check + discard guard covers the whole form: the close path
+  /// detects "user has typed something" and prompts instead of silently
+  /// discarding the draft.
   interface TextDraft {
     text: string;
     style: TextStyle;
     sizeMm: number;
-    /// 969h: horizontal stretch as a percentage. UI exposes 50–200 %;
+    /// Horizontal stretch as a percentage. UI exposes 50–200 %;
     /// stored on TextLayer as a 0.5–2.0 multiplier.
     widthPct: number;
     posX: number;
@@ -121,10 +121,10 @@
   const d = $derived(dd.draft ?? freshDraft());
 
   let userFontFile = $state<File | null>(null);
-  /// 6y3m: dropdown popover state. Each bundled font is registered as a
-  /// FontFace at mount so the rows + selected chip can render in the
-  /// actual font's glyphs (vs the platform default that <select>'s
-  /// option text would have used).
+  /// Dropdown popover state. Each bundled font is registered as a FontFace
+  /// at mount so the rows + selected chip can render in the actual font's
+  /// glyphs (vs the platform default that <select>'s option text would
+  /// have used).
   let fontDropdownOpen = $state(false);
   let fontsLoaded = $state(false);
   onMount(() => {
@@ -132,9 +132,9 @@
     let cancelled = false;
     void Promise.all(
       BUNDLED_FONTS.map(async (f) => {
-        // e3kg: SVG 1.1 fonts can't be loaded via FontFace — browsers
-        // dropped support in SVG 2. The dropdown row uses a system-
-        // font preview labelled 'single-line' instead.
+        // SVG 1.1 fonts can't be loaded via FontFace — browsers dropped
+        // support in SVG 2. The dropdown row uses a system-font preview
+        // labelled 'single-line' instead.
         if (f.singleLine) return;
         try {
           const face = new FontFace(f.family, `url(${f.path})`);
@@ -210,11 +210,11 @@
   });
 
   function defaultPosition(): { x: number; y: number } {
-    // 245i: if the user had geometry selected when opening the dialog,
-    // anchor the new text at the bottom-left (0,0) corner of the
-    // selection's bbox — the canonical "place text relative to this
-    // part" flow. Falls back to centering on the stock footprint when
-    // nothing is selected.
+    // If the user had geometry selected when opening the dialog, anchor
+    // the new text at the bottom-left (0,0) corner of the selection's
+    // bbox — the canonical "place text relative to this part" flow.
+    // Falls back to centering on the stock footprint when nothing is
+    // selected.
     const origin = selectionOrigin(
       project.transformedImport?.object_meta ?? [],
       project.sel.selectedObjects,
@@ -288,7 +288,7 @@
         return;
       }
       const req: RenderTextRequest = {
-        // dya2: font_bytes is a base64 string on the wire now.
+        // font_bytes is a base64 string on the wire.
         font_bytes: bytesToBase64(bytes),
         text: d.text,
         origin: { x: d.posX, y: d.posY },
@@ -297,12 +297,12 @@
         color: 7,
       };
       const resp = await client.renderText(req);
-      // 969h: client.renderText is the simple legacy endpoint and doesn't
-      // accept width_scale. The TextLayer renderer that runs at generate
-      // time DOES — so we mirror its X-stretch here for the dialog preview
-      // by scaling every segment endpoint about the text origin's x. Y is
-      // untouched; arc centers stretch too so the preview matches glyph
-      // curve behaviour after the real render.
+      // client.renderText is the simple legacy endpoint and doesn't accept
+      // width_scale. The TextLayer renderer that runs at generate time DOES
+      // — so we mirror its X-stretch here for the dialog preview by scaling
+      // every segment endpoint about the text origin's x. Y is untouched;
+      // arc centers stretch too so the preview matches glyph curve behaviour
+      // after the real render.
       const xs = Math.max(0.5, Math.min(2.0, d.widthPct / 100));
       previewSegments =
         Math.abs(xs - 1) < 1e-9
@@ -411,8 +411,7 @@
 
   function switchToEngravingFont() {
     // Heuristic: there's no bundled engraving font in v1 (license-vetting
-    // pending — see issue n4y). Best we can do is point the user at the
-    // file picker.
+    // pending). Best we can do is point the user at the file picker.
     d.useUserFont = true;
     errorMsg =
       'Pick a single-line / Hershey TTF via "Custom font" — no engraving font is bundled yet.';
@@ -756,10 +755,10 @@
     font-size: 0.72rem;
     cursor: pointer;
   }
-  /* 6y3m: custom font dropdown with preview glyphs. <select> can't
-     render different fonts per option, so we paint our own popover.
-     Each row shows a sample of the font's actual glyphs next to its
-     label so picking is visual rather than guess-from-name. */
+  /* Custom font dropdown with preview glyphs. <select> can't render
+     different fonts per option, so we paint our own popover. Each row
+     shows a sample of the font's actual glyphs next to its label so
+     picking is visual rather than guess-from-name. */
   .font-dd {
     position: relative;
     min-width: 0;

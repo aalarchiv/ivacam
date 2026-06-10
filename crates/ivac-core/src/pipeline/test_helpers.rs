@@ -193,7 +193,7 @@ pub(in crate::pipeline) fn profile_op(id: u32, tool_id: u32, offset: ToolOffset)
     }
 }
 
-/// kbx5: patterns only attach to `OpKind::Drill` now. Tests that need
+/// Patterns only attach to `OpKind::Drill` now. Tests that need
 /// to exercise pattern expansion build a drill op with the pattern
 /// embedded directly.
 pub(in crate::pipeline) fn drill_op_with_pattern(pattern: PatternConfig) -> Op {
@@ -325,7 +325,7 @@ pub(in crate::pipeline) fn cut_x_values(gcode: &str) -> Vec<f64> {
     for line in gcode.lines() {
         // G0 / G1 cover the standard travel + cut moves; G81 / G82 / G83 /
         // G73 cover the canned drill cycles whose X coordinates encode
-        // drill-hole positions (kbx5: pattern tests now use Drill ops).
+        // drill-hole positions (pattern tests now use Drill ops).
         if !(line.starts_with("G1")
             || line.starts_with("G0")
             || line.starts_with("G8")

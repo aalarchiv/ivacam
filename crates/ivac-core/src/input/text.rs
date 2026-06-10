@@ -29,7 +29,7 @@ use crate::errors::Error;
 use crate::geometry::{Point2, Segment};
 use crate::project::{text_layer_synthetic_layer, TextAlignment, TextLayer, TextLayerKind};
 
-/// dya2: serde codec for the `font_bytes` field shared by [`RenderTextRequest`]
+/// Serde codec for the `font_bytes` field shared by [`RenderTextRequest`]
 /// and [`TextLayer`]. Serializes the byte vector as a base64 string — ~3×
 /// smaller than the legacy JSON integer array and far cheaper to marshal
 /// across the worker / IPC boundary, which the live text preview crosses on
@@ -141,7 +141,7 @@ pub struct RenderTextLayerResponse {
 /// parse (neither as SVG 1.1 nor TTF/OTF), or if rendering the
 /// requested text fails (missing glyphs, zero-size geometry).
 pub fn render_text_layer_api(layer: &TextLayer) -> crate::Result<RenderTextLayerResponse> {
-    // e3kg: dispatch on the font-bytes header — SVG 1.1 single-line
+    // Dispatch on the font-bytes header — SVG 1.1 single-line
     // fonts and TTF / OTF travel through the same `font_bytes`
     // channel. The XML / `<svg` prefix is unambiguous against the
     // binary OTF / TTF magic, so the sniff is cheap and safe.
@@ -179,7 +179,7 @@ pub fn render_text_layer_api(layer: &TextLayer) -> crate::Result<RenderTextLayer
 /// Returns `Error::misconfigured` if the font bytes don't parse or
 /// the text can't be rendered (empty glyph outlines, bad font tables).
 pub fn render_text_api(req: &RenderTextRequest) -> crate::Result<RenderTextResponse> {
-    // e3kg: SVG 1.1 single-line font dispatch (same sniff every
+    // SVG 1.1 single-line font dispatch (same sniff every
     // text-render entry uses).
     if super::svg_font::looks_like_svg(&req.font_bytes) {
         let font = super::svg_font::parse(&req.font_bytes)?;
@@ -240,7 +240,7 @@ struct Walker<'a> {
     /// Affine transform applied per output point (pixels-per-em scaling +
     /// translation for the glyph's pen position).
     scale: f64,
-    /// Horizontal stretch (969h). Multiplies the per-point local X *after*
+    /// Horizontal stretch. Multiplies the per-point local X *after*
     /// scaling but before adding the pen origin, so each glyph's internal
     /// width changes while the y-axis stays untouched.
     x_scale: f64,
@@ -352,7 +352,7 @@ pub fn render_text(
     layer: &str,
     color: i32,
 ) -> crate::Result<Vec<Segment>> {
-    // e3kg: SVG single-line font dispatch — same sniff as the
+    // SVG single-line font dispatch — same sniff as the
     // TextLayer entry points.
     if super::svg_font::looks_like_svg(font_bytes) {
         let font = super::svg_font::parse(font_bytes)?;
@@ -377,7 +377,7 @@ pub fn render_text(
     let single_line = is_single_line_font(&face);
     let mut pen = origin;
     let mut out = Vec::new();
-    // mieu: intern once so every emitted Segment shares the layer Arc.
+    // Intern once so every emitted Segment shares the layer Arc.
     let layer_arc: std::sync::Arc<str> = std::sync::Arc::from(layer);
     for ch in text.chars() {
         let Some(glyph_id) = face.glyph_index(ch) else {
@@ -418,7 +418,7 @@ pub fn render_text(
 /// parse, or if the text fails to lay out (empty glyphs, oversize
 /// layer that exceeds workspace bounds).
 pub fn render_text_layer(layer: &TextLayer) -> crate::Result<Vec<Segment>> {
-    // e3kg: SVG 1.1 single-line fonts ride the same `font_bytes`
+    // SVG 1.1 single-line fonts ride the same `font_bytes`
     // channel. Sniff the prefix; route to the SVG renderer when it
     // matches, fall through to ttf-parser otherwise.
     if super::svg_font::looks_like_svg(&layer.font_bytes) {
@@ -432,7 +432,7 @@ pub fn render_text_layer(layer: &TextLayer) -> crate::Result<Vec<Segment>> {
     let single_line = is_single_line_font(&face);
     let units = f64::from(face.units_per_em().max(1));
     let scale = layer.size_mm / units;
-    // mieu: intern once. The text-layer synthetic name is the same for
+    // Intern once. The text-layer synthetic name is the same for
     // every glyph in this layer, so a single Arc is shared across N
     // segments.
     let layer_name: std::sync::Arc<str> =
@@ -452,7 +452,7 @@ pub fn render_text_layer(layer: &TextLayer) -> crate::Result<Vec<Segment>> {
         layer.size_mm * 1.2
     };
 
-    // 969h: width_scale stretches glyph X coords and per-glyph advance.
+    // width_scale stretches glyph X coords and per-glyph advance.
     // Clamp out-of-band wire values so the rest of the path doesn't need
     // to defend against zero / negative / absurd widths.
     let x_scale = layer.width_scale.clamp(0.5, 2.0);
@@ -554,7 +554,7 @@ fn transform_text_point(p: Point2, origin: Point2, cos: f64, sin: f64) -> Point2
     )
 }
 
-/// e3kg: render a `TextLayer` whose `font_bytes` is an SVG 1.1
+/// Render a `TextLayer` whose `font_bytes` is an SVG 1.1
 /// single-line font. Mirrors `render_text_layer`'s line-stacking,
 /// alignment, and rotation logic but renders each line through the
 /// SVG-font renderer (centerline polylines, no closed-outline
@@ -818,7 +818,7 @@ mod font_bytes_b64_tests {
         }
     }
 
-    /// dya2: `font_bytes` serializes as a base64 STRING (not a JSON integer
+    /// `font_bytes` serializes as a base64 STRING (not a JSON integer
     /// array) and round-trips back to the same bytes.
     #[test]
     fn serializes_as_base64_string_and_round_trips() {
@@ -831,7 +831,7 @@ mod font_bytes_b64_tests {
         assert_eq!(back.font_bytes, bytes);
     }
 
-    /// Back-compat: a project / request saved before dya2 carried
+    /// Back-compat: a project / request saved with the legacy format carried
     /// `font_bytes` as an array of byte values; it must still deserialize.
     #[test]
     fn legacy_integer_array_still_deserializes() {
@@ -996,7 +996,7 @@ mod tests {
     }
 
     #[test]
-    fn render_text_layer_width_scale_stretches_x_only(/* 969h */) {
+    fn render_text_layer_width_scale_stretches_x_only() {
         let base = dejavu_layer("AB");
         let mut stretched = dejavu_layer("AB");
         stretched.width_scale = 2.0;
@@ -1028,7 +1028,7 @@ mod tests {
     }
 
     #[test]
-    fn render_text_layer_width_scale_clamps_extreme_values(/* 969h */) {
+    fn render_text_layer_width_scale_clamps_extreme_values() {
         // 0.0 / negative / 10.0 should all clamp to the 0.5–2.0 band; renderer
         // must not divide-by-zero or emit pathological geometry.
         let mut layer = dejavu_layer("AB");
@@ -1071,7 +1071,7 @@ mod tests {
         );
     }
 
-    /// e3kg: a `TextLayer` whose `font_bytes` carry an SVG 1.1
+    /// A `TextLayer` whose `font_bytes` carry an SVG 1.1
     /// font renders through the SVG path — produces single-stroke
     /// segments (no closed-outline doubling) and the API reports
     /// `single_line = true` + the family-name `ISO 3098`.
@@ -1103,7 +1103,7 @@ mod tests {
         }
     }
 
-    /// e3kg: SVG-font MTEXT stacks lines downward — each successive
+    /// SVG-font MTEXT stacks lines downward — each successive
     /// `\n`-separated line lands at a more-negative Y.
     #[test]
     fn render_text_layer_svg_mtext_stacks_lines() {

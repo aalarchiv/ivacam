@@ -1,4 +1,4 @@
-//! SVG 1.1 single-line font parser + renderer (e3kg).
+//! SVG 1.1 single-line font parser + renderer.
 //!
 //! Single-line CAM fonts (ISO 3098, Hershey, Gerber Engineering) encode
 //! each glyph as the centerline path a pen / engraver traces — exactly
@@ -368,7 +368,7 @@ fn next_flag(tokens: &[Token], i: &mut usize, d: &str) -> Result<bool> {
 /// Math follows W3C SVG 1.1 Appendix F.6.5: endpoint-form → center-form,
 /// then sample uniformly in arc-parameter `θ` with the chord count
 /// chosen to keep the chord-error under `tolerance`.
-// juvx: W3C Appendix F.6.5 names — `rx_in`/`ry_in`, `cxp`/`cyp`,
+// W3C Appendix F.6.5 names — `rx_in`/`ry_in`, `cxp`/`cyp`,
 // `ux`/`uy`/`vx`/`vy` follow the spec exactly; renaming for clippy
 // would obscure the algorithm vs the source standard.
 #[allow(clippy::too_many_arguments, clippy::similar_names)]
@@ -453,7 +453,7 @@ fn tessellate_arc(
 
 /// SVG-spec angle: signed angle from (ux, uy) to (vx, vy). Returns in
 /// `(-π, π]`.
-// juvx: W3C F.6.5.4 vector names.
+// W3C F.6.5.4 vector names.
 #[allow(clippy::similar_names)]
 fn angle_between(ux: f64, uy: f64, vx: f64, vy: f64) -> f64 {
     let dot = ux * vx + uy * vy;
@@ -515,10 +515,10 @@ pub fn render_line(
 // ─────────────────────────────────────────────────────────────────────
 
 /// ISO 3098 Regular — the canonical engineering-drawing font in
-/// single-line form. Bundled per e3kg.
+/// single-line form. Bundled with the binary.
 pub const ISO3098_REGULAR_SVG: &[u8] = include_bytes!("../../assets/fonts/ISO3098-Regular.svg");
 
-/// ISO 3098 Italic — the matching oblique. Bundled per e3kg.
+/// ISO 3098 Italic — the matching oblique. Bundled with the binary.
 pub const ISO3098_ITALIC_SVG: &[u8] = include_bytes!("../../assets/fonts/ISO3098-Italic.svg");
 
 /// Convenience: registry of bundled SVG fonts the user can pick by

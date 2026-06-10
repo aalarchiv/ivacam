@@ -27,7 +27,7 @@ pub(super) fn emit_path_with_tabs<P: PostProcessor>(
     cut_z: f64,
     tab_radius: f64,
     ramp_angle_deg: Option<f64>,
-    // y9ho: drop from tabs_z back down to cut_z at PLUNGE feedrate
+    // Drop from tabs_z back down to cut_z at PLUNGE feedrate
     // (rate_v), not cut feedrate (rate_h). The active feed when this
     // is called is rate_h; we swap to rate_v for the Z-down and
     // restore rate_h before the next horizontal cut.
@@ -52,8 +52,8 @@ pub(super) fn emit_path_with_tabs<P: PostProcessor>(
             }
             SegmentKind::Point => post.linear(Some(seg.start.x), Some(seg.start.y), None),
             SegmentKind::Arc | SegmentKind::Circle => {
-                // l5vy: proper arc-vs-tab-footprint intersection.
-                // The pre-l5vy chord-midpoint heuristic missed two
+                // Proper arc-vs-tab-footprint intersection.
+                // The prior chord-midpoint heuristic missed two
                 // common failure modes — long arcs whose chord
                 // midpoint is on the opposite side of the arc from
                 // the tab, and arcs that graze the tab's BOW outside
@@ -62,11 +62,11 @@ pub(super) fn emit_path_with_tabs<P: PostProcessor>(
                 // tab. Here we walk every tab, check whether the
                 // tab's disc actually intersects the arc's sweep
                 // (within its angular span), and pick the MAX lift
-                // (audit 3wv: per-tab overrides). The rt1.10
-                // chord-midpoint behavior survives as the deferred
-                // "ramping along curved path" v2 fallback inside
-                // emit_arc_chord_with_tabs (which already chord-
-                // tessellates the arc and reuses line-tab math).
+                // (per-tab overrides). The chord-midpoint behavior
+                // survives as the deferred "ramping along curved path"
+                // v2 fallback inside emit_arc_chord_with_tabs (which
+                // already chord-tessellates the arc and reuses
+                // line-tab math).
                 let fallback_width = tab_radius * 2.0;
                 let fallback_lift = (tabs_z - cut_z).abs();
                 let center = seg
@@ -107,7 +107,7 @@ pub(super) fn emit_path_with_tabs<P: PostProcessor>(
                     } else {
                         post.arc_cw(Some(seg.end.x), Some(seg.end.y), None, Some(i), Some(j));
                     }
-                    // y9ho: drop at plunge feed, restore cut feed.
+                    // Drop at plunge feed, restore cut feed.
                     post.feedrate(rate_v);
                     post.linear(None, None, Some(cut_z));
                     post.feedrate(rate_h);
@@ -137,9 +137,8 @@ fn emit_line_with_tabs<P: PostProcessor>(
     }
     // Walk the segment; for every tab whose perpendicular foot is on the
     // segment within its own effective radius, compute t-entry / t-exit
-    // and the per-tab effective lift Z (audit 3wv: width / height
-    // overrides now flow through per-tab instead of using the op-level
-    // values uniformly).
+    // and the per-tab effective lift Z (width / height overrides now flow
+    // through per-tab instead of using the op-level values uniformly).
     let fallback_width = tab_radius * 2.0;
     let fallback_lift = (tabs_z - cut_z).abs();
     let mut intervals: Vec<(f64, f64, f64)> = Vec::new();
@@ -218,7 +217,7 @@ fn emit_line_with_tabs<P: PostProcessor>(
                 }
             }
             _ => {
-                // y9ho: lift to tabs_z at the active cut feed (rate_h
+                // Lift to tabs_z at the active cut feed (rate_h
                 // is already set), traverse across the tab footprint
                 // at cut feed, then drop back to cut_z at PLUNGE feed
                 // (rate_v). Restore cut feed before the next cut move.
@@ -244,7 +243,7 @@ fn lerp(seg: &Segment, t: f64) -> (f64, f64) {
     )
 }
 
-/// l5vy: true arc-vs-tab-disc intersection test. The arc lives on a
+/// True arc-vs-tab-disc intersection test. The arc lives on a
 /// circle of radius `arc_radius` around `center` swept from
 /// `seg.start` to `seg.end` (signed sweep = 4·atan(bulge)); the tab
 /// is a disc of radius `tab_radius` around `(tab_x, tab_y)`.

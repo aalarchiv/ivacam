@@ -82,8 +82,8 @@ impl ToolChangeStrategy {
     }
 
     /// Stable cache discriminant folded into the op cache key. Pinned so
-    /// the two original variants (`Atc` / `ManualM0Pause`, which the
-    /// cb5y widening replaced a `true` / `false` bool with) hash
+    /// the two original variants (`Atc` / `ManualM0Pause`, which
+    /// replaced a `true` / `false` bool) hash
     /// byte-identically to that `bool` encoding: `bool::hash` writes
     /// `0` / `1` as a `u8`, so `ManualM0Pause = 0` and `Atc = 1` keep the
     /// cache key stable across the widening. The new variants get fresh
@@ -99,7 +99,7 @@ impl ToolChangeStrategy {
     }
 }
 
-/// cb5y: back-compat deserializer for [`MachineConfig::tool_change`].
+/// Back-compat deserializer for [`MachineConfig::tool_change`].
 /// Accepts either the new enum string (`"atc"`, `"manual_m6_prompt"`,
 /// `"manual_m0_pause"`, `"ignore"`) or the legacy `supports_toolchange`
 /// bool (`true → Atc`, `false → ManualM0Pause`), so projects saved before
@@ -430,7 +430,7 @@ impl MachineConfig {
         self.spindle_start_dwell_sec.unwrap_or(0.5).max(0.0)
     }
 
-    /// 4lq5: the program-pause word to emit — `M1` (optional stop) when
+    /// The program-pause word to emit — `M1` (optional stop) when
     /// [`optional_stop`](Self::optional_stop) is set, else `M0` (mandatory
     /// stop). Used for both the `Pause` op and the manual tool-change halt.
     #[must_use]
@@ -550,9 +550,9 @@ pub enum MachineMode {
 mod toolchange_strategy_tests {
     use super::{MachineConfig, ToolChangeStrategy};
 
-    /// cb5y acceptance: a project saved before the widening — with the
-    /// legacy `"supports_toolchange"` bool — still loads, mapping
-    /// `true → Atc` and `false → ManualM0Pause`.
+    /// Back-compat acceptance: a project saved before the tool-change
+    /// widening — with the legacy `"supports_toolchange"` bool — still
+    /// loads, mapping `true → Atc` and `false → ManualM0Pause`.
     #[test]
     fn legacy_bool_deserializes() {
         let true_json =
@@ -594,7 +594,7 @@ mod toolchange_strategy_tests {
 
     /// The cache discriminant stays pinned to the original bool encoding
     /// for the two original variants so cache keys stay stable across the
-    /// cb5y widening.
+    /// tool-change field widening.
     #[test]
     fn cache_discriminant_pins_original_variants() {
         assert_eq!(ToolChangeStrategy::ManualM0Pause.cache_discriminant(), 0);

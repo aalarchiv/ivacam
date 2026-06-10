@@ -1,4 +1,4 @@
-/// EntityCanvas2D selection reducer (774f). Pure function:
+/// EntityCanvas2D selection reducer. Pure function:
 ///
 ///   (click input, current pointer-event modifiers) → SelectionAction[]
 ///
@@ -39,8 +39,8 @@ export interface SelectionClick {
   metaKey: boolean;
 }
 
-/// Decode modifier flags into a selection mode. Priority order matches
-/// audit-eqxd: Shift > Ctrl/Cmd > plain.
+/// Decode modifier flags into a selection mode. Priority order:
+/// Shift > Ctrl/Cmd > plain.
 export function modeFromModifiers(c: {
   shiftKey: boolean;
   ctrlKey: boolean;

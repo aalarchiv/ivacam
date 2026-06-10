@@ -217,11 +217,11 @@
     color: var(--text);
     contain: strict; /* keeps layout costs sane on big programs */
   }
-  /* ld9z: dim panel content when stale so the badge can do the talking. */
+  /* Dim panel content when stale so the badge can do the talking. */
   .gcode.stale .gcode-inner {
     opacity: 0.55;
   }
-  /* ld9z: stale-state callout — same affordance as the Sim chip in
+  /* Stale-state callout — same affordance as the Sim chip in
      GenerateBar, applied to the actual code panel. Sticky so it stays
      visible even when the user scrolls deep into a long program. */
   .stale-badge {

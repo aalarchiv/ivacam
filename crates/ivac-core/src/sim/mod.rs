@@ -2,7 +2,7 @@
 //! the stock footprint and tool Z-profiles describe what radius of the
 //! cutter surface reaches how far down at a given radial offset.
 //!
-//! # Arc chord-error floor (biot)
+//! # Arc chord-error floor
 //!
 //! The sim sees arcs as pre-tessellated chord [`gcode::preview::ToolpathSegment`]s.
 //! `preview::interpret_with_index` walks G2/G3 at ~2° per chord, which gives
@@ -33,7 +33,7 @@ pub use holder::HolderProfile;
 pub use holder_check::{check_segment_holder_against_walls, HolderCheck};
 
 /// Register this module's wire types in the OpenAPI components map.
-/// Co-located with the type definitions (kb1y) so adding a wire type is
+/// Co-located with the type definitions so adding a wire type is
 /// a same-file edit; `crate::schema::components_schemas` composes these.
 pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
     crate::schema::insert::<diagnostics::SimWarning>(map, "SimWarning");

@@ -1,4 +1,4 @@
-//! Shared scaffolding for end-to-end CAM op validation tests (esnw).
+//! Shared scaffolding for end-to-end CAM op validation tests.
 //!
 //! Each per-op test in `tests/<op>_volume_validation.rs` follows the
 //! same shape: build a tiny project programmatically → run the
@@ -298,8 +298,8 @@ pub fn removed_volume(hm: &Heightmap, top_z: f32) -> f64 {
     sum * cell_area
 }
 
-/// Deepest Z sample in the heightmap (used as the v5az stock-floor
-/// sentinel: should never be below `-stock.thickness_mm`).
+/// Deepest Z sample in the heightmap (should never be below
+/// `-stock.thickness_mm`).
 pub fn deepest_z(hm: &Heightmap) -> f32 {
     hm.data.iter().copied().fold(f32::INFINITY, f32::min)
 }

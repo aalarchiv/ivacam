@@ -2,7 +2,7 @@
 // op-source contour and resolve which snap (raw contour / vertex /
 // midpoint / existing tab) the staged tab should adopt.
 //
-// Extracted from EntityCanvas2D.svelte (l8u6) so the snap-precedence
+// Extracted from EntityCanvas2D.svelte so the snap-precedence
 // rules can be unit-tested without a canvas or the rune runtime. The
 // component keeps only the thin glue that reads $state/$derived and
 // assembles the context object below.
@@ -40,7 +40,7 @@ export interface GhostTabContext {
 /// return the ghost-tab position, or `null` when no contour is within
 /// 6 screen-px / the op has no matching closed source.
 ///
-/// Snap precedence (1q3): vertex within 4 screen-px > midpoint within
+/// Snap precedence: vertex within 4 screen-px > midpoint within
 /// 4 screen-px > existing tab on this op within 2 mm data-space > raw
 /// contour projection within 6 screen-px. `altDown` disables every
 /// secondary snap, leaving the bare contour projection.
@@ -90,8 +90,8 @@ export function projectGhostTab(cx: number, cy: number, ctx: GhostTabContext): G
     return { x: best.x, y: best.y, objectId: best.objectId, t: best.t, snap: best.snap };
   }
   // Promote to vertex / midpoint / intersection via the shared OSnap
-  // engine so the tab path respects the user's per-kind toggles (li0m)
-  // and supports intersection snaps (ffhp). The OSnap result is in
+  // engine so the tab path respects the user's per-kind toggles
+  // and supports intersection snaps. The OSnap result is in
   // whole-drawing coordinates; project it back to (objectId, t) so the
   // tab stays attached to a specific contour through transforms.
   const osnap = findOSnap(osnapTargets, dataX, dataY, snapTolData, osnapSettings);

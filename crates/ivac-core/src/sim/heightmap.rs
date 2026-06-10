@@ -35,12 +35,12 @@ impl Heightmap {
     /// # Panics
     ///
     /// Panics on a non-positive `cell`, zero `cols` / `rows`, or a
-    /// `cols * rows` product that overflows `usize` (eexa).
+    /// `cols * rows` product that overflows `usize`.
     #[must_use]
     pub fn new(origin: Point2, cell: f64, cols: u32, rows: u32, top_z: f32) -> Self {
         assert!(cell > 0.0, "Heightmap cell size must be > 0");
         assert!(cols > 0 && rows > 0, "Heightmap dimensions must be > 0");
-        // eexa: WASM32 `usize` is `u32`, so the product `cols * rows`
+        // WASM32 `usize` is `u32`, so the product `cols * rows`
         // wraps once it exceeds 2^32 — silently allocating a tiny vec
         // and corrupting every later index. Use `checked_mul` so the
         // overflow trips loudly even in release builds.
@@ -76,7 +76,7 @@ impl Heightmap {
             max_x > min_x && max_y > min_y,
             "Heightmap bbox must be non-empty"
         );
-        // vc6i: bilinear `sample()` returns `top_z` whenever the query
+        // Bilinear `sample()` returns `top_z` whenever the query
         // point's fractional cell index `fx = (x - origin)/cell - 0.5`
         // exceeds `cols - 1` — i.e. the upper half of the last column
         // is "off the grid" for sampling purposes. With a tight ceil()
@@ -105,8 +105,8 @@ impl Heightmap {
 
     /// Same contract as `lower_at`, minus the bounds check. The sweep
     /// loop pre-clamps to the heightmap's cell rectangle so the safe
-    /// `lower_at` path's branch is redundant on every cell write
-    /// (audit-5el3). Public callers should prefer `lower_at`.
+    /// `lower_at` path's branch is redundant on every cell write.
+    /// Public callers should prefer `lower_at`.
     #[inline]
     pub fn lower_at_unchecked(&mut self, ix: u32, iy: u32, z: f32) {
         let idx = (iy as usize) * (self.cols as usize) + (ix as usize);
@@ -127,7 +127,7 @@ impl Heightmap {
         });
     }
 
-    /// ikh8: visit-tracking write — same as `lower_at` for the data side
+    /// Visit-tracking write — same as `lower_at` for the data side
     /// (only lowers when `z` is strictly less than the current value),
     /// but ALSO marks the cell dirty even when no value change happens.
     /// Lets downstream coverage / visit heatmaps see "the cutter was
@@ -207,7 +207,7 @@ impl Heightmap {
 /// Tool Z-profile: for radial offset `r` from the cutter axis, returns
 /// how much above the tip Z the cutter surface sits, or `None` if `r` is
 /// outside the cutting radius.
-// pxv8 / legj: ToolProfile no longer derives Copy because FormProfile
+// ToolProfile no longer derives Copy because FormProfile
 // carries a Vec of sample points. All sim entry points take `&ToolProfile`
 // now; the profile is built once per advance() and walked many times,
 // so the ref pattern is cheaper than cloning per segment.
@@ -234,7 +234,7 @@ pub enum ToolProfile {
     LaserBeam {
         r: f32,
     },
-    /// rt1.28 / rbl: flat-bottom endmill with a rounded corner fillet
+    /// Flat-bottom endmill with a rounded corner fillet
     /// between the floor and the side. Floor up to `r ≤ r_outer -
     /// corner_r`; a quarter-arc of radius `corner_r` from there to the
     /// full radius.
@@ -245,7 +245,7 @@ pub enum ToolProfile {
         /// `corner_r == r` reduces to a ball-nose.
         corner_r: f32,
     },
-    /// pxv8: compression / up-down spiral endmill. Cross-section is
+    /// Compression / up-down spiral endmill. Cross-section is
     /// uniform at `r` so the carved heightmap is visually identical to
     /// `Endmill { r }`. Distinguished from Endmill so the simulator can
     /// tag warnings that the up-cut / down-cut flute split (which
@@ -254,7 +254,7 @@ pub enum ToolProfile {
     Compression {
         r: f32,
     },
-    /// pxv8: form / profile cutter with a non-uniform cross-section.
+    /// Form / profile cutter with a non-uniform cross-section.
     /// `segments` is a sorted sample list `(z_above_tip_mm, r_mm)` that
     /// describes the cutter outline; the sweep carves at the appropriate
     /// radius for each Z slice. Empty / single-sample list collapses to
@@ -265,7 +265,7 @@ pub enum ToolProfile {
         /// radius_mm)` pairs.
         segments: Vec<(f32, f32)>,
     },
-    /// legj: tip-only engraver — narrow flat at the tip with a wide
+    /// Tip-only engraver — narrow flat at the tip with a wide
     /// cone above. Distinguished from `VBit` because only the tip flat
     /// is the cutting edge: extending farther up the cone is the
     /// non-cutting tapered shoulder, not a cutting surface. We expose
@@ -297,13 +297,13 @@ impl ToolProfile {
             | ToolProfile::DragKnife { r, .. }
             | ToolProfile::BullNose { r, .. }
             | ToolProfile::Compression { r } => *r,
-            // pxv8: form cutter — XY footprint is the largest sample
+            // Form cutter — XY footprint is the largest sample
             // radius (conservative; the sweep AABB must cover the
             // whole cross-section).
             ToolProfile::FormProfile { segments } => {
                 segments.iter().map(|(_, r)| *r).fold(0.0_f32, f32::max)
             }
-            // legj: engraver — the XY footprint that actually carves
+            // Engraver — the XY footprint that actually carves
             // is the tip flat. The cone above is non-cutting.
             ToolProfile::Engraver { tip_r, .. } => *tip_r,
         }
@@ -313,9 +313,9 @@ impl ToolProfile {
     /// `DragKnife` / `Compression`) — every cell within the cutter
     /// radius carves to the same `cutter_pz`, no per-r profile offset.
     /// The sweep can then skip both the sqrt and the `eval()` branch
-    /// (audit-xnmp). pxv8: Compression's cross-section is identical to
+    /// Compression's cross-section is identical to
     /// Endmill. `FormProfile` / Engraver are NOT flat-bottom (per-r
-    /// profile) — a folded-in T-slot is a `FormProfile` now (z5yw).
+    /// profile) — a folded-in T-slot is a `FormProfile` now.
     #[must_use]
     pub fn is_flat_bottom(&self) -> bool {
         matches!(
@@ -328,7 +328,7 @@ impl ToolProfile {
         )
     }
 
-    /// 4mp1: maximum reach (mm) the cutter can engage into stock below the
+    /// Maximum reach (mm) the cutter can engage into stock below the
     /// stock-top plane. `None` means "no profile-imposed limit" (the
     /// toolpath alone bounds the depth). Engraver is the only profile
     /// that exposes this today — the cone above its tip flat is non-
@@ -348,15 +348,15 @@ impl ToolProfile {
         }
     }
 
-    // juvx: `r_f64` / `rr_f64` are deliberately parallel — same
+    // `r_f64` / `rr_f64` are deliberately parallel — same
     // f32→f64 promotion of the tool-profile radius and the query
-    // radius for the 6i9r corner-radius math. Renaming would
+    // radius for the corner-radius math. Renaming would
     // obscure the parallel structure.
     #[allow(clippy::similar_names)]
     #[must_use]
     pub fn eval(&self, r: f32) -> Option<f32> {
         match self {
-            // pxv8: Compression has the same flat-bottom cross-section
+            // Compression has the same flat-bottom cross-section
             // as Endmill — see ToolKind::Compression for the rationale.
             ToolProfile::Endmill { r: rr }
             | ToolProfile::Drill { r: rr }
@@ -403,7 +403,7 @@ impl ToolProfile {
                 if r <= plateau || cr <= 0.0 {
                     Some(0.0)
                 } else {
-                    // 6i9r: do the entire corner-radius math in f64 so
+                    // Do the entire corner-radius math in f64 so
                     // an f32 subtraction near the rim (where `dx ≈ cr`,
                     // i.e. `cr² - dx² ≈ 0`) doesn't accumulate ~3e-4 mm
                     // of error before the sqrt. Promoting `r`, `rr` and
@@ -420,7 +420,7 @@ impl ToolProfile {
                     Some((cr64 - inside.sqrt()) as f32)
                 }
             }
-            // pxv8: FormProfile — linear-interp the (z, r) sample list
+            // FormProfile — linear-interp the (z, r) sample list
             // by RADIUS to recover the depth offset above the tip. The
             // sample list is monotone in z_above_tip from tip up; the
             // INVERSE mapping (largest z whose r >= query_r minus the
@@ -461,7 +461,7 @@ impl ToolProfile {
                 }
                 None
             }
-            // legj: engraver — only the tip flat is the cutting edge.
+            // Engraver — only the tip flat is the cutting edge.
             // Inside `tip_r` the cutter carves flat (dz = 0). Beyond
             // `tip_r` we're on the non-cutting cone shoulder; the sim
             // refuses to carve there and returns None so the sweep
@@ -490,7 +490,7 @@ impl ToolProfile {
         match tool.kind {
             ToolKind::Endmill => ToolProfile::Endmill { r },
             ToolKind::BallNose => ToolProfile::BallNose { r },
-            // legj: Engraver mapped to VBit at full bit diameter was
+            // Engraver mapped to VBit at full bit diameter was
             // wrong — the engraver's cutting edge is the tip flat
             // only; the cone above is non-cutting shoulder. Distinct
             // ToolProfile arm.
@@ -512,7 +512,7 @@ impl ToolProfile {
                     max_engagement_depth,
                 }
             }
-            // 90hd: Kegel (tapered/conical endmill) shares the V-bit's
+            // Kegel (tapered/conical endmill) shares the V-bit's
             // conical cut cross-section — a cone rising from the tip
             // radius to the full radius at the included tip angle. The
             // difference from a V-bit is in which ops accept it and that
@@ -539,7 +539,7 @@ impl ToolProfile {
                 dragoff: tool.dragoff.unwrap_or(0.0) as f32,
             },
             ToolKind::Drill => ToolProfile::Drill { r },
-            // mmu8: laser kerf comes from the configured
+            // Laser kerf comes from the configured
             // `tool.kerf_mm` (default = 0.15 mm). Floor at 0.05 mm so a
             // zero / negative entry still registers some carve
             // instead of a degenerate zero-radius cutter the sweep
@@ -549,12 +549,12 @@ impl ToolProfile {
                 let r = kerf as f32;
                 ToolProfile::LaserBeam { r }
             }
-            // rbl: BullNose uses the per-tool corner_radius_mm for an
+            // BullNose uses the per-tool corner_radius_mm for an
             // accurate fillet floor; the sim now models the rounded
             // corner instead of pretending it's a square endmill.
             // Falls back to flat Endmill when corner_radius is missing
             // / zero (same observable cross-section).
-            // z0x0: when corner_r >= r the BullNose is geometrically
+            // When corner_r >= r the BullNose is geometrically
             // identical to a BallNose at the same radius (the plateau
             // collapses to zero and the corner-arc spans the full
             // cross-section). Emit BallNose directly so the sweep takes
@@ -571,23 +571,23 @@ impl ToolProfile {
                     ToolProfile::Endmill { r }
                 }
             }
-            // pxv8: Compression — distinct ToolProfile arm with the
+            // Compression — distinct ToolProfile arm with the
             // SAME cross-section as Endmill. Up/down flute split
             // affects chip evacuation direction, not the carved
             // surface; the simulator still flags the missing split
             // model in the warnings stream. Follow-up:
             // wiaconstructor-tcmp.
             ToolKind::Compression => ToolProfile::Compression { r },
-            // gm1u: thread mill — the thread is cut on a side wall by
+            // Thread mill — the thread is cut on a side wall by
             // helical interpolation, which a 2.5D heightmap can't model.
             // Treat the envelope as a plain cylinder at the cutter
             // diameter for collision / preview (no spurious V-carve).
             ToolKind::ThreadMill => ToolProfile::Endmill { r },
-            // z5yw: the former dedicated T-slot kind folded into
+            // The former dedicated T-slot kind is folded into
             // FormProfile — a T-slot is authored as a wide-disk →
             // narrow-neck (z, r) profile via the tool-library preset, so
             // it takes the FormProfile arm below.
-            // pxv8: FormProfile — non-uniform cross-section. When the
+            // FormProfile — non-uniform cross-section. When the
             // tool entry doesn't carry a sample list, fall back to a
             // single-point profile (flat endmill at head radius) and
             // emit a debug eprintln; otherwise carve at the appropriate
@@ -595,7 +595,7 @@ impl ToolProfile {
             // The UI for entering form profiles is a follow-up
             // (wiaconstructor-tfrm); the sim path is ready for it.
             ToolKind::FormProfile => {
-                // 1wit: when the tool library carries a user-entered
+                // When the tool library carries a user-entered
                 // cross-section (≥2 samples), carve the real profile —
                 // sorted tip → top, clamped to non-negative radius.
                 if tool.form_profile_mm.len() >= 2 {
@@ -728,7 +728,7 @@ mod tests {
 
     #[test]
     fn lower_at_or_record_marks_dirty_even_without_value_change() {
-        // ikh8: visit-tracking write — same cell visited twice with the
+        // Visit-tracking write — same cell visited twice with the
         // same depth should record TWO dirty events. The strict `<`
         // write only records the first; `lower_at_or_record` always
         // does even when the value doesn't change.
@@ -753,7 +753,7 @@ mod tests {
 
     #[test]
     fn lower_at_or_record_out_of_bounds_is_noop() {
-        // ikh8: bounds-check still applies — never panic on stray
+        // Bounds-check still applies — never panic on stray
         // indices and never mark dirty for cells outside the grid.
         let mut hm = Heightmap::new(Point2::new(0.0, 0.0), 1.0, 4, 4, 0.0);
         hm.lower_at_or_record(10, 0, -1.0);
@@ -901,7 +901,7 @@ mod tests {
         }
     }
 
-    /// 90hd: Kegel (tapered endmill) shares the V-bit conical profile.
+    /// Kegel (tapered endmill) shares the V-bit conical profile.
     /// A truncated cone (`tip_diameter` > 0) builds a `VBit` whose tip
     /// radius is half the tip diameter and whose flank rises at the
     /// included tip angle — so the proven V-carve sweep carves the
@@ -932,7 +932,7 @@ mod tests {
         );
     }
 
-    /// gm1u: a thread mill cuts a side-wall thread by helical
+    /// A thread mill cuts a side-wall thread by helical
     /// interpolation — not representable in a 2.5D heightmap — so its
     /// sim envelope is a plain cylinder at the cutter diameter (no
     /// spurious V-carve from the thread-form tooth).
@@ -951,7 +951,7 @@ mod tests {
         );
     }
 
-    /// rbl: `BullNose` with `corner_radius_mm` builds a fillet profile;
+    /// `BullNose` with `corner_radius_mm` builds a fillet profile;
     /// without it (or with 0) collapses to a flat endmill. Eval at the
     /// rim equals `corner_r` (the lip rises by exactly the fillet radius);
     /// eval inside the plateau equals 0.
@@ -971,7 +971,7 @@ mod tests {
                     0.0,
                 ));
                 // r at the rim (r = rr) → lip has risen by corner_r.
-                // 6i9r: the BullNose eval now does the corner-radius
+                // The BullNose eval now does the corner-radius
                 // math in f64 before snapping to f32, so the residual
                 // at the rim is well under 1e-5 mm instead of the old
                 // ~3e-4 mm. Tighten the tolerance to lock that in.
@@ -993,7 +993,7 @@ mod tests {
         ));
     }
 
-    /// 6i9r: sample the `BullNose` profile at a fine grid of rims close
+    /// Sample the `BullNose` profile at a fine grid of rims close
     /// to the cutter edge. The lip height must be uniform within 1e-5
     /// mm across every neighboring rim sample — previously f32 jitter
     /// at the boundary produced ~3e-4 mm speckle in close-up surface
@@ -1031,7 +1031,7 @@ mod tests {
         }
     }
 
-    /// vc6i: bilinear `sample()` at the bbox max-corner must return
+    /// Bilinear `sample()` at the bbox max-corner must return
     /// the carved cell value, not `top_z`. The previous tight `ceil()`
     /// sizing left the max-corner half a cell off the sampleable
     /// region; the +1-cell pad guarantees the corner is reachable.
@@ -1054,7 +1054,7 @@ mod tests {
         assert!((probed_inside - -3.0).abs() < 1e-5);
     }
 
-    /// mmu8: laser kerf radius reads from `tool.kerf_mm` instead of
+    /// Laser kerf radius reads from `tool.kerf_mm` instead of
     /// being hard-coded to 0.15. Tools with different kerf widths
     /// produce different sim radii; missing `kerf_mm` collapses to the
     /// legacy 0.15 mm default; near-zero kerf is floored at 0.05 mm
@@ -1093,7 +1093,7 @@ mod tests {
         }
     }
 
-    /// z0x0: `BullNose` with `corner_radius_mm >= diameter/2` collapses to
+    /// `BullNose` with `corner_radius_mm >= diameter/2` collapses to
     /// a `BallNose` at the same outer radius. The geometry is identical
     /// (plateau width = 0; the corner-arc spans the whole cross-section)
     /// but the `BullNose` eval routes through the f64-promoted corner-
@@ -1124,7 +1124,7 @@ mod tests {
         ));
     }
 
-    /// z5yw: the former dedicated T-slot kind is folded into `FormProfile`.
+    /// The former dedicated T-slot kind is folded into `FormProfile`.
     /// A T-slot authored as a wide-disk → narrow-neck `(z, r)` profile
     /// builds a `FormProfile` whose XY footprint is the head radius (the
     /// widest sample) and whose flat disk bottom carves the slot floor.
@@ -1160,7 +1160,7 @@ mod tests {
         assert!(profile.eval(9.0).is_none());
     }
 
-    /// 1wit: a `FormProfile` tool carrying a user-entered cross-section
+    /// A `FormProfile` tool carrying a user-entered cross-section
     /// carves the real sample list (sorted tip → top, radii clamped to
     /// ≥0) instead of the 2-segment taper fallback.
     #[test]
@@ -1200,7 +1200,7 @@ mod tests {
         assert!(approx(ToolProfile::from_tool(&t).radius(), 6.0));
     }
 
-    /// 1wit companion: a `FormProfile` tool with fewer than two samples
+    /// A `FormProfile` tool with fewer than two samples
     /// still falls back to the `(tip_diameter, diameter)` 2-segment
     /// taper — a single sample isn't a usable interpolation domain.
     #[test]
@@ -1223,7 +1223,7 @@ mod tests {
         }
     }
 
-    /// 4mp1: Engraver advertises a non-None `max_engagement_depth` so the
+    /// Engraver advertises a non-None `max_engagement_depth` so the
     /// sweep can refuse to carve past the cutter's reach.
     #[test]
     fn engraver_advertises_max_engagement_depth() {

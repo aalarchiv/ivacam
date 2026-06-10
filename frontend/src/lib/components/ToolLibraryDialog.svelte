@@ -33,10 +33,9 @@
   let { open, onClose }: Props = $props();
 
   /// Draft / pristine / dirty / discard lifecycle lives in DialogDraft
-  /// (kdfh) so X / Esc / click-outside can prompt before silently
-  /// discarding edits (audit-dh1n). The `draft` alias keeps the table
-  /// markup terse — row rebuilds always reassign `dd.draft`, never the
-  /// alias.
+  /// so X / Esc / click-outside can prompt before silently discarding
+  /// edits. The `draft` alias keeps the table markup terse — row
+  /// rebuilds always reassign `dd.draft`, never the alias.
   const dd = new DialogDraft<ToolEntry[]>();
   const draft = $derived(dd.draft ?? []);
   /// Per-row UI flag — Holder sub-panel collapsed by default to keep the
@@ -51,17 +50,16 @@
   $effect(() => {
     if (open) {
       dd.open(project.data.tools);
-      // k94n: tools whose kind has a REQUIRED kind-specific field
-      // open by default so the user sees `dragoff` / `cornerRadiusMm`
-      // / T-slot neck dims without hunting for them. Other kinds
-      // start collapsed.
+      // Tools whose kind has a REQUIRED kind-specific field open by
+      // default so the user sees `dragoff` / `cornerRadiusMm` / T-slot
+      // neck dims without hunting for them. Other kinds start collapsed.
       expanded = new Set(
         project.data.tools.filter((t) => kindNeedsExpansion(t.kind)).map((t) => t.id),
       );
     }
   });
 
-  // jkgj: numeric-field validation, fieldApplies, and the per-kind
+  // Numeric-field validation, fieldApplies, and the per-kind
   // disabled-reason tooltips all live in lib/state/tool_validation.ts;
   // the dialog wires them in via the imports up top.
   let hasInvalidRow = $derived(draft.some(rowInvalid));
@@ -91,10 +89,10 @@
   });
 
   function commit() {
-    // jkgj: refuse to commit while any row has an invalid numeric
-    // field. The OK button is also disabled in that state — this is
-    // belt-and-braces so a keyboard / programmatic invocation can't
-    // smuggle a zero-rate tool through.
+    // Refuse to commit while any row has an invalid numeric field. The
+    // OK button is also disabled in that state — belt-and-braces so a
+    // keyboard / programmatic invocation can't smuggle a zero-rate tool
+    // through.
     if (draft.some(rowInvalid)) return;
     // Deep-snapshot so the command system receives plain objects —
     // Svelte 5 `$state` proxies inside `draft[i]` can trip up the
@@ -139,7 +137,7 @@
     dd.draft = draft.map((t, i) => (i === idx ? { ...t, [key]: value } : t));
   }
 
-  // ───────────────────────── 1wit: form-profile editor ──────────────
+  // ─────────────────────────── form-profile editor ───────────────────
   // The (z, r) sample table is the source of truth (stored on the
   // tool). The dovetail inputs below are a transient generator that
   // fills the table; they're keyed by tool id and not persisted —
@@ -168,7 +166,7 @@
     ];
     updateField(idx, 'formProfileMm', samples);
   }
-  // z5yw: T-slot preset — the former dedicated kind, now a form-profile.
+  // T-slot preset — the former dedicated kind, now a form-profile.
   // A wide cutting disk at the tip (headDia) of height headThickness,
   // then a narrow neck (neckDia) up to the top of the neck. Transient
   // generator inputs, keyed by tool id like the dovetail ones.
@@ -252,8 +250,8 @@
       touchedId = next.id;
       return next;
     });
-    // k94n: open the expanded section so the new kind's required
-    // kind-specific field is in view (e.g. dragoff for drag_knife).
+    // Open the expanded section so the new kind's required kind-specific
+    // field is in view (e.g. dragoff for drag_knife).
     if (touchedId != null && kindNeedsExpansion(kind)) {
       const next = new Set(expanded);
       next.add(touchedId);
@@ -511,7 +509,7 @@
                   ? 'Tip ⌀ must be ≥ 0 mm — the V-Carve depth math (z = -(r - tip_r) / tan(angle / 2)) silently clamps negative values to 0, hiding the typo.'
                   : ''}
               onchange={(e) => {
-                // wz0r: reject negative tip ⌀ — Rust setup_resolver.rs:669
+                // Reject negative tip ⌀ — Rust setup_resolver.rs:669
                 // does .max(0.0) on this, so a typo like -0.5 silently
                 // becomes 0 and the depth math changes without warning.
                 // Treat any negative input as "unset" (same pattern as
@@ -1692,8 +1690,7 @@
         </button>
         <span class="sep"></span>
         {#if hasInvalidRow}
-          <!-- jkgj: surface why OK is greyed out so the user knows
-               which inputs need fixing. -->
+          <!-- Surface why OK is greyed out so the user knows which inputs need fixing. -->
           <span class="validation-msg" role="status"
             >Fix highlighted fields (⌀, RPM, feed, plunge must be &gt; 0).</span
           >
@@ -1929,17 +1926,17 @@
     border-top: 1px solid var(--border);
     background: var(--bg-elevated);
   }
-  /* jkgj: footer-side validation hint shown when an OK-disabling
-     row is present. Same red palette as `.discard-prompt`, but
-     keeps the action buttons aligned to the right by NOT setting
-     `margin-right: auto` — we want this slot inline with the
-     buttons, not pushed to the start. */
+  /* Footer-side validation hint shown when an OK-disabling row is
+     present. Same red palette as `.discard-prompt`, but keeps the
+     action buttons aligned to the right by NOT setting
+     `margin-right: auto` — we want this slot inline with the buttons,
+     not pushed to the start. */
   .validation-msg {
     color: var(--danger);
     font-size: 0.78rem;
     align-self: center;
   }
-  /* 1wit: form-profile (z, r) sample editor + dovetail generator. */
+  /* Form-profile (z, r) sample editor + dovetail generator. */
   .profile-btn {
     background: var(--bg-elevated);
     color: var(--text);

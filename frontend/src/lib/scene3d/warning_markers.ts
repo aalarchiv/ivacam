@@ -2,7 +2,7 @@
 /// warning, colored by severity and anchored at the warning's world
 /// position. Lazily rebuilt whenever sim diagnostics change.
 ///
-/// Extracted from Scene3D.svelte (4w2f). Owns its THREE.Group. The marker
+/// Extracted from Scene3D.svelte. Owns its THREE.Group. The marker
 /// radius scales off `sceneRadius` (derived from the line buffers, still
 /// owned by the host) so it reads at any zoom.
 

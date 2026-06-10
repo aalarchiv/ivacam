@@ -21,16 +21,16 @@
   }
   let { open, onClose }: Props = $props();
 
-  // PostProcessor editor (uzz) — the heavy editing surface lives in
-  // a dedicated dialog with a live preview pane and JSON I/O. We just
+  // PostProcessor editor — the heavy editing surface lives in a
+  // dedicated dialog with a live preview pane and JSON I/O. We just
   // own the "is it open" flag.
   let editorOpen = $state(false);
 
   /// The dialog edits two top-level pieces — the machine settings plus
   /// the jerk fields (a single enable checkbox + AxisLimits, default
   /// off: trapezoidal profile only; S-curve refinement is Phase 2) —
-  /// so the DialogDraft (kdfh) wraps them as one composite. One draft,
-  /// one pristine snapshot, one dirty check covering both.
+  /// so the DialogDraft wraps them as one composite. One draft, one
+  /// pristine snapshot, one dirty check covering both.
   interface MachineDraft {
     machine: MachineSettings;
     jerkEnabled: boolean;
@@ -402,7 +402,7 @@
           <option value="ignore">Ignore (no tool-change output)</option>
         </select>
       </label>
-      <!-- 4lq5: optional-stop M1 alternative to M0 at program pauses. -->
+      <!-- Optional-stop M1 alternative to M0 at program pauses. -->
       <label
         class="check"
         title="Emit M1 (optional stop) instead of M0 (mandatory stop) at every program pause — the Pause op and the manual tool-change halt. M1 is honored only when the controller's optional-stop switch is ON, so a vetted program can run unattended (switch off skips the pauses) yet still stop on demand. Off = mandatory M0."

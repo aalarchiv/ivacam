@@ -1,4 +1,4 @@
-/// File-level transform engine (bww). A non-destructive 2D transform
+/// File-level transform engine. A non-destructive 2D transform
 /// stored on the project that re-positions / re-orients / scales the
 /// imported drawing on the stock. Backend primitives live in
 /// `crates/ivac-core/src/cam.rs`; the same math is replicated here in
@@ -91,7 +91,7 @@ export function applyFileTransformToPoint(
 }
 
 /// Inverse of `applyFileTransformToPoint`: map a transformed-world
-/// point back to the original raw-import space (43l2). The pivot stays
+/// point back to the original raw-import space. The pivot stays
 /// at the ORIGINAL bbox center (the same pivot the forward transform
 /// uses), so callers pass the raw `bbox`. Composition with
 /// `applyFileTransformToPoint(_, T, bbox)` round-trips to identity
@@ -175,7 +175,7 @@ function transformPoint(
   return { x, y };
 }
 
-/// Merge N imports into a single ImportResponse (wrsu Phase 2). Each
+/// Merge N imports into a single ImportResponse. Each
 /// entry's `fileTransform` is applied to its own copy first; then
 /// segments / objects / layers / object_meta are concatenated.
 ///
@@ -190,7 +190,7 @@ function transformPoint(
 /// if collisions become a real problem.
 ///
 /// The single-entry case short-circuits to `applyFileTransform(entry.source,
-/// entry.fileTransform)` — same path as before Phase 2.
+/// entry.fileTransform)` — same path as the single-import case.
 export function combineImports(entries: readonly ImportEntry[]): ImportResponse | null {
   if (entries.length === 0) return null;
   if (entries.length === 1) {

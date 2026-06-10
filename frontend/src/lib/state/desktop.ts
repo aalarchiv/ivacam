@@ -1,7 +1,7 @@
 // Desktop-only capability surface. Components import from here instead
 // of branching on `isTauri()` directly — that keeps transport awareness
 // pinned to the state layer and lets `grep -rn 'isTauri' src/lib` stay
-// short (audit dqnd).
+// short.
 //
 // Functions in this module **self-guard**: callers can invoke them
 // unconditionally on either transport. The `isDesktop` flag is only
@@ -28,9 +28,9 @@ export async function wireSourceWatch(): Promise<() => void> {
   try {
     const { onSourceFileChanged } = await import('../api/tauri');
     return await onSourceFileChanged(async ({ path }) => {
-      // wrsu Phase 5a: with multi-file imports every entry has its own
-      // lastImportPath. Accept the event if any current import is
-      // watching this path (reimportFromPath addresses the right entry).
+      // With multi-file imports every entry has its own lastImportPath.
+      // Accept the event if any current import is watching this path
+      // (reimportFromPath addresses the right entry).
       const watched = project.data.imports.some((e) => e.lastImportPath === path);
       if (!watched) return;
       if (project.data.settings.autoReloadSources) {
@@ -62,12 +62,12 @@ export async function wireFileAssociationOpen(onPath: (path: string) => void): P
   }
 }
 
-/// Install the desktop close-requested listener (qjec). The Tauri
-/// main process intercepts window close, prevents it, and fires
-/// `app:close_requested`. The callback decides whether to confirm or
-/// keep the window open; calling `confirmClose()` quits, calling
-/// nothing keeps the window open. Returns the unlisten callback
-/// (no-op on web — the browser tab close cannot be intercepted).
+/// Install the desktop close-requested listener. The Tauri main process
+/// intercepts window close, prevents it, and fires `app:close_requested`.
+/// The callback decides whether to confirm or keep the window open;
+/// calling `confirmClose()` quits, calling nothing keeps the window open.
+/// Returns the unlisten callback (no-op on web — the browser tab close
+/// cannot be intercepted).
 export async function wireCloseRequested(onRequested: () => void): Promise<() => void> {
   if (!isTauri()) return () => {};
   try {

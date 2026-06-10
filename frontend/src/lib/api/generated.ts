@@ -105,6 +105,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/text/layer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Render a TextLayer into geometry segments (live preview)
+         * @description Tessellates one editable TextLayer (content + font bytes + size /
+         *     spacing / placement) into the project's standard Segment shape,
+         *     for the on-canvas live preview. The pipeline re-renders text
+         *     layers itself at Generate time, so this endpoint only feeds the
+         *     2D canvas tessellation. Mirrors the Tauri `render_text_layer`
+         *     command and the WASM equivalent.
+         */
+        post: operations["renderTextLayer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/helix-radius": {
         parameters: {
             query?: never;
@@ -2546,6 +2571,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RenderTextResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    renderTextLayer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TextLayer"];
+            };
+        };
+        responses: {
+            /** @description Rendered text-layer geometry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenderTextLayerResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];

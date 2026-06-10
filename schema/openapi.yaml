@@ -116,6 +116,32 @@ paths:
                 $ref: '#/components/schemas/RenderTextResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+  /text/layer:
+    post:
+      summary: Render a TextLayer into geometry segments (live preview)
+      operationId: renderTextLayer
+      description: |
+        Tessellates one editable TextLayer (content + font bytes + size /
+        spacing / placement) into the project's standard Segment shape,
+        for the on-canvas live preview. The pipeline re-renders text
+        layers itself at Generate time, so this endpoint only feeds the
+        2D canvas tessellation. Mirrors the Tauri `render_text_layer`
+        command and the WASM equivalent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextLayer'
+      responses:
+        '200':
+          description: Rendered text-layer geometry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderTextLayerResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
   /helix-radius:
     post:
       summary: Preview the auto-fit helix radius for a pocket selection

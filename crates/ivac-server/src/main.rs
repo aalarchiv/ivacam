@@ -25,7 +25,11 @@ use tokio_stream::StreamExt;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 
-use ivac_core::input::text::{render_text_api, RenderTextRequest, RenderTextResponse};
+use ivac_core::input::text::{
+    render_text_api, render_text_layer_api, RenderTextLayerResponse, RenderTextRequest,
+    RenderTextResponse,
+};
+use ivac_core::project::TextLayer;
 use ivac_core::pipeline::{
     generate_streaming, run_pipeline, CancelToken, PipelineError, PipelineEvent, PipelineRequest,
     PipelineResponse,
@@ -57,6 +61,7 @@ async fn main() -> Result<()> {
         .route("/generate/stream", post(generate_stream))
         .route("/generate/cancel/:token_id", post(generate_cancel))
         .route("/text", post(render_text_handler))
+        .route("/text/layer", post(render_text_layer_handler))
         .route("/helix-radius", post(helix_radius_handler))
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
         .layer(cors)
@@ -261,6 +266,23 @@ async fn render_text_handler(
     Json(req): Json<RenderTextRequest>,
 ) -> Result<Json<RenderTextResponse>, AppError> {
     tokio::task::spawn_blocking(move || render_text_api(&req))
+        .await
+        .map_err(|e| AppError::internal(e.to_string()))?
+        .map(Json)
+        .map_err(AppError::from)
+}
+
+/// Render a full `TextLayer` → segments for the live 2D preview.
+/// Cross-transport mirror of the Tauri `render_text_layer` command and
+/// the WASM equivalent — `WiacClient.renderTextLayer` expects all three
+/// transports to expose the same shape. Generation re-renders text
+/// server-side regardless; this endpoint only feeds the on-canvas
+/// preview tessellation.
+async fn render_text_layer_handler(
+    State(_state): State<Arc<AppState>>,
+    Json(layer): Json<TextLayer>,
+) -> Result<Json<RenderTextLayerResponse>, AppError> {
+    tokio::task::spawn_blocking(move || render_text_layer_api(&layer))
         .await
         .map_err(|e| AppError::internal(e.to_string()))?
         .map(Json)

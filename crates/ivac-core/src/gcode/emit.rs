@@ -134,6 +134,15 @@ pub(super) fn emit_offset<P: PostProcessor>(
     // 8x faster) cut feed — snaps non-center-cutting endmill tips and
     // is the canonical proud-stock crash. Posts dedupe identical-rate
     // F-emits so the restore is free when rate_v == rate_h.
+    // A straight lead leaves the head at the off-contour hop point;
+    // the pass machinery must emit the lead-in cut (hop → contour
+    // start) at the pass depth before walking. Without it the walk's
+    // first motion ran hop → segments[0].END, cutting a chord that
+    // skipped the first segment entirely — a permanently wrong kerf on
+    // every single-pass cut (plasma / laser / drag / single-pass
+    // mill); multi-pass mill only self-healed on pass ≥ 2 because
+    // each later pass starts exactly at the contour start.
+    let straight_lead = matches!(lead_in, LeadGeometry::Straight { .. });
     match lead_in {
         LeadGeometry::Straight { from } => {
             post.move_to(Some(from.x), Some(from.y), Some(setup.mill.fast_move_z));
@@ -235,6 +244,7 @@ pub(super) fn emit_offset<P: PostProcessor>(
         &offset.segments,
         &offset.tabs,
         offset.is_finish,
+        straight_lead,
         post,
     );
 
@@ -296,6 +306,7 @@ fn emit_single_pass<P: PostProcessor>(
     segments: &[Segment],
     rate_v: u32,
     rate_h: u32,
+    straight_lead: bool,
     post: &mut P,
 ) {
     // Plasma cuts at `cut_height_mm` above stock (positive Z), NOT
@@ -321,6 +332,15 @@ fn emit_single_pass<P: PostProcessor>(
         post.linear(None, None, Some(cut_z));
     }
     post.feedrate(rate_h);
+    // Straight lead-in cut: the head sits at the off-contour hop
+    // point (plasma pierced there; drag / plot dove there) — cut onto
+    // the contour start at the cut plane so the walk traces the first
+    // segment from its true start instead of chording to its end.
+    if straight_lead {
+        if let Some(first) = segments.first() {
+            post.linear(Some(first.start.x), Some(first.start.y), None);
+        }
+    }
     let dragoff = setup.tool.dragoff.unwrap_or(0.0);
     let fitted = fit_line_runs(segments, setup);
     // Single-pass; a fresh whirl state is fine.
@@ -346,6 +366,7 @@ fn multi_pass<P: PostProcessor>(
     segments: &[Segment],
     tabs: &[crate::cam::offsets::TabPoint],
     is_finish: bool,
+    straight_lead: bool,
     post: &mut P,
 ) {
     use crate::project::{PlungeStrategy, TabType};
@@ -371,7 +392,7 @@ fn multi_pass<P: PostProcessor>(
         || setup.machine.mode == MachineMode::Drag
         || setup.machine.mode == MachineMode::Plasma
     {
-        emit_single_pass(setup, segments, rate_v, rate_h, post);
+        emit_single_pass(setup, segments, rate_v, rate_h, straight_lead, post);
         return;
     }
     // Build the Z schedule. depth_list (when non-empty) wins as an
@@ -562,6 +583,16 @@ fn multi_pass<P: PostProcessor>(
             };
             if ramp_length > 1e-6 && total_path_len >= ramp_length {
                 post.feedrate(rate_h);
+                // Straight lead-in cut (pass 0 only): the head sits at
+                // the off-contour hop point where the lead plunged — cut
+                // onto the contour start so the walk traces the first
+                // segment from its true start instead of chording to its
+                // end. Later passes already start at the contour start.
+                if straight_lead && pass_idx == 0 {
+                    if let Some(first) = pass_segments.first() {
+                        post.linear(Some(first.start.x), Some(first.start.y), None);
+                    }
+                }
                 emit_ramp_pass(pass_segments, pz, z, ramp_length, post);
             } else {
                 // Path too short for the ramp → fall back to straight
@@ -569,6 +600,16 @@ fn multi_pass<P: PostProcessor>(
                 post.feedrate(rate_v);
                 post.linear(None, None, Some(z));
                 post.feedrate(rate_h);
+                // Straight lead-in cut (pass 0 only): the head sits at
+                // the off-contour hop point where the lead plunged — cut
+                // onto the contour start so the walk traces the first
+                // segment from its true start instead of chording to its
+                // end. Later passes already start at the contour start.
+                if straight_lead && pass_idx == 0 {
+                    if let Some(first) = pass_segments.first() {
+                        post.linear(Some(first.start.x), Some(first.start.y), None);
+                    }
+                }
                 let dragoff = setup.tool.dragoff.unwrap_or(0.0);
                 let fitted = fit_line_runs(pass_segments, setup);
                 emit_cut_path(
@@ -586,6 +627,16 @@ fn multi_pass<P: PostProcessor>(
             post.feedrate(rate_v);
             post.linear(None, None, Some(z));
             post.feedrate(rate_h);
+            // Straight lead-in cut (pass 0 only): the head sits at
+            // the off-contour hop point where the lead plunged — cut
+            // onto the contour start so the walk traces the first
+            // segment from its true start instead of chording to its
+            // end. Later passes already start at the contour start.
+            if straight_lead && pass_idx == 0 {
+                if let Some(first) = pass_segments.first() {
+                    post.linear(Some(first.start.x), Some(first.start.y), None);
+                }
+            }
             if pass_uses_tabs {
                 // Tabs are a closed-path feature; open paths don't
                 // generate tab points so this branch isn't reached on

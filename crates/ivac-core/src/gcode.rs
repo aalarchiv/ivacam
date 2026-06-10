@@ -2675,6 +2675,91 @@ mod tests {
         check_arm(LeadKind::Off, 0.0, "None");
     }
 
+    /// A straight lead-in must CUT from the lead point onto the
+    /// contour start before the walk traces the first segment.
+    /// Regression: the Straight branch plunged / pierced at the lead
+    /// point but never emitted the entry cut, so the first motion ran
+    /// lead-point → segments[0].END — a chord that skipped the first
+    /// segment entirely. Multi-pass mill self-healed on pass ≥ 2;
+    /// single-pass cuts (plasma / laser / drag / single-pass mill)
+    /// shipped the wrong kerf path permanently.
+    #[test]
+    fn straight_lead_in_traces_contour_start_before_first_segment() {
+        use crate::cam::offsets::PolylineOffset;
+
+        // Closed 30mm square starting at the origin; with a 3mm
+        // straight lead the lead point sits off-contour at (0, 3). The
+        // invariant: (0, 0) is visited before (30, 0).
+        fn square() -> PolylineOffset {
+            PolylineOffset {
+                segments: vec![
+                    Segment::line(p(0.0, 0.0), p(30.0, 0.0), "0", 7),
+                    Segment::line(p(30.0, 0.0), p(30.0, 30.0), "0", 7),
+                    Segment::line(p(30.0, 30.0), p(0.0, 30.0), "0", 7),
+                    Segment::line(p(0.0, 30.0), p(0.0, 0.0), "0", 7),
+                ],
+                closed: true,
+                level: 0,
+                is_pocket: 0,
+                layer: "0".into(),
+                color: 7,
+                source_object_idx: 0,
+                tabs: Vec::new(),
+                is_finish: false,
+            }
+        }
+
+        fn check(mode: MachineMode, label: &str) {
+            let mut setup = Setup::default();
+            setup.tool.diameter = 3.0;
+            setup.tool.speed = 1000;
+            setup.tool.rate_v = 100;
+            setup.tool.rate_h = 800;
+            setup.mill.depth = -2.0;
+            setup.mill.fast_move_z = 5.0;
+            setup.leads.r#in = LeadKind::Straight;
+            setup.leads.in_length = 3.0;
+            setup.leads.out = LeadKind::Off;
+            setup.machine.comments = false;
+            setup.machine.mode = mode;
+            setup.mill.offset = ToolOffset::On;
+
+            let mut post = linuxcnc::Post::new();
+            let g = emit_polylines(&setup, &[square()], &mut post);
+            let lines: Vec<&str> = g.lines().collect();
+            // The lead-in cut lands on the contour start (0,0). The
+            // post delta-encodes coordinates: coming from the lead
+            // point (0, 3) this emits `G1 Y0` (X unchanged).
+            let entry_cut = lines
+                .iter()
+                .position(|l| l.starts_with("G1") && l.contains("Y0") && !l.contains('X'))
+                .unwrap_or_else(|| {
+                    panic!("[{label}] expected lead-in cut `G1 Y0` to the contour start:\n{g}")
+                });
+            // …and only THEN the first segment toward (30, 0).
+            let first_seg = lines
+                .iter()
+                .position(|l| l.starts_with("G1") && l.contains("X30"))
+                .unwrap_or_else(|| panic!("[{label}] expected first segment cut to X30:\n{g}"));
+            assert!(
+                entry_cut < first_seg,
+                "[{label}] lead-in must reach the contour start (line {entry_cut}) before \
+                 cutting the first segment (line {first_seg}):\n{g}"
+            );
+            // The chord symptom: the first segment cut must not carry a
+            // Y word (it runs along Y=0 FROM (0,0), not diagonally from
+            // the lead point (0,3)).
+            assert!(
+                !lines[first_seg].contains('Y'),
+                "[{label}] first segment cut must be pure X motion (chord regression):\n{g}"
+            );
+        }
+
+        check(MachineMode::Plasma, "plasma");
+        check(MachineMode::Laser, "laser");
+        check(MachineMode::Mill, "mill");
+    }
+
     /// Final retract after lead-out (to `fast_move_z`) must be a
     /// rapid (G0), not a cut motion (G1). The lead-out already rolled
     /// the cutter into free space; retracting at cut feed multiplies

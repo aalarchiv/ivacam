@@ -5,7 +5,7 @@ import {
   pickBestToolForOp,
   pickBestDrillTool,
   inferDrillDiameterMm,
-  partitionToolsForMode,
+  partitionToolsForModes,
 } from './tool_picker';
 import type { components } from '../api/generated';
 import type { ToolEntry } from './project-types';
@@ -172,7 +172,7 @@ describe('pickBestToolForOp', () => {
   });
 });
 
-describe('partitionToolsForMode', () => {
+describe('partitionToolsForModes', () => {
   const torch = (id: number): ToolEntry =>
     ({
       id,
@@ -188,10 +188,10 @@ describe('partitionToolsForMode', () => {
 
   it('splits the library by mode compatibility, preserving order', () => {
     const tools = [endmill(1, 3), torch(2), endmill(3, 6)];
-    const plasma = partitionToolsForMode(tools, 'plasma');
+    const plasma = partitionToolsForModes(tools, ['plasma']);
     expect(plasma.compatible.map((t) => t.id)).toEqual([2]);
     expect(plasma.incompatible.map((t) => t.id)).toEqual([1, 3]);
-    const mill = partitionToolsForMode(tools, 'mill');
+    const mill = partitionToolsForModes(tools, ['mill']);
     expect(mill.compatible.map((t) => t.id)).toEqual([1, 3]);
     expect(mill.incompatible.map((t) => t.id)).toEqual([2]);
   });
@@ -199,8 +199,24 @@ describe('partitionToolsForMode', () => {
   it('never drops a tool — the two halves always re-cover the library', () => {
     const tools = [endmill(1, 3), torch(2), vbit(3, 6)];
     for (const mode of ['mill', 'laser', 'drag', 'plasma'] as const) {
-      const { compatible, incompatible } = partitionToolsForMode(tools, mode);
+      const { compatible, incompatible } = partitionToolsForModes(tools, [mode]);
       expect(compatible.length + incompatible.length).toBe(tools.length);
     }
+  });
+});
+
+describe('partitionToolsForModes with a combo capability set', () => {
+  it('keeps both heads of a mill+plasma machine in the compatible half', () => {
+    const tools = [endmill(1, 3), vbit(2, 6)];
+    const torch = {
+      ...endmill(3, 1.5),
+      kind: 'plasma_torch',
+    } as unknown as ToolEntry;
+    const { compatible, incompatible } = partitionToolsForModes(
+      [...tools, torch],
+      ['mill', 'plasma'],
+    );
+    expect(compatible.map((t) => t.id)).toEqual([1, 2, 3]);
+    expect(incompatible).toEqual([]);
   });
 });

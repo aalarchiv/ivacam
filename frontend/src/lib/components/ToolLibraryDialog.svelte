@@ -16,9 +16,10 @@
   import * as fileOps from '../services/file_ops';
   import {
     attrApplies,
+    effectiveModes,
     KIND_DISPLAY_LABELS,
-    MACHINE_MODE_NOUN,
-    toolCompatibleWithMode,
+    machineModesLabel,
+    toolCompatibleWithAnyMode,
   } from '../state/tool_family';
   import { defaultToolForMode } from '../state/tool_mode_defaults';
   import {
@@ -53,15 +54,17 @@
   let highlightedId = $state<number | null>(null);
   let bodyEl = $state<HTMLDivElement | null>(null);
   /// Mode filter: the default view shows only tools the machine's
-  /// current mode can run; the "N hidden — Show all" row reveals the
-  /// rest. View-only — a mode switch never mutates the library.
+  /// EFFECTIVE mode set (primary mode + capabilities — a combo
+  /// mill+plasma machine keeps both halves visible) can run; the
+  /// "N hidden — Show all" row reveals the rest. View-only — a mode
+  /// switch never mutates the library.
   let showIncompatible = $state(false);
-  const machineMode = $derived(project.data.machine.mode);
+  const machineModes = $derived(effectiveModes(project.data.machine));
   const incompatibleCount = $derived(
-    draft.filter((t) => !toolCompatibleWithMode(t.kind, machineMode)).length,
+    draft.filter((t) => !toolCompatibleWithAnyMode(t.kind, machineModes)).length,
   );
   function rowVisible(tool: ToolEntry): boolean {
-    return showIncompatible || toolCompatibleWithMode(tool.kind, machineMode);
+    return showIncompatible || toolCompatibleWithAnyMode(tool.kind, machineModes);
   }
 
   $effect(() => {
@@ -134,10 +137,10 @@
 
   function addTool() {
     const nextId = (draft.reduce((m, t) => Math.max(m, t.id), 0) || 0) + 1;
-    // Seed the machine mode's signature kind — a new tool on a plasma
+    // Seed the PRIMARY mode's signature kind — a new tool on a plasma
     // machine starts as a torch, not an endmill the mode filter would
     // immediately hide.
-    dd.draft = [...draft, defaultToolForMode(machineMode, nextId)];
+    dd.draft = [...draft, defaultToolForMode(project.data.machine.mode, nextId)];
   }
 
   function removeAt(idx: number) {
@@ -1672,24 +1675,24 @@
           <div class="mode-filter-row">
             <span
               >{incompatibleCount}
-              {incompatibleCount === 1 ? 'tool' : 'tools'} hidden (incompatible with a {MACHINE_MODE_NOUN[
-                machineMode
-              ]} machine)</span
+              {incompatibleCount === 1 ? 'tool' : 'tools'} hidden (incompatible with a {machineModesLabel(
+                machineModes,
+              )} machine)</span
             >
             <button
               type="button"
               class="btn-secondary"
               onclick={() => (showIncompatible = true)}
-              title="Show every tool in the library, including ones the current machine mode can't run. The library is never modified by a mode switch — this only changes the view."
+              title="Show every tool in the library, including ones the machine's mode/capabilities can't run. The library is never modified by a mode switch — this only changes the view."
               >Show all</button
             >
           </div>
         {:else if showIncompatible && incompatibleCount > 0}
           <div class="mode-filter-row">
             <span
-              >Showing all tools — {incompatibleCount} can't run on a {MACHINE_MODE_NOUN[
-                machineMode
-              ]} machine</span
+              >Showing all tools — {incompatibleCount} can't run on a {machineModesLabel(
+                machineModes,
+              )} machine</span
             >
             <button type="button" class="btn-secondary" onclick={() => (showIncompatible = false)}
               >Hide incompatible</button

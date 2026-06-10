@@ -18,8 +18,8 @@
   import { prettyOpKind } from '../state/project-types';
   import { formatLength } from '../cam/units';
   import { formatExpectedToolKinds, isToolKindAcceptable } from '../state/op_tool_constraint';
-  import { MACHINE_MODE_NOUN } from '../state/tool_family';
-  import { partitionToolsForMode } from '../state/tool_picker';
+  import { effectiveModes, machineModesLabel } from '../state/tool_family';
+  import { partitionToolsForModes } from '../state/tool_picker';
   import VCarveSection from './op_properties/VCarveSection.svelte';
   import ChamferSection from './op_properties/ChamferSection.svelte';
   import ThreadSection from './op_properties/ThreadSection.svelte';
@@ -83,10 +83,12 @@
       : (project.data.operations.find((o) => o.id === project.sel.selectedOpId) ?? null),
   );
 
-  /// Library split for the tool pickers: mode-compatible tools first;
-  /// the rest stay selectable under a labelled "incompatible" group so
-  /// a machine-mode switch never strands an op on an invisible tool.
-  const toolParts = $derived(partitionToolsForMode(project.data.tools, project.data.machine.mode));
+  /// Library split for the tool pickers: tools the machine's effective
+  /// mode set can run first; the rest stay selectable under a labelled
+  /// "incompatible" group so a machine-mode switch never strands an op
+  /// on an invisible tool.
+  const machineModes = $derived(effectiveModes(project.data.machine));
+  const toolParts = $derived(partitionToolsForModes(project.data.tools, machineModes));
 
   /// Resolve the assigned tool's defaultStep for the current op so the
   /// Step / pass input can fall back to it. null when no assignment.
@@ -198,7 +200,7 @@
       >
     {/each}
     {#if toolParts.incompatible.length > 0}
-      <optgroup label="Incompatible with a {MACHINE_MODE_NOUN[project.data.machine.mode]} machine">
+      <optgroup label="Incompatible with a {machineModesLabel(machineModes)} machine">
         {#each toolParts.incompatible as t (t.id)}
           <option value={t.id} disabled={disabledId === t.id} title={t.comment ?? ''}
             >#{t.id} {t.name} ({formatLength(t.diameter, project.data.machine.unit)})</option

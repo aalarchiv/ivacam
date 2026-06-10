@@ -170,6 +170,7 @@ import { buildOpEntry } from './op_defaults';
 import { assessModeSwitch } from './mode_switch';
 import { modeNotice } from './mode_notice.svelte';
 import { defaultToolForMode } from './tool_mode_defaults';
+import { effectiveModes } from './tool_family';
 
 /// Memoised bundled-font fetch — the DejaVu Sans bytes used as the
 /// default font for imported DXF TEXT/MTEXT entities. Resolved once
@@ -737,7 +738,7 @@ export class ProjectState {
       reliefSources: this.data.reliefSources,
       selectionIds: [...this.sel.selectedObjects],
       objectMeta: this.transformedImport?.object_meta ?? [],
-      mode: this.data.machine.mode,
+      modes: effectiveModes(this.data.machine),
     });
     this.history.exec(addOperationCommand(op), this.target());
     this.sel.selectedOpId = op.id;
@@ -928,7 +929,7 @@ export class ProjectState {
   // ── machine / stock ──────────────────────────────────────────────────
 
   setMachine(next: MachineSettings) {
-    const prevMode = this.data.machine.mode;
+    const prevModes = effectiveModes(this.data.machine);
     this.history.exec(setMachineCommand(next), this.target());
     // Machine change invalidates the cached gcode: work area / units /
     // post-processor dialect / rapid feeds all feed into the run, so a
@@ -938,13 +939,19 @@ export class ProjectState {
     // empty-state messaging show the stale-vs-fresh distinction
     // immediately instead of silently lying.
     this.gen.generated = null;
-    // Mode switch: surface ops now referencing incompatible tools (or a
-    // library with nothing the mode can run) as ONE non-modal notice.
-    // Never rewrites anything itself; never blocks the toggle. A switch
-    // back to a mode where everything fits clears the notice (assess
-    // returns null).
-    if (next.mode !== prevMode) {
-      modeNotice.current = assessModeSwitch(next.mode, this.data.operations, this.data.tools);
+    // Mode / capability change: surface ops now referencing
+    // incompatible tools (or a library with nothing the machine can
+    // run) as ONE non-modal notice. Never rewrites anything itself;
+    // never blocks the toggle. A switch back to a config where
+    // everything fits clears the notice (assess returns null).
+    // Compared on the EFFECTIVE mode set so dropping a capability
+    // (mill+plasma → plasma-only) triggers the same check a primary-
+    // mode flip does.
+    const nextModes = effectiveModes(next);
+    const modesChanged =
+      nextModes.length !== prevModes.length || nextModes.some((m) => !prevModes.includes(m));
+    if (modesChanged) {
+      modeNotice.current = assessModeSwitch(next, this.data.operations, this.data.tools);
     }
   }
 

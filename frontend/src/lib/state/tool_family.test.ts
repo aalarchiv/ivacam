@@ -4,8 +4,11 @@ import {
   TOOL_COMPATIBLE_MODES,
   TOOL_FAMILY,
   attrApplies,
+  effectiveModes,
   kindsForMode,
   kindsInFamily,
+  machineModesLabel,
+  toolCompatibleWithAnyMode,
   toolCompatibleWithMode,
   toolFamily,
 } from './tool_family';
@@ -111,5 +114,30 @@ describe('tool_family capability table', () => {
   it('toolFamily round-trips', () => {
     expect(toolFamily('v_bit')).toBe('conical');
     expect(toolFamily('form_profile')).toBe('profile');
+  });
+
+  it('effectiveModes mirrors the Rust capability resolution', () => {
+    // Empty / absent capabilities ⇒ just the primary mode.
+    expect(effectiveModes({ mode: 'plasma' })).toEqual(['plasma']);
+    expect(effectiveModes({ mode: 'mill', capabilities: [] })).toEqual(['mill']);
+    // Non-empty capabilities ARE the effective set (deduped).
+    expect(effectiveModes({ mode: 'plasma', capabilities: ['plasma', 'mill'] })).toEqual([
+      'plasma',
+      'mill',
+    ]);
+    expect(effectiveModes({ mode: 'mill', capabilities: ['mill', 'mill'] })).toEqual(['mill']);
+  });
+
+  it('toolCompatibleWithAnyMode covers combo machines', () => {
+    expect(toolCompatibleWithAnyMode('endmill', ['mill', 'plasma'])).toBe(true);
+    expect(toolCompatibleWithAnyMode('plasma_torch', ['mill', 'plasma'])).toBe(true);
+    expect(toolCompatibleWithAnyMode('plasma_torch', ['mill'])).toBe(false);
+    expect(toolCompatibleWithAnyMode('laser_beam', ['mill', 'plasma'])).toBe(false);
+  });
+
+  it('machineModesLabel joins mode nouns for combo machines', () => {
+    expect(machineModesLabel(['plasma'])).toBe('plasma');
+    expect(machineModesLabel(['mill', 'plasma'])).toBe('mill + plasma');
+    expect(machineModesLabel(['drag'])).toBe('drag-knife');
   });
 });

@@ -11,33 +11,42 @@
 
 import { isProgramOnlyOp, type MachineMode, type OpEntry } from './op_types';
 import type { ToolEntry } from './project-types';
-import { toolCompatibleWithMode } from './tool_family';
+import { effectiveModes, toolCompatibleWithAnyMode } from './tool_family';
 
 export interface ModeSwitchAssessment {
-  /// The mode that was just switched to.
+  /// The primary mode that was just switched to — drives which default
+  /// tool the seed / auto-create action would add.
   mode: MachineMode;
-  /// Ops referencing a tool the new mode can't run. Empty when the
+  /// The machine's full effective mode set (primary + capabilities) —
+  /// what compatibility is judged against, so a combo machine's second
+  /// head doesn't trip the notice.
+  modes: MachineMode[];
+  /// Ops referencing a tool the machine can't run. Empty when the
   /// notice is only a seed offer.
   affectedOpIds: number[];
-  /// An existing mode-compatible tool the "assign to all" action can
+  /// An existing compatible tool the "assign to all" action can
   /// target (first in library order), or null when none exists — the
   /// action then creates the mode's default tool first.
   compatibleToolId: number | null;
-  /// True when the library holds zero tools the new mode can run and
-  /// the mode is a singleton (laser / plasma / drag — modes with one
-  /// natural tool kind). The notice then offers one-click seeding even
-  /// with no affected ops.
+  /// True when the library holds zero tools the machine can run and
+  /// the primary mode is a singleton (laser / plasma / drag — modes
+  /// with one natural tool kind). The notice then offers one-click
+  /// seeding even with no affected ops.
   seedOffer: boolean;
 }
 
-/// Assess a completed mode switch. Returns null when nothing needs the
-/// user's attention (no ops reference now-incompatible tools and a
-/// compatible tool exists or the mode is mill).
+/// Assess a completed machine change (mode switch or capability edit).
+/// Compatibility is judged against the machine's EFFECTIVE mode set —
+/// mirroring the Rust tool_incompatible_with_machine_mode backstop.
+/// Returns null when nothing needs the user's attention (no ops
+/// reference now-incompatible tools and a compatible tool exists or
+/// the primary mode is mill).
 export function assessModeSwitch(
-  mode: MachineMode,
+  machine: { mode: MachineMode; capabilities?: readonly MachineMode[] },
   operations: readonly OpEntry[],
   tools: readonly ToolEntry[],
 ): ModeSwitchAssessment | null {
+  const modes = effectiveModes(machine);
   const toolById = new Map(tools.map((t) => [t.id, t]));
   const affectedOpIds = operations
     .filter((op) => {
@@ -46,11 +55,11 @@ export function assessModeSwitch(
       // A dangling tool reference is the tool-existence validator's
       // problem, not a mode-compatibility one.
       if (!tool) return false;
-      return !toolCompatibleWithMode(tool.kind, mode);
+      return !toolCompatibleWithAnyMode(tool.kind, modes);
     })
     .map((op) => op.id);
-  const compatibleToolId = tools.find((t) => toolCompatibleWithMode(t.kind, mode))?.id ?? null;
-  const seedOffer = compatibleToolId == null && mode !== 'mill';
+  const compatibleToolId = tools.find((t) => toolCompatibleWithAnyMode(t.kind, modes))?.id ?? null;
+  const seedOffer = compatibleToolId == null && machine.mode !== 'mill';
   if (affectedOpIds.length === 0 && !seedOffer) return null;
-  return { mode, affectedOpIds, compatibleToolId, seedOffer };
+  return { mode: machine.mode, modes, affectedOpIds, compatibleToolId, seedOffer };
 }

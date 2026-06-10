@@ -194,6 +194,34 @@ export function toolCompatibleWithMode(kind: ToolKind, mode: MachineMode): boole
   return TOOL_COMPATIBLE_MODES[kind].includes(mode);
 }
 
+/// The modes a machine can EFFECTIVELY run: a non-empty capability set
+/// IS the effective set (MachineDialog guarantees it contains the
+/// primary mode); empty / absent falls back to just the primary mode.
+/// Mirrors the Rust pipeline's capability resolution in
+/// crates/ivac-core/src/pipeline/warnings.rs — keep the two in sync,
+/// or the FE filter and the generate-time backstop will disagree on a
+/// combo machine.
+export function effectiveModes(machine: {
+  mode: MachineMode;
+  capabilities?: readonly MachineMode[];
+}): MachineMode[] {
+  const caps = machine.capabilities ?? [];
+  return caps.length > 0 ? [...new Set(caps)] : [machine.mode];
+}
+
+/// Whether a tool kind can run on ANY of the given modes — the
+/// effective-capability variant of `toolCompatibleWithMode`. A combo
+/// mill+plasma machine runs both endmills and torches.
+export function toolCompatibleWithAnyMode(kind: ToolKind, modes: readonly MachineMode[]): boolean {
+  return modes.some((m) => TOOL_COMPATIBLE_MODES[kind].includes(m));
+}
+
+/// In-sentence label for an effective-mode set: "plasma" for a
+/// single-mode machine, "mill + plasma" for a combo.
+export function machineModesLabel(modes: readonly MachineMode[]): string {
+  return modes.map((m) => MACHINE_MODE_NOUN[m]).join(' + ');
+}
+
 /// The tool kinds a machine in `mode` can run, in TOOL_FAMILY
 /// declaration order (= kind-dropdown order).
 export function kindsForMode(mode: MachineMode): ToolKind[] {

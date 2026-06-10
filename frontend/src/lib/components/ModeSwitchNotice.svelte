@@ -12,8 +12,8 @@
   import { modeNotice } from '../state/mode_notice.svelte';
   import {
     KIND_DISPLAY_LABELS,
-    MACHINE_MODE_NOUN,
-    toolCompatibleWithMode,
+    machineModesLabel,
+    toolCompatibleWithAnyMode,
   } from '../state/tool_family';
   import { defaultKindForMode } from '../state/tool_mode_defaults';
 
@@ -27,13 +27,13 @@
       : project.data.operations.filter((op) => {
           if (!notice.affectedOpIds.includes(op.id)) return false;
           const tool = project.data.tools.find((t) => t.id === op.toolId);
-          return tool != null && !toolCompatibleWithMode(tool.kind, notice.mode);
+          return tool != null && !toolCompatibleWithAnyMode(tool.kind, notice.modes);
         }),
   );
   const compatibleTool = $derived(
     notice == null
       ? null
-      : (project.data.tools.find((t) => toolCompatibleWithMode(t.kind, notice.mode)) ?? null),
+      : (project.data.tools.find((t) => toolCompatibleWithAnyMode(t.kind, notice.modes)) ?? null),
   );
   const stillRelevant = $derived(
     notice != null && (affected.length > 0 || (notice.seedOffer && compatibleTool == null)),
@@ -69,14 +69,14 @@
       <span class="msg">
         {affected.length}
         {affected.length === 1 ? 'operation uses a tool' : 'operations use tools'} that cannot run on
-        a {MACHINE_MODE_NOUN[notice.mode]} machine.
+        a {machineModesLabel(notice.modes)} machine.
       </span>
       <button type="button" class="action" onclick={assignAll}>
         Assign {assignTarget} to {affected.length === 1 ? 'it' : 'all'}
       </button>
     {:else}
       <span class="msg">
-        No tool in the library can run on a {MACHINE_MODE_NOUN[notice.mode]} machine.
+        No tool in the library can run on a {machineModesLabel(notice.modes)} machine.
       </span>
       <button type="button" class="action" onclick={seed}>
         Add a default {KIND_DISPLAY_LABELS[defaultKindForMode(notice.mode)].toLowerCase()}

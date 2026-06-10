@@ -166,6 +166,15 @@
     try {
       const snap = $state.snapshot(draft) as MachineSettings;
       snap.jerk = composite.jerkEnabled ? { ...jerkDraft } : undefined;
+      // Normalize: a non-empty capability set must contain the primary
+      // mode (the emitter targets it; Rust's effective-capability logic
+      // reads capabilities INSTEAD of mode when non-empty). Covers the
+      // mode being changed after capabilities were customized — the
+      // disabled primary checkbox shows checked but never fires
+      // onchange, so the draft set can lack the new mode.
+      if (snap.capabilities && snap.capabilities.length > 0) {
+        snap.capabilities = [...new Set([...snap.capabilities, snap.mode])];
+      }
       project.setMachine(snap);
     } catch (e) {
       console.error('MachineDialog.commit: setMachine failed', e);
@@ -250,19 +259,31 @@
           Capabilities
         </legend>
         {#each ['mill', 'laser', 'drag', 'plasma'] as cap (cap)}
+          {@const isPrimary = cap === draft.mode}
+          <!-- The primary mode is always a capability (the gcode
+               emitter targets it), so its checkbox is DISABLED rather
+               than silently re-added on commit — unchecking it and
+               watching it come back on reopen reads as a bug. -->
           <label class="cap-toggle">
             <input
               type="checkbox"
-              checked={(draft.capabilities ?? [draft.mode]).includes(
-                cap as 'mill' | 'laser' | 'drag' | 'plasma',
-              )}
+              disabled={isPrimary}
+              title={isPrimary
+                ? 'The primary mode (selected under Mode above) is always available — pick a different Mode to remove it.'
+                : ''}
+              checked={isPrimary ||
+                (draft.capabilities ?? [draft.mode]).includes(
+                  cap as 'mill' | 'laser' | 'drag' | 'plasma',
+                )}
               onchange={(e) => {
                 const on = (e.currentTarget as HTMLInputElement).checked;
                 const cur = new Set(draft.capabilities ?? [draft.mode]);
                 if (on) cur.add(cap as 'mill' | 'laser' | 'drag' | 'plasma');
                 else cur.delete(cap as 'mill' | 'laser' | 'drag' | 'plasma');
-                // Always keep the primary mode in the set so the
-                // gcode emitter never targets a removed capability.
+                // Belt-and-braces: keep the primary mode in the set so
+                // the gcode emitter never targets a removed capability
+                // (the checkbox above is disabled, but a stale draft
+                // could still lack it).
                 cur.add(draft.mode);
                 draft.capabilities = [...cur];
               }}

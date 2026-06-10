@@ -7,7 +7,7 @@
 
 import type { MachineMode, OpEntry, OpKind } from './op_types';
 import { prettyOpKind, type DrillCycle, type ReliefSource, type ToolEntry } from './project-types';
-import { partitionToolsForMode, pickBestToolForOp } from './tool_picker';
+import { partitionToolsForModes, pickBestToolForOp } from './tool_picker';
 
 /// The imported-object metadata `pickBestToolForOp` consults — derived from
 /// its signature so this module doesn't re-import the generated wire type.
@@ -24,21 +24,22 @@ export interface OpDefaultsCtx {
   selectionIds: number[];
   /// Imported-object metadata, for the drill tool-diameter heuristic.
   objectMeta: ObjectMeta;
-  /// Machine mode, when known — the default tool pick prefers tools the
-  /// machine can actually run (a new Profile on a plasma machine grabs
-  /// the torch, not the first endmill in the library).
-  mode?: MachineMode;
+  /// The machine's effective mode set (`effectiveModes(machine)`),
+  /// when known — the default tool pick prefers tools the machine can
+  /// actually run (a new Profile on a plasma machine grabs the torch,
+  /// not the first endmill in the library).
+  modes?: readonly MachineMode[];
 }
 
 /// Build the default `OpEntry` for `kind`. Pure: no `$state`, no command bus,
 /// no selection side effects — the caller owns those. Mirrors the historical
 /// `addOperation` branches field-for-field (locked by `op_defaults.test.ts`).
 export function buildOpEntry(kind: OpKind, ctx: OpDefaultsCtx): OpEntry {
-  const { nextId, reliefSources, selectionIds, objectMeta, mode } = ctx;
+  const { nextId, reliefSources, selectionIds, objectMeta, modes } = ctx;
   // Mode-compatible tools first so every "first / best library tool"
   // fallback below lands on something the machine can run. Library
-  // order is preserved within each half; no mode keeps the list as-is.
-  const parts = mode ? partitionToolsForMode(ctx.tools, mode) : null;
+  // order is preserved within each half; no modes keeps the list as-is.
+  const parts = modes && modes.length > 0 ? partitionToolsForModes(ctx.tools, modes) : null;
   const tools = parts ? [...parts.compatible, ...parts.incompatible] : ctx.tools;
   // Shared skeleton. Program-only kinds (pause/homing/…) keep `toolId: 0`
   // and carry no geometry/Z-schedule fields; cutter kinds override toolId.

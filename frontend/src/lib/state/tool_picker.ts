@@ -17,7 +17,7 @@
 import type { components } from '../api/generated';
 import type { MachineMode, OpKind } from './op_types';
 import type { ToolEntry } from './project-types';
-import { toolCompatibleWithMode } from './tool_family';
+import { toolCompatibleWithAnyMode } from './tool_family';
 
 type ImportedObject = components['schemas']['ImportedObject'];
 
@@ -29,19 +29,21 @@ const SQUARE_RATIO_TOL = 1.1;
 /// hunting for next-smaller or next-larger.
 const EXACT_TOL_MM = 0.05;
 
-/// Split the library into mode-compatible tools and the rest, both in
-/// library order. Tool pickers list `compatible` first and group
-/// `incompatible` under a labelled section — visible-and-explained,
-/// never hidden-and-lost: a machine-mode switch must not strand an op
-/// on a tool the picker can no longer even display.
-export function partitionToolsForMode(
+/// Split the library into tools the machine's EFFECTIVE mode set can
+/// run and the rest, both in library order (pass `effectiveModes(
+/// machine)` — a combo mill+plasma machine keeps both endmills and
+/// torches in the compatible half). Tool pickers list `compatible`
+/// first and group `incompatible` under a labelled section —
+/// visible-and-explained, never hidden-and-lost: a machine-mode switch
+/// must not strand an op on a tool the picker can no longer display.
+export function partitionToolsForModes(
   tools: readonly ToolEntry[],
-  mode: MachineMode,
+  modes: readonly MachineMode[],
 ): { compatible: ToolEntry[]; incompatible: ToolEntry[] } {
   const compatible: ToolEntry[] = [];
   const incompatible: ToolEntry[] = [];
   for (const t of tools) {
-    (toolCompatibleWithMode(t.kind, mode) ? compatible : incompatible).push(t);
+    (toolCompatibleWithAnyMode(t.kind, modes) ? compatible : incompatible).push(t);
   }
   return { compatible, incompatible };
 }

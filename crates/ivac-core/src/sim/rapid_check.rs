@@ -452,6 +452,8 @@ mod tests {
             pierce_height_mm: None,
             cut_height_mm: None,
             pierce_delay_sec: None,
+            wear_offset_mm: 0.0,
+            last_calibrated: None,
             vcarve_lead_in_angle_deg: None,
         };
         HolderProfile::from_tool(&t).expect("holder set")
@@ -577,6 +579,8 @@ mod tests {
             pierce_height_mm: None,
             cut_height_mm: None,
             pierce_delay_sec: None,
+            wear_offset_mm: 0.0,
+            last_calibrated: None,
             vcarve_lead_in_angle_deg: None,
         };
         // No HolderProfile for laser tools.
@@ -642,6 +646,8 @@ mod tests {
             pierce_height_mm: None,
             cut_height_mm: None,
             pierce_delay_sec: None,
+            wear_offset_mm: 0.0,
+            last_calibrated: None,
             vcarve_lead_in_angle_deg: None,
         };
         let holder = HolderProfile::from_tool(&t).expect("drill has shank profile");
@@ -713,6 +719,8 @@ mod tests {
             pierce_height_mm: None,
             cut_height_mm: None,
             pierce_delay_sec: None,
+            wear_offset_mm: 0.0,
+            last_calibrated: None,
             vcarve_lead_in_angle_deg: None,
         };
         // 50×50×1 mm heightmap with tall walls everywhere outside a

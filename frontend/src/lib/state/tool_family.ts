@@ -57,7 +57,8 @@ export type ToolAttr =
   | 'compressionTransition' // compression up/down flute-split height
   | 'threadPitch' // thread-mill pitch
   | 'laser' // pierce / lead-in / kerf
-  | 'plasma'; // pierce + cut heights / pierce delay / kerf
+  | 'plasma' // pierce + cut heights / pierce delay / kerf
+  | 'wear'; // diameter wear offset + calibration
 
 /// Kind → family. The authoritative classification; everything else
 /// derives from it. Mirror of `ToolKind::family()` in Rust.
@@ -86,14 +87,14 @@ export const TOOL_FAMILY: Record<ToolKind, ToolFamily> = {
 const FAMILY_BASE_ATTRS: Record<ToolFamily, readonly ToolAttr[]> = {
   // Rotating cutters with a flat or rounded bottom: full feed/speed/step
   // controls, no tip geometry.
-  cylindrical: ['flutes', 'speed', 'plunge', 'defaultStep'],
-  radiused: ['flutes', 'speed', 'plunge', 'defaultStep'],
+  cylindrical: ['flutes', 'speed', 'plunge', 'defaultStep', 'wear'],
+  radiused: ['flutes', 'speed', 'plunge', 'defaultStep', 'wear'],
   // Conical cutters add tip ⌀ + apex angle (the V-Carve depth math).
-  conical: ['flutes', 'speed', 'plunge', 'defaultStep', 'tipDiameter', 'tipAngleDeg'],
-  profile: ['flutes', 'speed', 'plunge', 'defaultStep'],
+  conical: ['flutes', 'speed', 'plunge', 'defaultStep', 'tipDiameter', 'tipAngleDeg', 'wear'],
+  profile: ['flutes', 'speed', 'plunge', 'defaultStep', 'wear'],
   // Drill: feed IS the plunge (no separate plunge), peck-step replaces
   // the generic Z step, and the conical point carries an apex angle.
-  drill: ['flutes', 'speed', 'tipAngleDeg'],
+  drill: ['flutes', 'speed', 'tipAngleDeg', 'wear'],
   // Drag-knife doesn't spin or plunge — only the trailing offset.
   drag_knife: ['dragoff'],
   // Laser has no flutes / RPM / plunge — power + pierce/lead/kerf.
@@ -101,7 +102,7 @@ const FAMILY_BASE_ATTRS: Record<ToolFamily, readonly ToolAttr[]> = {
   // Thread mill: flutes + RPM + a ramp-in plunge, the thread flank
   // angle (tipAngleDeg), and the pitch. No generic Z step — depth is
   // the thread, advanced helically by the op.
-  thread: ['flutes', 'speed', 'plunge', 'tipAngleDeg', 'threadPitch'],
+  thread: ['flutes', 'speed', 'plunge', 'tipAngleDeg', 'threadPitch', 'wear'],
   // Plasma torch: no flutes / RPM / plunge — the pierce entry
   // sequence + kerf section is the whole configuration.
   plasma: ['plasma'],

@@ -87,7 +87,7 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
     // Physical reach of the V-bit. Past `diameter / 2` the cutter has
     // run out of cone — engaging deeper would scrape the shank into
     // the stock. Folded into the r_cap below.
-    let tool_reach_r = tool.diameter * 0.5;
+    let tool_reach_r = tool.effective_diameter() * 0.5;
 
     let selected = ordered_selection(op, objects);
     let combine = source_combine_mode(op);

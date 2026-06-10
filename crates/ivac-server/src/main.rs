@@ -29,11 +29,11 @@ use ivac_core::input::text::{
     render_text_api, render_text_layer_api, RenderTextLayerResponse, RenderTextRequest,
     RenderTextResponse,
 };
-use ivac_core::project::TextLayer;
 use ivac_core::pipeline::{
     generate_streaming, run_pipeline, CancelToken, PipelineError, PipelineEvent, PipelineRequest,
     PipelineResponse,
 };
+use ivac_core::project::TextLayer;
 use ivac_core::{compute_helix_radius, HelixRadiusRequest, HelixRadiusResponse};
 
 #[tokio::main]

@@ -271,6 +271,20 @@ pub struct ToolEntry {
     /// ⇒ 0.5 s default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pierce_delay_sec: Option<f64>,
+    /// Measured wear / regrind offset on the diameter (mm). Positive =
+    /// the bit cuts smaller than nominal (worn); negative = bigger
+    /// (rare; a regrind that left a slightly larger flute). Path math
+    /// reads [`ToolEntry::effective_diameter`] (nominal − wear);
+    /// display and the tool-library editor keep showing the nominal
+    /// `diameter`. Users measure this with a test cut (slot width =
+    /// effective diameter) — see the calibration dialog.
+    #[serde(default, skip_serializing_if = "is_zero_f64")]
+    pub wear_offset_mm: f64,
+    /// Date the wear offset was last measured (ISO 8601 `YYYY-MM-DD`).
+    /// Display-only — the UI flags stale calibrations (> 90 days).
+    /// None = never calibrated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_calibrated: Option<String>,
     /// V-Carve / Stufenfase lead-in ramp angle, degrees from
     /// horizontal. Controls how steeply the cutter walks into the
     /// material at the start of each cut to avoid a vertical plunge
@@ -388,8 +402,27 @@ impl Default for ToolEntry {
             shank_diameter_mm: None,
             stickout_length_mm: None,
             holder: None,
+            wear_offset_mm: 0.0,
+            last_calibrated: None,
             vcarve_lead_in_angle_deg: None,
         }
+    }
+}
+
+impl ToolEntry {
+    /// The diameter the toolpath math should use: nominal minus the
+    /// measured wear offset, floored at 0.01 mm so a nonsense offset
+    /// can't produce a zero/negative cutter. WHO USES WHICH:
+    ///   * effective — radius offsets, pocket fills, lead geometry,
+    ///     helix-plunge radius, chamfer reach, the sim's carve width
+    ///     (everything that predicts where material is removed)
+    ///   * nominal (`self.diameter`) — UI display and the tool-library
+    ///     editor (the user types what's printed on the bit), holder /
+    ///     shank collision checks (flute wear doesn't shrink the shank,
+    ///     and the larger nominal value is the conservative bound)
+    #[must_use]
+    pub fn effective_diameter(&self) -> f64 {
+        (self.diameter - self.wear_offset_mm).max(0.01)
     }
 }
 
@@ -583,6 +616,10 @@ pub(crate) fn default_tip_angle_deg() -> f64 {
     60.0
 }
 
+fn is_zero_f64(v: &f64) -> bool {
+    *v == 0.0
+}
+
 fn is_false(b: &bool) -> bool {
     !*b
 }
@@ -737,6 +774,37 @@ mod tests {
         assert!(!ToolKind::Endmill.compatible_with_mode(Plasma));
         assert!(ToolKind::PlasmaTorch.compatible_with_mode(Plasma));
         assert!(!ToolKind::PlasmaTorch.compatible_with_mode(Mill));
+    }
+
+    #[test]
+    fn effective_diameter_subtracts_wear_and_clamps() {
+        let mut t = ToolEntry::default(); // 3 mm nominal
+        assert!(
+            (t.effective_diameter() - 3.0).abs() < 1e-12,
+            "no wear ⇒ nominal"
+        );
+        t.wear_offset_mm = 0.06;
+        assert!((t.effective_diameter() - 2.94).abs() < 1e-12);
+        // Negative wear (regrind left a larger flute) grows the bit.
+        t.wear_offset_mm = -0.02;
+        assert!((t.effective_diameter() - 3.02).abs() < 1e-12);
+        // Nonsense wear ≥ nominal clamps to the 0.01 floor.
+        t.wear_offset_mm = 5.0;
+        assert!((t.effective_diameter() - 0.01).abs() < 1e-12);
+    }
+
+    #[test]
+    fn wear_fields_round_trip_and_skip_when_default() {
+        let mut t = ToolEntry::default();
+        let json = serde_json::to_string(&t).expect("serialize");
+        assert!(!json.contains("wear_offset_mm"));
+        assert!(!json.contains("last_calibrated"));
+        t.wear_offset_mm = 0.05;
+        t.last_calibrated = Some("2026-06-10".into());
+        let json = serde_json::to_string(&t).expect("serialize");
+        let back: ToolEntry = serde_json::from_str(&json).expect("deserialize");
+        assert!((back.wear_offset_mm - 0.05).abs() < 1e-12);
+        assert_eq!(back.last_calibrated.as_deref(), Some("2026-06-10"));
     }
 
     #[test]

@@ -19,6 +19,7 @@
   import { formatLength } from '../cam/units';
   import { formatExpectedToolKinds, isToolKindAcceptable } from '../state/op_tool_constraint';
   import { effectiveModes, machineModesLabel } from '../state/tool_family';
+  import { effectiveDiameterHint } from '../state/tool_wear';
   import { partitionToolsForModes } from '../state/tool_picker';
   import VCarveSection from './op_properties/VCarveSection.svelte';
   import ChamferSection from './op_properties/ChamferSection.svelte';
@@ -366,6 +367,14 @@
         >
       </div>
     </label>
+    {#if selectedTool != null && (selectedTool.wearOffsetMm ?? 0) !== 0}
+      <p
+        class="wear-hint"
+        title="This tool has a measured wear offset (Tool library → Wear). Toolpaths are compensated to the effective diameter; the picker above keeps showing the nominal size."
+      >
+        Effective diameter: {effectiveDiameterHint(selectedTool)}
+      </p>
+    {/if}
 
     {#if op.kind === 'pocket' || op.kind === 'drill'}
       <label

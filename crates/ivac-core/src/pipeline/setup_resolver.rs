@@ -114,7 +114,7 @@ pub(super) fn dual_tool_finish_radius(op: &Op, project: &Project) -> Option<f64>
         return None;
     }
     let t = project.tools.iter().find(|t| t.id == finish_id)?;
-    Some(t.diameter * 0.5)
+    Some(t.effective_diameter() * 0.5)
 }
 
 /// Apply the tool library's `default_peck_step_mm` to peck-style drill
@@ -255,7 +255,7 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     setup.tool = ToolConfig {
         number: tool.id,
         name: tool.name.clone(),
-        diameter: tool.diameter,
+        diameter: tool.effective_diameter(),
         speed: rough_speed,
         // Per-tool spindle-warmup pause (seconds) flows into the
         // post's G4 P<n> dwell after each M3 / M4.
@@ -409,7 +409,7 @@ pub(in crate::pipeline) fn synthesize_op_setup(
         ) {
         crate::project::PlungeStrategy::Helix {
             angle_deg: 3.0,
-            radius_mm: Some(tool.diameter * 0.75),
+            radius_mm: Some(tool.effective_diameter() * 0.75),
         }
     } else {
         op.params.plunge
@@ -536,7 +536,7 @@ pub(in crate::pipeline) fn synthesize_op_setup(
         let sol = crate::cam::chamfer::chamfer_depth_capped(
             width_mm,
             tool.tip_angle_deg,
-            tool.diameter,
+            tool.effective_diameter(),
             tip_diameter_mm,
         );
         if sol.clamped_to_reach {
@@ -729,7 +729,7 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
             setup.tool = crate::project::ToolConfig {
                 number: tool.id,
                 name: tool.name.clone(),
-                diameter: tool.diameter,
+                diameter: tool.effective_diameter(),
                 speed: rs,
                 // Read the tool's actual spindle-warmup pause
                 // rather than hard-coding 1 s. The header_setup_for path
@@ -815,7 +815,7 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
         setup.tool = crate::project::ToolConfig {
             number: tool.id,
             name: tool.name.clone(),
-            diameter: tool.diameter,
+            diameter: tool.effective_diameter(),
             speed: rs,
             // Same as above — read tool.pause rather than 1.
             pause: tool.pause,
@@ -920,7 +920,7 @@ fn effective_tip_diameter_mm(tool: &crate::project::ToolEntry) -> f64 {
         ToolKind::Drill | ToolKind::VBit | ToolKind::Engraver => {
             tool.tip_diameter.unwrap_or(0.0).max(0.0)
         }
-        _ => tool.diameter,
+        _ => tool.effective_diameter(),
     }
 }
 
@@ -1063,6 +1063,24 @@ mod tests {
                 setup_nk.tool.diameter
             );
         }
+    }
+
+    /// Wear compensation: the resolved ToolConfig carries the
+    /// EFFECTIVE diameter (nominal − wear), so every downstream
+    /// radius offset / lead / pocket fill compensates for the worn
+    /// bit, while the library keeps displaying the nominal value.
+    #[test]
+    fn wear_offset_shrinks_effective_cut_diameter() {
+        let mut tool = endmill(1, 6.0);
+        tool.wear_offset_mm = 0.1;
+        let op = profile_op(1, 1, ToolOffset::Outside);
+        let project = project_with(vec![op.clone()], vec![tool]);
+        let setup = synthesize_op_setup(&op, &project, &mut Vec::new()).unwrap();
+        assert!(
+            (setup.tool.diameter - 5.9).abs() < 1e-9,
+            "expected effective 5.9 (6.0 − 0.1 wear), got {}",
+            setup.tool.diameter
+        );
     }
 
     /// The pierce entry triplet lives on the PlasmaTorch kind: a torch

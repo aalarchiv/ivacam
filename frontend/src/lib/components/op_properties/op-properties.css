@@ -331,3 +331,12 @@
 .props .optional-fieldset > legend {
   display: none;
 }
+
+/* Effective-diameter transparency hint under the tool picker — shown
+   only when the assigned tool carries a wear offset. */
+.props .wear-hint {
+  margin: 0.1rem 0 0.3rem;
+  font-size: 0.74rem;
+  font-style: italic;
+  color: var(--text-muted);
+}

@@ -168,6 +168,10 @@ export function toWireTool(t: ToolEntry): Record<string, unknown> {
     // Beam / torch cut width — the laser_beam and plasma_torch sim
     // profiles carve a kerf-radius spot instead of a tool radius.
     ...(t.kerfMm !== undefined && t.kerfMm > 0 ? { kerf_mm: t.kerfMm } : {}),
+    // Wear compensation — the sim carves at the effective diameter.
+    ...(t.wearOffsetMm !== undefined && t.wearOffsetMm !== 0
+      ? { wear_offset_mm: t.wearOffsetMm }
+      : {}),
     ...(t.kind === 'form_profile' && t.formProfileMm !== undefined && t.formProfileMm.length >= 2
       ? { form_profile_mm: t.formProfileMm.map((s) => ({ z_mm: s.zMm, r_mm: s.rMm })) }
       : {}),

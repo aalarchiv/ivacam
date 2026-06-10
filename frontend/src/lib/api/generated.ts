@@ -2186,6 +2186,8 @@ export interface components {
              * @description Laser pierce time (Estlcam `T_Pierce_Time)`: seconds the beam dwells at the start point BEFORE the cut begins so it burns through thick stock. Honored only when `kind == LaserBeam`. The post emits a `G4 P<seconds>` after the laser-on before each plunge. None = no pierce dwell.
              */
             laser_pierce_sec?: number | null;
+            /** @description Date the wear offset was last measured (ISO 8601 `YYYY-MM-DD`). Display-only — the UI flags stale calibrations (> 90 days). None = never calibrated. */
+            last_calibrated?: string | null;
             /**
              * Format: double
              * @description Overall / usable tool length (mm), tip → where the shank enters the collet (Estlcam `Length`). Display + 3D-preview only in v1 — it does NOT affect emitted gcode (reach / collision is driven by `flute_length_mm` + `stickout_length_mm` + `holder`). It sets the preview mesh's total height so the rendered tool matches the real tool's proportions. None = the preview falls back to its diameter-derived heuristic.
@@ -2267,6 +2269,11 @@ export interface components {
              * @description V-Carve / Stufenfase lead-in ramp angle, degrees from horizontal. Controls how steeply the cutter walks into the material at the start of each cut to avoid a vertical plunge at the R≈0 medial-axis endpoint (V-bits have effectively zero safe plunge depth). This was originally hardcoded to 10° (Vectric / Estlcam default) inside [`crate::cam::vcarve_emit::ratchet_emit`]; this field lets shops dial it per-tool — harder materials want shallower (5–8°), softer materials tolerate steeper (15°+). Values outside (0°, 90°) are clamped at synth time. `None` ⇒ inherit the 10° default.
              */
             vcarve_lead_in_angle_deg?: number | null;
+            /**
+             * Format: double
+             * @description Measured wear / regrind offset on the diameter (mm). Positive = the bit cuts smaller than nominal (worn); negative = bigger (rare; a regrind that left a slightly larger flute). Path math reads [`ToolEntry::effective_diameter`] (nominal − wear); display and the tool-library editor keep showing the nominal `diameter`. Users measure this with a test cut (slot width = effective diameter) — see the calibration dialog.
+             */
+            wear_offset_mm?: number;
             /** @description Whirl (Estlcam `T_Wirbeln)`: automatic chip-thinning. When `true`, Pocket ops using this tool clamp their effective `xy_step` down to `whirl_stepover_mm.unwrap_or(tool_radius / 2)` — the classic chip-thinning rule that bounds radial engagement at half-radius. Use for hard materials where the user wants fast cascade / spiral pockets but doesn't want the cutter to overload at high-engagement points. Default `false`. */
             whirl?: boolean;
             /**

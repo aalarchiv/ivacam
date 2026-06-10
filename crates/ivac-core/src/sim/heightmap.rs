@@ -486,7 +486,7 @@ impl ToolProfile {
     #[allow(clippy::match_same_arms)]
     #[must_use]
     pub fn from_tool(tool: &ToolEntry) -> Self {
-        let r = (tool.diameter * 0.5) as f32;
+        let r = (tool.effective_diameter() * 0.5) as f32;
         match tool.kind {
             ToolKind::Endmill => ToolProfile::Endmill { r },
             ToolKind::BallNose => ToolProfile::BallNose { r },
@@ -627,7 +627,8 @@ impl ToolProfile {
                 // truncated cone at the right base radius — strictly
                 // more accurate than Endmill { r } for form bits where
                 // the diameters differ.
-                let tip_r = (tool.tip_diameter.unwrap_or(tool.diameter) * 0.5).max(0.0) as f32;
+                let tip_r =
+                    (tool.tip_diameter.unwrap_or(tool.effective_diameter()) * 0.5).max(0.0) as f32;
                 let flute_top = tool.flute_length_mm.unwrap_or(0.0).max(0.0) as f32;
                 ToolProfile::FormProfile {
                     segments: vec![(0.0_f32, tip_r), (flute_top, r)],
@@ -695,6 +696,8 @@ mod tests {
             pierce_height_mm: None,
             cut_height_mm: None,
             pierce_delay_sec: None,
+            wear_offset_mm: 0.0,
+            last_calibrated: None,
             vcarve_lead_in_angle_deg: None,
         }
     }

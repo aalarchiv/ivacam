@@ -2871,7 +2871,9 @@ mod tests {
             .position(|l| l.trim() == "G0 X-3 Y3")
             .expect("lead rapid present");
         assert!(
-            !lines[..first_rapid].iter().any(|l| l.trim_start().starts_with("M3")),
+            !lines[..first_rapid]
+                .iter()
+                .any(|l| l.trim_start().starts_with("M3")),
             "torch must be OFF during the positioning rapid:\n{g}"
         );
         let m5_count = g.lines().filter(|l| l.trim() == "M5").count();

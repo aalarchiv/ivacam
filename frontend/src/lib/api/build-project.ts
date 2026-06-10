@@ -319,6 +319,10 @@ function buildTool(t: FrontToolEntry): WireToolEntry {
     ...(t.feedRateDrill !== undefined ? { feed_rate_drill: t.feedRateDrill } : {}),
     ...(t.defaultPeckStepMm !== undefined ? { default_peck_step_mm: t.defaultPeckStepMm } : {}),
     ...(t.zShiftMm !== undefined && t.zShiftMm !== 0 ? { z_shift_mm: t.zShiftMm } : {}),
+    // Wear compensation — the pipeline cuts at diameter − wear.
+    ...(t.wearOffsetMm !== undefined && t.wearOffsetMm !== 0
+      ? { wear_offset_mm: t.wearOffsetMm }
+      : {}),
     ...(t.laserPierceSec !== undefined && t.laserPierceSec > 0
       ? { laser_pierce_sec: t.laserPierceSec }
       : {}),

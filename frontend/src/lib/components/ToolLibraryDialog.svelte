@@ -22,6 +22,8 @@
     toolCompatibleWithAnyMode,
   } from '../state/tool_family';
   import { defaultToolForMode } from '../state/tool_mode_defaults';
+  import ToolCalibrationDialog from './ToolCalibrationDialog.svelte';
+  import { effectiveDiameterHint, isCalibrationStale } from '../state/tool_wear';
   import {
     diameterInvalid,
     speedInvalid,
@@ -59,6 +61,19 @@
   /// "N hidden — Show all" row reveals the rest. View-only — a mode
   /// switch never mutates the library.
   let showIncompatible = $state(false);
+  /// Row index whose wear calibration dialog is open, or null.
+  let calibratingIdx = $state<number | null>(null);
+  function applyCalibration(idx: number, wearOffsetMm: number, dateIso: string) {
+    dd.draft = draft.map((t, i) =>
+      i === idx
+        ? {
+            ...t,
+            wearOffsetMm: wearOffsetMm === 0 ? undefined : wearOffsetMm,
+            lastCalibrated: dateIso,
+          }
+        : t,
+    );
+  }
   const machineModes = $derived(effectiveModes(project.data.machine));
   const incompatibleCount = $derived(
     draft.filter((t) => !toolCompatibleWithAnyMode(t.kind, machineModes)).length,
@@ -71,6 +86,7 @@
     if (open) {
       dd.open(project.data.tools);
       showIncompatible = false;
+      calibratingIdx = null;
       // Tools whose kind has a REQUIRED kind-specific field open by
       // default so the user sees `dragoff` / `cornerRadiusMm` / T-slot
       // neck dims without hunting for them. Other kinds start collapsed.
@@ -1531,6 +1547,60 @@
                     </div>
                   </div>
                 {/if}
+                {#if attrApplies('wear', tool.kind)}
+                  <div class="holder-row pass-overrides">
+                    <span
+                      class="holder-label"
+                      title="Wear compensation. Toolpaths cut at the nominal diameter minus this offset — the bit's TRUE cutting diameter after wear or a regrind. The nominal diameter above stays what's printed on the bit."
+                      >Wear</span
+                    >
+                  </div>
+                  <div class="holder-row">
+                    <label>
+                      <span>Wear offset (mm)</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="0"
+                        value={tool.wearOffsetMm ?? ''}
+                        title="Difference between the bit's nominal and measured cutting diameter (positive = worn smaller). Empty / 0 = cut at the nominal diameter. Run Calibrate to measure it."
+                        onchange={(e) => {
+                          const v = (e.currentTarget as HTMLInputElement).value;
+                          if (v === '') {
+                            updateField(i, 'wearOffsetMm', undefined);
+                            return;
+                          }
+                          const n = parseFloat(v);
+                          updateField(i, 'wearOffsetMm', isNaN(n) || n === 0 ? undefined : n);
+                        }}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      class="profile-btn"
+                      onclick={() => (calibratingIdx = i)}
+                      title="Measure the bit's true cutting diameter with a slot test cut and store the wear offset."
+                      >Calibrate…</button
+                    >
+                    <span class="cal-status">
+                      {#if tool.lastCalibrated}
+                        Last calibrated {tool.lastCalibrated}
+                        {#if isCalibrationStale(tool.lastCalibrated, new Date())}
+                          <span
+                            class="stale-chip"
+                            title="This measurement is more than 90 days old — bits keep wearing; re-run the calibration."
+                            >Stale calibration</span
+                          >
+                        {/if}
+                      {:else}
+                        Never calibrated
+                      {/if}
+                    </span>
+                    {#if (tool.wearOffsetMm ?? 0) !== 0}
+                      <span class="eff-hint">cuts as {effectiveDiameterHint(tool)}</span>
+                    {/if}
+                  </div>
+                {/if}
                 {#if attrApplies('laser', tool.kind)}
                   <div class="holder-row pass-overrides">
                     <span
@@ -1758,6 +1828,19 @@
       {/if}
     </footer>
   </Modal>
+  {#if calibratingIdx != null && draft[calibratingIdx]}
+    {@const calTool = draft[calibratingIdx]}
+    <ToolCalibrationDialog
+      open
+      toolName={calTool.name}
+      nominalDiameterMm={calTool.diameter}
+      currentWearOffsetMm={calTool.wearOffsetMm ?? 0}
+      onApply={(wear, date) => {
+        if (calibratingIdx != null) applyCalibration(calibratingIdx, wear, date);
+      }}
+      onClose={() => (calibratingIdx = null)}
+    />
+  {/if}
 {/if}
 
 <style>
@@ -1960,6 +2043,27 @@
   .del:disabled {
     opacity: 0.3;
     cursor: not-allowed;
+  }
+  /* Wear-calibration status line + stale chip. */
+  .cal-status {
+    color: var(--text-muted);
+    font-size: 0.74rem;
+    align-self: center;
+  }
+  .stale-chip {
+    display: inline-block;
+    margin-left: 0.35rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 3px;
+    background: color-mix(in srgb, #e6a700 22%, var(--bg-elevated));
+    color: var(--text-strong);
+    font-size: 0.7rem;
+  }
+  .eff-hint {
+    color: var(--text-muted);
+    font-size: 0.74rem;
+    font-style: italic;
+    align-self: center;
   }
   /* Machine-mode filter banner — the "N tools hidden — Show all" /
      "Hide incompatible" row under the table. Muted: it's a view

@@ -83,7 +83,7 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
                     ),
                 });
             }
-            let tool_r = tool.diameter * 0.5;
+            let tool_r = tool.effective_diameter() * 0.5;
             // The previous threshold was 50 % of the profile R,
             // which let large mismatches through silently (a 6 mm tool
             // on a 5 mm profile is a 20 % mismatch and used to pass —
@@ -142,14 +142,14 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
     let reach_z = tool
         .flute_length_mm
         .filter(|v| *v > 0.0)
-        .unwrap_or(tool.diameter * 0.5);
+        .unwrap_or(tool.effective_diameter() * 0.5);
     let tool_reach_z = Some(reach_z);
 
     let mut polylines: Vec<Vec<(f64, f64, f64)>> = Vec::new();
     let mut any_depth_limited = false;
     let mut any_tool_reach_limited = false;
 
-    let tool_r_for_prune = tool.diameter * 0.5;
+    let tool_r_for_prune = tool.effective_diameter() * 0.5;
     for region in &regions {
         if cancelled(cancel) {
             return Err(PipelineError::Cancelled);

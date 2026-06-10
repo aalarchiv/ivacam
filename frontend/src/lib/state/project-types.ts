@@ -165,6 +165,13 @@ export interface ToolEntry {
   /// reference tool and record the delta here. Positive = sticks out
   /// further; negative = shorter. mm.
   zShiftMm?: number;
+  /// Measured wear / regrind offset on the diameter (mm). Positive =
+  /// the bit cuts smaller than nominal. Path math uses
+  /// `diameter − wearOffsetMm`; the UI keeps showing the nominal.
+  wearOffsetMm?: number;
+  /// Date the wear offset was last measured (ISO `YYYY-MM-DD`).
+  /// Display-only; the library flags calibrations older than 90 days.
+  lastCalibrated?: string;
   /// Laser pierce dwell: seconds the beam waits at the
   /// entry point with the laser on before the cut starts so it burns
   /// through stock. Honored only when kind === 'laser_beam'.

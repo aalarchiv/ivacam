@@ -3557,6 +3557,11 @@ components:
           type:
           - number
           - 'null'
+        last_calibrated:
+          description: Date the wear offset was last measured (ISO 8601 `YYYY-MM-DD`). Display-only — the UI flags stale calibrations (> 90 days). None = never calibrated.
+          type:
+          - string
+          - 'null'
         length_mm:
           description: Overall / usable tool length (mm), tip → where the shank enters the collet (Estlcam `Length`). Display + 3D-preview only in v1 — it does NOT affect emitted gcode (reach / collision is driven by `flute_length_mm` + `stickout_length_mm` + `holder`). It sets the preview mesh's total height so the rendered tool matches the real tool's proportions. None = the preview falls back to its diameter-derived heuristic.
           format: double
@@ -3658,6 +3663,10 @@ components:
           type:
           - number
           - 'null'
+        wear_offset_mm:
+          description: Measured wear / regrind offset on the diameter (mm). Positive = the bit cuts smaller than nominal (worn); negative = bigger (rare; a regrind that left a slightly larger flute). Path math reads [`ToolEntry::effective_diameter`] (nominal − wear); display and the tool-library editor keep showing the nominal `diameter`. Users measure this with a test cut (slot width = effective diameter) — see the calibration dialog.
+          format: double
+          type: number
         whirl:
           description: 'Whirl (Estlcam `T_Wirbeln)`: automatic chip-thinning. When `true`, Pocket ops using this tool clamp their effective `xy_step` down to `whirl_stepover_mm.unwrap_or(tool_radius / 2)` — the classic chip-thinning rule that bounds radial engagement at half-radius. Use for hard materials where the user wants fast cascade / spiral pockets but doesn''t want the cutter to overload at high-engagement points. Default `false`.'
           type: boolean

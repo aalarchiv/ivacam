@@ -119,6 +119,8 @@ pub(in crate::pipeline) fn endmill(id: u32, diameter: f64) -> ToolEntry {
         pierce_height_mm: None,
         cut_height_mm: None,
         pierce_delay_sec: None,
+        wear_offset_mm: 0.0,
+        last_calibrated: None,
         vcarve_lead_in_angle_deg: None,
     }
 }
@@ -170,6 +172,8 @@ pub(in crate::pipeline) fn vbit() -> ToolEntry {
         pierce_height_mm: None,
         cut_height_mm: None,
         pierce_delay_sec: None,
+        wear_offset_mm: 0.0,
+        last_calibrated: None,
         vcarve_lead_in_angle_deg: None,
     }
 }

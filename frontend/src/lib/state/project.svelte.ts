@@ -167,6 +167,9 @@ import { lineCrossesBBox } from '../canvas/selection-geometry';
 import { computeFootprint } from '../sim/driver';
 import { augmentWithStockOutline } from './stock-outline';
 import { buildOpEntry } from './op_defaults';
+import { assessModeSwitch } from './mode_switch';
+import { modeNotice } from './mode_notice.svelte';
+import { defaultToolForMode } from './tool_mode_defaults';
 
 /// Memoised bundled-font fetch — the DejaVu Sans bytes used as the
 /// default font for imported DXF TEXT/MTEXT entities. Resolved once
@@ -200,6 +203,7 @@ import {
   addReliefSourceCommand,
   addTextLayerCommand,
   addToolCommand,
+  assignToolToOpsCommand,
   deleteOperationCommand,
   deleteReliefSourceCommand,
   deleteTextLayerCommand,
@@ -924,6 +928,7 @@ export class ProjectState {
   // ── machine / stock ──────────────────────────────────────────────────
 
   setMachine(next: MachineSettings) {
+    const prevMode = this.data.machine.mode;
     this.history.exec(setMachineCommand(next), this.target());
     // Machine change invalidates the cached gcode: work area / units /
     // post-processor dialect / rapid feeds all feed into the run, so a
@@ -933,6 +938,40 @@ export class ProjectState {
     // empty-state messaging show the stale-vs-fresh distinction
     // immediately instead of silently lying.
     this.gen.generated = null;
+    // Mode switch: surface ops now referencing incompatible tools (or a
+    // library with nothing the mode can run) as ONE non-modal notice.
+    // Never rewrites anything itself; never blocks the toggle. A switch
+    // back to a mode where everything fits clears the notice (assess
+    // returns null).
+    if (next.mode !== prevMode) {
+      modeNotice.current = assessModeSwitch(next.mode, this.data.operations, this.data.tools);
+    }
+  }
+
+  /// The mode-switch notice's "assign to all" action: point every
+  /// affected op at `toolId`, or — when the library has no compatible
+  /// tool (`toolId == null`) — create the mode's default tool and
+  /// assign that. One undoable transaction via the command bus.
+  assignToolToOps(opIds: readonly number[], toolId: number | null) {
+    if (opIds.length === 0) return;
+    if (toolId == null) {
+      const nextId = this.data.tools.reduce((m, t) => Math.max(m, t.id), 0) + 1;
+      const tool = defaultToolForMode(this.data.machine.mode, nextId);
+      this.history.exec(assignToolToOpsCommand(opIds, tool.id, tool), this.target());
+    } else {
+      this.history.exec(assignToolToOpsCommand(opIds, toolId), this.target());
+    }
+  }
+
+  /// The mode-switch notice's seed action for a singleton mode with an
+  /// empty compatible set: add the mode's default tool (torch / beam /
+  /// knife) to the library. Undoable like any tool-library edit.
+  seedDefaultToolForMode() {
+    const nextId = this.data.tools.reduce((m, t) => Math.max(m, t.id), 0) + 1;
+    this.history.exec(
+      addToolCommand(defaultToolForMode(this.data.machine.mode, nextId)),
+      this.target(),
+    );
   }
 
   setStock(patch: Partial<StockConfig>) {

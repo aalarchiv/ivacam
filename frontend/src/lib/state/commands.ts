@@ -781,6 +781,51 @@ export function assignToolCommand(opId: number, toolId: number): Command {
   };
 }
 
+/// Reassign one tool to MANY ops as a single undoable transaction,
+/// optionally adding `newTool` to the library first (the mode-switch
+/// notice's "assign the torch/beam to all" action, which auto-creates a
+/// default when the library has no compatible tool). One history entry:
+/// undo restores every op's previous tool and removes the added tool.
+export function assignToolToOpsCommand(
+  opIds: readonly number[],
+  toolId: number,
+  newTool?: ToolEntry,
+): Command {
+  const ids = new Set(opIds);
+  let prev: Map<number, number> | undefined;
+  let addedTool = false;
+  return {
+    label: 'Assign tool to operations',
+    apply: (s) => {
+      const t = s as CommandTarget;
+      addedTool = newTool != null && !t.tools.some((x) => x.id === newTool.id);
+      if (newTool && addedTool) {
+        t.tools = [...t.tools, clone(newTool)];
+      }
+      prev = new Map();
+      t.operations = t.operations.map((o) => {
+        if (!ids.has(o.id) || o.toolId === toolId) return o;
+        prev!.set(o.id, o.toolId);
+        return { ...o, toolId };
+      });
+      t.dirty = true;
+    },
+    revert: (s) => {
+      const t = s as CommandTarget;
+      const restore = prev;
+      if (restore) {
+        t.operations = t.operations.map((o) =>
+          restore.has(o.id) ? { ...o, toolId: restore.get(o.id)! } : o,
+        );
+      }
+      if (newTool && addedTool) {
+        t.tools = t.tools.filter((x) => x.id !== newTool.id);
+      }
+      t.dirty = true;
+    },
+  };
+}
+
 /// Disable an op (sets enabled=false). The DisableOp auto-fix.
 export function disableOpCommand(opId: number): Command {
   let prev: boolean | undefined;

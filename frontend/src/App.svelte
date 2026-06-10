@@ -1,5 +1,6 @@
 <script lang="ts">
   import FileUpload from './lib/components/FileUpload.svelte';
+  import ModeSwitchNotice from './lib/components/ModeSwitchNotice.svelte';
   import EntityCanvas2D from './lib/components/EntityCanvas2D.svelte';
   // Scene3D pulls in the entire three.js graph (~600 KB pre-min) — keep
   // it out of the initial bundle by dynamic-importing on first 3D switch.
@@ -764,6 +765,7 @@
   </div>
 
   <FileUpload />
+  <ModeSwitchNotice />
 
   <!-- ============== SPLIT VIEW ================================ -->
   <main class="split" style:--sidebar-width="{sidebarWidth}px">

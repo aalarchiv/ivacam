@@ -9,6 +9,7 @@ import {
   addOperationCommand,
   addToolCommand,
   assignToolCommand,
+  assignToolToOpsCommand,
   autoFixToCommand,
   changeProfileOffsetCommand,
   deleteOperationCommand,
@@ -462,6 +463,45 @@ describe('assignToolCommand', () => {
     expect(t.operations[0].toolId).toBe(42);
     cmd.revert(t);
     expect(t.operations[0].toolId).toBe(1);
+  });
+});
+
+describe('assignToolToOpsCommand', () => {
+  it('reassigns every listed op in one command and round-trips', () => {
+    const t = blankTarget();
+    t.operations = [sampleOp(1), sampleOp(2), sampleOp(3)];
+    t.operations[1].toolId = 7;
+    t.tools = [sampleTool(1), sampleTool(7), sampleTool(42)];
+    const cmd = assignToolToOpsCommand([1, 2], 42);
+    cmd.apply(t);
+    expect(t.operations.map((o) => o.toolId)).toEqual([42, 42, 1]);
+    cmd.revert(t);
+    expect(t.operations.map((o) => o.toolId)).toEqual([1, 7, 1]);
+  });
+
+  it('adds the auto-created tool on apply and removes it on revert', () => {
+    const t = blankTarget();
+    t.operations = [sampleOp(1)];
+    t.tools = [sampleTool(1)];
+    const torch = sampleTool(2);
+    const cmd = assignToolToOpsCommand([1], 2, torch);
+    cmd.apply(t);
+    expect(t.tools.map((x) => x.id)).toEqual([1, 2]);
+    expect(t.operations[0].toolId).toBe(2);
+    cmd.revert(t);
+    expect(t.tools.map((x) => x.id)).toEqual([1]);
+    expect(t.operations[0].toolId).toBe(1);
+  });
+
+  it('does not double-add or wrongly remove a tool that already exists', () => {
+    const t = blankTarget();
+    t.operations = [sampleOp(1)];
+    t.tools = [sampleTool(1), sampleTool(2)];
+    const cmd = assignToolToOpsCommand([1], 2, sampleTool(2));
+    cmd.apply(t);
+    expect(t.tools.map((x) => x.id)).toEqual([1, 2]);
+    cmd.revert(t);
+    expect(t.tools.map((x) => x.id)).toEqual([1, 2]);
   });
 });
 

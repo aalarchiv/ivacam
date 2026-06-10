@@ -1,7 +1,12 @@
 /// Pure-logic tests for the best-fit tool picker.
 
 import { describe, expect, it } from 'vitest';
-import { pickBestToolForOp, pickBestDrillTool, inferDrillDiameterMm } from './tool_picker';
+import {
+  pickBestToolForOp,
+  pickBestDrillTool,
+  inferDrillDiameterMm,
+  partitionToolsForMode,
+} from './tool_picker';
 import type { components } from '../api/generated';
 import type { ToolEntry } from './project-types';
 
@@ -164,5 +169,38 @@ describe('pickBestToolForOp', () => {
   it('falls back to tools[0] for Drill with empty selection', () => {
     const tools = [endmill(1, 3), drill(2, 6)];
     expect(pickBestToolForOp('drill', [], [], tools)?.id).toBe(1);
+  });
+});
+
+describe('partitionToolsForMode', () => {
+  const torch = (id: number): ToolEntry =>
+    ({
+      id,
+      name: 'torch',
+      kind: 'plasma_torch',
+      diameter: 1.5,
+      flutes: 0,
+      speed: 0,
+      plungeRate: 0,
+      feedRate: 2000,
+      coolant: 'off',
+    }) as unknown as ToolEntry;
+
+  it('splits the library by mode compatibility, preserving order', () => {
+    const tools = [endmill(1, 3), torch(2), endmill(3, 6)];
+    const plasma = partitionToolsForMode(tools, 'plasma');
+    expect(plasma.compatible.map((t) => t.id)).toEqual([2]);
+    expect(plasma.incompatible.map((t) => t.id)).toEqual([1, 3]);
+    const mill = partitionToolsForMode(tools, 'mill');
+    expect(mill.compatible.map((t) => t.id)).toEqual([1, 3]);
+    expect(mill.incompatible.map((t) => t.id)).toEqual([2]);
+  });
+
+  it('never drops a tool — the two halves always re-cover the library', () => {
+    const tools = [endmill(1, 3), torch(2), vbit(3, 6)];
+    for (const mode of ['mill', 'laser', 'drag', 'plasma'] as const) {
+      const { compatible, incompatible } = partitionToolsForMode(tools, mode);
+      expect(compatible.length + incompatible.length).toBe(tools.length);
+    }
   });
 });

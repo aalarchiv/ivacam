@@ -87,12 +87,13 @@ export function fieldApplies(field: string, kind: ToolKind): boolean {
 /// the dialog should auto-expand it. A kind needs auto-expansion
 /// when it has a kind-specific attribute without which the emitter falls
 /// back to wrong defaults — drag-knife dragoff, bull-nose corner radius,
-/// or form-profile samples.
+/// form-profile samples, or the plasma torch's pierce/kerf section.
 export function kindNeedsExpansion(kind: ToolKind): boolean {
   return (
     attrApplies('dragoff', kind) ||
     attrApplies('cornerRadius', kind) ||
-    attrApplies('formProfile', kind)
+    attrApplies('formProfile', kind) ||
+    attrApplies('plasma', kind)
   );
 }
 
@@ -103,18 +104,25 @@ export function fieldDisabledReason(field: string, kind: ToolKind): string {
   const k = KIND_DISPLAY_LABELS[kind];
   if (field === 'flutes' && kind === 'drag_knife') return `Drag-knife doesn't cut by rotation.`;
   if (field === 'flutes' && kind === 'laser_beam') return `Laser has no cutting edges.`;
+  if (field === 'flutes' && kind === 'plasma_torch') return `Plasma torch has no cutting edges.`;
   if (field === 'flutes') return `Flutes not used for ${k.toLowerCase()}.`;
   if (field === 'tipDiameter') return `Tip ⌀ only applies to V-bits / engravers.`;
   if (field === 'speed' && kind === 'drag_knife') return `Drag-knife doesn't spin.`;
   if (field === 'speed' && kind === 'laser_beam')
     return `Laser uses power (set in machine config), not RPM.`;
+  if (field === 'speed' && kind === 'plasma_torch')
+    return `Plasma torch uses arc current (set on the cutter), not RPM.`;
   if (field === 'plunge' && kind === 'drag_knife') return `Drag-knife stays at cut depth.`;
   if (field === 'plunge' && kind === 'laser_beam') return `Laser cuts at constant Z.`;
+  if (field === 'plunge' && kind === 'plasma_torch')
+    return `Plasma torch cuts at a fixed height above the stock.`;
   if (field === 'plunge' && kind === 'drill') return `Drill uses the cut feed as its plunge rate.`;
   if (field === 'defaultStep' && kind === 'drill')
     return `Drill uses the peck step in the expanded section, not the generic Z step.`;
   if (field === 'defaultStep' && kind === 'drag_knife') return `Drag-knife runs at fixed depth.`;
   if (field === 'defaultStep' && kind === 'laser_beam') return `Laser cuts at constant Z.`;
+  if (field === 'defaultStep' && kind === 'plasma_torch')
+    return `Plasma torch cuts in a single pass at the cut height.`;
   if (field === 'tipAngleDeg')
     return `Tip angle drives V-Carve depth math (V-bits / engravers) and the drill-tip 3D preview.`;
   return '';

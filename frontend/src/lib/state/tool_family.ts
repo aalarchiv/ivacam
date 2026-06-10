@@ -179,6 +179,16 @@ export const TOOL_COMPATIBLE_MODES: Record<ToolKind, readonly MachineMode[]> = {
   plasma_torch: ['plasma'],
 };
 
+/// In-sentence noun for each machine mode ("…incompatible with a
+/// plasma machine"). Lowercase by design — these are mid-sentence
+/// words, not menu labels (MachineDialog keeps its own option labels).
+export const MACHINE_MODE_NOUN: Record<MachineMode, string> = {
+  mill: 'mill',
+  laser: 'laser',
+  drag: 'drag-knife',
+  plasma: 'plasma',
+};
+
 /// Whether a tool kind can run on a machine in `mode`.
 export function toolCompatibleWithMode(kind: ToolKind, mode: MachineMode): boolean {
   return TOOL_COMPATIBLE_MODES[kind].includes(mode);

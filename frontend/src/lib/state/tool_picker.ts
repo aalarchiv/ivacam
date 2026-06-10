@@ -15,8 +15,9 @@
 ///     unambiguous geometry signal.
 
 import type { components } from '../api/generated';
-import type { OpKind } from './op_types';
+import type { MachineMode, OpKind } from './op_types';
 import type { ToolEntry } from './project-types';
+import { toolCompatibleWithMode } from './tool_family';
 
 type ImportedObject = components['schemas']['ImportedObject'];
 
@@ -27,6 +28,23 @@ const SQUARE_RATIO_TOL = 1.1;
 /// Diameter delta for "matching" tool. Below this, we don't bother
 /// hunting for next-smaller or next-larger.
 const EXACT_TOL_MM = 0.05;
+
+/// Split the library into mode-compatible tools and the rest, both in
+/// library order. Tool pickers list `compatible` first and group
+/// `incompatible` under a labelled section — visible-and-explained,
+/// never hidden-and-lost: a machine-mode switch must not strand an op
+/// on a tool the picker can no longer even display.
+export function partitionToolsForMode(
+  tools: readonly ToolEntry[],
+  mode: MachineMode,
+): { compatible: ToolEntry[]; incompatible: ToolEntry[] } {
+  const compatible: ToolEntry[] = [];
+  const incompatible: ToolEntry[] = [];
+  for (const t of tools) {
+    (toolCompatibleWithMode(t.kind, mode) ? compatible : incompatible).push(t);
+  }
+  return { compatible, incompatible };
+}
 
 /// Selects the best tool for a new op against the given selection.
 /// Falls back to `tools[0]` (or `null` when the library is empty)

@@ -733,6 +733,7 @@ export class ProjectState {
       reliefSources: this.data.reliefSources,
       selectionIds: [...this.sel.selectedObjects],
       objectMeta: this.transformedImport?.object_meta ?? [],
+      mode: this.data.machine.mode,
     });
     this.history.exec(addOperationCommand(op), this.target());
     this.sel.selectedOpId = op.id;

@@ -18,6 +18,8 @@
   import { prettyOpKind } from '../state/project-types';
   import { formatLength } from '../cam/units';
   import { formatExpectedToolKinds, isToolKindAcceptable } from '../state/op_tool_constraint';
+  import { MACHINE_MODE_NOUN } from '../state/tool_family';
+  import { partitionToolsForMode } from '../state/tool_picker';
   import VCarveSection from './op_properties/VCarveSection.svelte';
   import ChamferSection from './op_properties/ChamferSection.svelte';
   import ThreadSection from './op_properties/ThreadSection.svelte';
@@ -80,6 +82,11 @@
       ? null
       : (project.data.operations.find((o) => o.id === project.sel.selectedOpId) ?? null),
   );
+
+  /// Library split for the tool pickers: mode-compatible tools first;
+  /// the rest stay selectable under a labelled "incompatible" group so
+  /// a machine-mode switch never strands an op on an invisible tool.
+  const toolParts = $derived(partitionToolsForMode(project.data.tools, project.data.machine.mode));
 
   /// Resolve the assigned tool's defaultStep for the current op so the
   /// Step / pass input can fall back to it. null when no assignment.
@@ -182,6 +189,24 @@
 </script>
 
 <aside class="props" class:embedded>
+  {#snippet toolOptions(disabledId: number | null)}
+    <!-- Mode-compatible tools first; incompatible ones stay selectable
+         under a labelled group (visible-and-explained, never hidden). -->
+    {#each toolParts.compatible as t (t.id)}
+      <option value={t.id} disabled={disabledId === t.id} title={t.comment ?? ''}
+        >#{t.id} {t.name} ({formatLength(t.diameter, project.data.machine.unit)})</option
+      >
+    {/each}
+    {#if toolParts.incompatible.length > 0}
+      <optgroup label="Incompatible with a {MACHINE_MODE_NOUN[project.data.machine.mode]} machine">
+        {#each toolParts.incompatible as t (t.id)}
+          <option value={t.id} disabled={disabledId === t.id} title={t.comment ?? ''}
+            >#{t.id} {t.name} ({formatLength(t.diameter, project.data.machine.unit)})</option
+          >
+        {/each}
+      </optgroup>
+    {/if}
+  {/snippet}
   {#if !embedded}
     <h3>Properties</h3>
   {/if}
@@ -231,11 +256,7 @@
           onchange={(e) =>
             patch('toolId', parseInt((e.currentTarget as HTMLSelectElement).value, 10))}
         >
-          {#each project.data.tools as t (t.id)}
-            <option value={t.id} title={t.comment ?? ''}
-              >#{t.id} {t.name} ({formatLength(t.diameter, project.data.machine.unit)})</option
-            >
-          {/each}
+          {@render toolOptions(null)}
         </select>
         <button
           type="button"
@@ -281,11 +302,7 @@
           onchange={(e) =>
             patch('toolId', parseInt((e.currentTarget as HTMLSelectElement).value, 10))}
         >
-          {#each project.data.tools as t (t.id)}
-            <option value={t.id} title={t.comment ?? ''}
-              >#{t.id} {t.name} ({formatLength(t.diameter, project.data.machine.unit)})</option
-            >
-          {/each}
+          {@render toolOptions(null)}
         </select>
         <button
           type="button"
@@ -333,11 +350,7 @@
           onchange={(e) =>
             patch('toolId', parseInt((e.currentTarget as HTMLSelectElement).value, 10))}
         >
-          {#each project.data.tools as t (t.id)}
-            <option value={t.id} title={t.comment ?? ''}
-              >#{t.id} {t.name} ({formatLength(t.diameter, project.data.machine.unit)})</option
-            >
-          {/each}
+          {@render toolOptions(null)}
         </select>
         <button
           type="button"
@@ -369,11 +382,7 @@
             }}
           >
             <option value="">— same as rough —</option>
-            {#each project.data.tools as t (t.id)}
-              <option value={t.id} disabled={t.id === op.toolId}
-                >#{t.id} {t.name} ({t.diameter}mm)</option
-              >
-            {/each}
+            {@render toolOptions(op.toolId)}
           </select>
         </div>
       </label>

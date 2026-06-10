@@ -25,7 +25,15 @@ export type ToolKind =
   | 'compression'
   | 'form_profile'
   | 'cone'
-  | 'thread_mill';
+  | 'thread_mill'
+  | 'plasma_torch';
+
+/// The machine's primary mode — what the gcode emitter targets.
+/// Mirrors the Rust `MachineMode` wire enum
+/// (crates/ivac-core/src/project/machine.rs). Shared by
+/// `MachineSettings` and the tool↔mode compatibility table in
+/// tool_family.ts.
+export type MachineMode = 'mill' | 'laser' | 'drag' | 'plasma';
 
 export type OpKind =
   | 'profile'

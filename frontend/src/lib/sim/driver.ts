@@ -165,6 +165,9 @@ export function toWireTool(t: ToolEntry): Record<string, unknown> {
     // form-profile (incl. the folded-in T-slot) carves its (z, r)
     // sample list when ≥2 rows are present.
     ...(t.cornerRadiusMm !== undefined ? { corner_radius_mm: t.cornerRadiusMm } : {}),
+    // Beam / torch cut width — the laser_beam and plasma_torch sim
+    // profiles carve a kerf-radius spot instead of a tool radius.
+    ...(t.kerfMm !== undefined && t.kerfMm > 0 ? { kerf_mm: t.kerfMm } : {}),
     ...(t.kind === 'form_profile' && t.formProfileMm !== undefined && t.formProfileMm.length >= 2
       ? { form_profile_mm: t.formProfileMm.map((s) => ({ z_mm: s.zMm, r_mm: s.rMm })) }
       : {}),

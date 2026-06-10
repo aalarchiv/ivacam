@@ -11,7 +11,7 @@
 // to work.
 
 import type { ImportResponse } from '../api/types';
-import type { OpEntry, OpKind, ToolKind } from './op_types';
+import type { MachineMode, OpEntry, OpKind, ToolKind } from './op_types';
 
 export function prettyOpKind(kind: OpKind): string {
   switch (kind) {
@@ -311,9 +311,9 @@ export interface MachineSettings {
   /// OpKindPicker's filter — a laser-only machine doesn't show
   /// milling ops. Empty array = implicitly `[mode]` (the default when
   /// capabilities is absent).
-  capabilities?: ('mill' | 'laser' | 'drag' | 'plasma')[];
+  capabilities?: MachineMode[];
   unit: 'mm' | 'inch';
-  mode: 'mill' | 'laser' | 'drag' | 'plasma';
+  mode: MachineMode;
   comments: boolean;
   arcs: boolean;
   /// Tool-change strategy (was the `supportsToolchange` bool).

@@ -15,7 +15,7 @@
 // table composes from. The Rust side mirrors `ToolKind::family()` (see
 // crates/ivac-core/src/project/tool.rs) — keep the two in sync.
 
-import type { ToolKind } from './op_types';
+import type { MachineMode, ToolKind } from './op_types';
 
 /// Geometry families — the "shared parent implementation" tools group
 /// under. Kinds in the same family carve with the same primitive shape
@@ -29,6 +29,8 @@ import type { ToolKind } from './op_types';
 ///   - drill:       conical point on a cylindrical body
 ///   - drag_knife:  non-rotating trailing blade
 ///   - laser:       non-contact beam (no physical radius)
+///   - plasma:      non-contact arc — kerf-width cut with a pierce
+///                  entry sequence (pierce/cut heights + delay)
 export type ToolFamily =
   | 'cylindrical'
   | 'radiused'
@@ -37,7 +39,8 @@ export type ToolFamily =
   | 'drill'
   | 'drag_knife'
   | 'laser'
-  | 'thread';
+  | 'thread'
+  | 'plasma';
 
 /// The gateable attributes a tool row can expose. Each maps to one or
 /// more inputs / sub-sections in ToolLibraryDialog.
@@ -53,7 +56,8 @@ export type ToolAttr =
   | 'formProfile' // (z, r) sample table (incl. folded-in T-slot)
   | 'compressionTransition' // compression up/down flute-split height
   | 'threadPitch' // thread-mill pitch
-  | 'laser'; // pierce / lead-in / kerf
+  | 'laser' // pierce / lead-in / kerf
+  | 'plasma'; // pierce + cut heights / pierce delay / kerf
 
 /// Kind → family. The authoritative classification; everything else
 /// derives from it. Mirror of `ToolKind::family()` in Rust.
@@ -74,6 +78,7 @@ export const TOOL_FAMILY: Record<ToolKind, ToolFamily> = {
   form_profile: 'profile',
   laser_beam: 'laser',
   thread_mill: 'thread',
+  plasma_torch: 'plasma',
 };
 
 /// Base attribute set implied by each family. Per-kind extras are
@@ -97,6 +102,9 @@ const FAMILY_BASE_ATTRS: Record<ToolFamily, readonly ToolAttr[]> = {
   // angle (tipAngleDeg), and the pitch. No generic Z step — depth is
   // the thread, advanced helically by the op.
   thread: ['flutes', 'speed', 'plunge', 'tipAngleDeg', 'threadPitch'],
+  // Plasma torch: no flutes / RPM / plunge — the pierce entry
+  // sequence + kerf section is the whole configuration.
+  plasma: ['plasma'],
 };
 
 /// Per-kind attributes beyond the family base.
@@ -144,4 +152,40 @@ export const KIND_DISPLAY_LABELS: Record<ToolKind, string> = {
   form_profile: 'Form / profile',
   cone: 'Cone',
   thread_mill: 'Thread mill',
+  plasma_torch: 'Plasma torch',
 };
+
+/// Tool kind → machine modes it can physically run on. Mirror of
+/// `ToolKind::compatible_modes()` in Rust
+/// (crates/ivac-core/src/project/tool.rs); keep the two in sync. Mill
+/// kinds are rotating cutters that need a spindle; the engraver doubles
+/// as a drag-engraving point on a Drag machine. Drives the tool-picker
+/// / library filtering and the mode-switch notice — a mode switch never
+/// mutates the library, incompatible tools are only filtered (with a
+/// visible "N hidden" row) and flagged at generate time.
+export const TOOL_COMPATIBLE_MODES: Record<ToolKind, readonly MachineMode[]> = {
+  endmill: ['mill'],
+  ball_nose: ['mill'],
+  v_bit: ['mill'],
+  engraver: ['mill', 'drag'],
+  drag_knife: ['drag'],
+  drill: ['mill'],
+  laser_beam: ['laser'],
+  bull_nose: ['mill'],
+  compression: ['mill'],
+  form_profile: ['mill'],
+  cone: ['mill'],
+  thread_mill: ['mill'],
+  plasma_torch: ['plasma'],
+};
+
+/// Whether a tool kind can run on a machine in `mode`.
+export function toolCompatibleWithMode(kind: ToolKind, mode: MachineMode): boolean {
+  return TOOL_COMPATIBLE_MODES[kind].includes(mode);
+}
+
+/// The tool kinds a machine in `mode` can run, in TOOL_FAMILY
+/// declaration order (= kind-dropdown order).
+export function kindsForMode(mode: MachineMode): ToolKind[] {
+  return (Object.keys(TOOL_FAMILY) as ToolKind[]).filter((k) => toolCompatibleWithMode(k, mode));
+}

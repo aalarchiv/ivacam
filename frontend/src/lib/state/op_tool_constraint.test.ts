@@ -49,6 +49,14 @@ describe('expectedToolKinds', () => {
   it('returns the empty set for Pause (no tool needed)', () => {
     expect([...expectedToolKinds('pause')]).toEqual([]);
   });
+
+  it('accepts beam + torch kerf cutters for Profile', () => {
+    const kinds = expectedToolKinds('profile');
+    expect(kinds).toContain('laser_beam');
+    expect(kinds).toContain('plasma_torch');
+    expect(kinds).not.toContain('drag_knife');
+    expect(kinds).not.toContain('drill');
+  });
 });
 
 describe('isToolKindAcceptable', () => {

@@ -17,11 +17,11 @@ export function expectedToolKinds(op: OpKind): readonly ToolKind[] {
   switch (op) {
     case 'profile':
       // Contouring along an outline — any rotating cutter with a
-      // defined diameter works. Laser ablates along the outline at
-      // constant Z and uses the kerf width as its effective cut
-      // diameter, so it fits the same op kind. Drag-knife / drill
+      // defined diameter works. Laser and plasma cut along the outline
+      // at constant Z and use the kerf width as their effective cut
+      // diameter, so they fit the same op kind. Drag-knife / drill
       // don't. (= every family except conical, drill, drag-knife.)
-      return kindsInFamily('cylindrical', 'radiused', 'profile', 'laser');
+      return kindsInFamily('cylindrical', 'radiused', 'profile', 'laser', 'plasma');
     case 'pocket':
       // Pocketing needs a flat or near-flat bottom. V-bits / engravers
       // taper, so they leave wedge-shaped residue across the floor.
@@ -99,6 +99,7 @@ const KIND_LABELS: Record<ToolKind, string> = {
   form_profile: 'form profile',
   cone: 'cone',
   thread_mill: 'thread mill',
+  plasma_torch: 'plasma torch',
 };
 
 /// Human-readable list for the "needs X / Y / Z" warning chip.

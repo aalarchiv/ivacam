@@ -642,13 +642,21 @@ impl PostProcessor for Post {
         self.state.last_y = None;
         self.state.last_z = None;
     }
+    fn store_probed_z_baseline(&mut self) {
+        // Record the reference tool's sensor trigger (#5063, work
+        // coords) in a global named parameter so later tools can
+        // difference against it. Underscore-prefixed named parameters
+        // are global in RS274NGC and live for the session.
+        self.write("#<_ivac_tlref> = #5063");
+    }
     fn apply_probed_tool_length(&mut self) {
-        // LinuxCNC stores the probed Z in #5063. G43.1 applies it
-        // as a dynamic tool-length offset; combined with the reference
-        // tool's WCS Z0 this re-establishes the new tool's tip. The
-        // difference math is the controller's — we just wire the
-        // measured value in.
-        self.write("G43.1 Z[#5063]");
+        // #5063 is THIS tool's sensor trigger in work coordinates;
+        // #<_ivac_tlref> is the reference tool's. Their difference is
+        // exactly the tool-length delta — the sensor-height and
+        // stock-zero terms cancel — applied as a dynamic tool-length
+        // offset. The old bare `G43.1 Z[#5063]` over-offset by the
+        // full sensor-to-stock height.
+        self.write("G43.1 Z[#5063 - #<_ivac_tlref>]");
         self.state.last_z = None;
     }
     fn linear(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>) {

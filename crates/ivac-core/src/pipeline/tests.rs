@@ -5034,7 +5034,7 @@ fn post_change_z_fixed_sensor_probes_at_machine_position() {
     let over = must_find(between, "G53 G0 X200 Y10");
     let approach = must_find(between, "G53 G0 Z30");
     let probe = must_find(between, "G38.2 Z-40 F80");
-    let apply = must_find(between, "G43.1 Z[#5063]");
+    let apply = must_find(between, "G43.1 Z[#5063 - #<_ivac_tlref>]");
     assert!(
         over < approach && approach < probe && probe < apply,
         "fixed-sensor order over->approach->probe->apply broke:\n{between}"
@@ -5061,10 +5061,48 @@ fn post_change_z_fixed_sensor_reference_tool_gets_touchoff_prompt() {
         between.contains("reference tool 2: touch off on the workpiece"),
         "reference tool 2 must get the workpiece touch-off prompt:\n{between}"
     );
+    // The reference tool still runs the sensor cycle ONCE — not for an
+    // offset, but to record the baseline trigger later tools are
+    // differenced against (bare Z[#5063] was wrong by the full
+    // sensor-to-stock height).
+    let probe = must_find(between, "G38.2 Z-40 F80");
+    let store = must_find(between, "#<_ivac_tlref> = #5063");
     assert!(
-        !between.contains("G38.2"),
-        "the reference tool must NOT be sensor-probed:\n{between}"
+        probe < store,
+        "baseline store must follow the reference probe:\n{between}"
     );
+    assert!(
+        !between.contains("G43.1"),
+        "the reference tool runs uncompensated — no G43.1:\n{between}"
+    );
+}
+
+/// With NO explicit reference (`None` ⇒ the program's first tool), the
+/// FIRST tool's change envelope runs the baseline sensor cycle even
+/// though first-tool changes otherwise use the legacy static-shift
+/// path — later tools need its trigger to difference against.
+#[test]
+fn post_change_z_fixed_sensor_first_tool_records_baseline_by_default() {
+    let g = two_tool_manual_gcode(
+        crate::project::PostChangeZStrategy::FixedSensor {
+            position: (200.0, 10.0, 30.0),
+            seek_mm: -40.0,
+            feed_mm_min: 80,
+            reference_tool_id: None,
+        },
+        None,
+    );
+    let op1 = must_find(&g, "; OP 1");
+    let op2 = must_find(&g, "; OP 2");
+    let first = &g[..op2];
+    let store = must_find(first, "#<_ivac_tlref> = #5063");
+    assert!(
+        must_find(first, "G38.2 Z-40 F80") < store,
+        "first-tool baseline: probe then store:\n{first}"
+    );
+    // …and tool 2 differences against it.
+    let between = &g[op1..];
+    must_find(between, "G43.1 Z[#5063 - #<_ivac_tlref>]");
 }
 
 /// A project with `machine.unit = Inch` MUST scale every emitted X/Y/Z

@@ -178,6 +178,48 @@ pub(super) fn push_grbl_atc_footgun_warning(
 /// is real — no warn. The user's fix otherwise: add a tool-change macro
 /// template that probes + applies the offset, switch to the `Probe`
 /// (work-Z touch-plate) strategy, or use LinuxCNC.
+/// FixedSensor differencing needs the REFERENCE tool's baseline probe
+/// to run before any other tool's sensor cycle. The baseline is taken
+/// at the reference tool's change envelope, so any tool that cuts
+/// BEFORE the reference would apply `G43.1 Z[#5063 - #<_ivac_tlref>]`
+/// against an unset parameter — LinuxCNC aborts the program on an
+/// undefined named parameter (loud, but mid-job). Catch it at CAM time.
+pub(super) fn push_fixed_sensor_reference_order_warning(
+    project: &Project,
+    warnings: &mut Vec<PipelineWarning>,
+) {
+    use crate::project::PostChangeZStrategy;
+    let PostChangeZStrategy::FixedSensor {
+        reference_tool_id: Some(reference),
+        ..
+    } = project.machine.post_change_z
+    else {
+        return; // None ⇒ reference = first tool ⇒ order is always right
+    };
+    let first_tool = project
+        .operations
+        .iter()
+        .filter(|o| o.enabled && !o.is_program_only())
+        .map(|o| o.tool_id)
+        .next();
+    let Some(first_tool) = first_tool else { return };
+    if first_tool == reference {
+        return;
+    }
+    warnings.push(PipelineWarning {
+        op_id: None,
+        kind: "fixed_sensor_reference_not_first".into(),
+        message: format!(
+            "Fixed-sensor post-change Z: the reference tool (tool {reference}) is not the \
+             program's first tool (tool {first_tool}). Tools that run before the reference \
+             have no baseline sensor reading to difference against — on LinuxCNC the program \
+             aborts at their G43.1 (undefined #<_ivac_tlref>). Reorder the operations so the \
+             reference tool cuts first, or clear the reference override (the first tool is \
+             then used)."
+        ),
+    });
+}
+
 pub(super) fn push_grbl_fixed_sensor_warning(
     project: &Project,
     post_kind: super::PostProcessorKind,

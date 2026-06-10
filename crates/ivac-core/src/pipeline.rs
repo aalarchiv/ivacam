@@ -468,6 +468,10 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     // probe is never followed by an applied tool-length offset (GRBL has no
     // numbered-parameter system), so the post-change cut runs uncompensated.
     warnings::push_grbl_fixed_sensor_warning(&project, post_kind, &mut warnings);
+    // Block the FixedSensor reference-ordering footgun: tools changed
+    // before the reference tool's baseline probe would difference
+    // against an unset parameter.
+    warnings::push_fixed_sensor_reference_order_warning(&project, &mut warnings);
 
     let post_tag: u8 = post_kind.cache_tag();
     // run_per_op + every downstream driver now take
@@ -2068,9 +2072,26 @@ fn emit_post_change_z<P: PostProcessor>(
     use crate::project::PostChangeZStrategy as S;
     let is_mill = machine.mode == crate::project::MachineMode::Mill;
 
+    // FixedSensor: is this change the REFERENCE tool's? (`None` ⇒ the
+    // program's first tool.) The reference defines work Z0 by operator
+    // touch-off, but it must ALSO probe the sensor once so later tools
+    // have a baseline to difference against — bare `G43.1 Z[#5063]`
+    // was wrong by the full sensor-to-stock height (feck).
+    let fixed_sensor_reference = match &machine.post_change_z {
+        S::FixedSensor {
+            reference_tool_id, ..
+        } => reference_tool_id.map_or(is_first_tool, |r| r == new_tool_id),
+        _ => false,
+    };
+
     // Legacy static-shift fallback: the `None` default, the first tool,
     // and non-Mill modes all keep the prior `tool_z_shift` behavior.
-    if matches!(machine.post_change_z, S::None) || is_first_tool || !is_mill {
+    // Exception: a first tool that is the FixedSensor reference still
+    // runs its baseline sensor cycle below.
+    if matches!(machine.post_change_z, S::None)
+        || !is_mill
+        || (is_first_tool && !fixed_sensor_reference)
+    {
         if let Some(shift) = new_tool.and_then(|t| t.z_shift_mm) {
             post.tool_z_shift(shift);
         }
@@ -2102,15 +2123,21 @@ fn emit_post_change_z<P: PostProcessor>(
             position,
             seek_mm,
             feed_mm_min,
-            reference_tool_id,
+            ..
         } => {
-            // The reference tool defines Z0 via a workpiece touch-off
-            // (prompt emitted pre-pause) — no sensor probe for it.
-            if *reference_tool_id == Some(new_tool_id) {
-                return;
-            }
             let (px, py, pz) = *position;
-            post.comment(&format!("post-change Z: fixed sensor (tool {new_tool_id})"));
+            if fixed_sensor_reference {
+                // The reference tool defines Z0 via a workpiece
+                // touch-off (prompt emitted pre-pause), but it still
+                // probes the sensor ONCE to record the baseline
+                // trigger later tools are differenced against. No
+                // offset is applied — the reference runs uncompensated.
+                post.comment(&format!(
+                    "post-change Z: fixed sensor baseline (reference tool {new_tool_id})"
+                ));
+            } else {
+                post.comment(&format!("post-change Z: fixed sensor (tool {new_tool_id})"));
+            }
             // Traverse XY to the sensor at the current (safe) Z FIRST, then
             // descend to the approach height directly above the sensor. The
             // reverse order (drop Z, then move XY) would rake the fresh tool
@@ -2119,7 +2146,11 @@ fn emit_post_change_z<P: PostProcessor>(
             post.rapid_machine_xy(px, py); // over the sensor, still at safe Z
             post.rapid_machine_z(pz); // descend to the approach height
             post.probe_toward_z(*seek_mm, *feed_mm_min);
-            post.apply_probed_tool_length();
+            if fixed_sensor_reference {
+                post.store_probed_z_baseline();
+            } else {
+                post.apply_probed_tool_length();
+            }
             post.rapid_machine_z(pz); // retract to the approach height
         }
     }

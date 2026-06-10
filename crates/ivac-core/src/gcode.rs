@@ -473,14 +473,25 @@ pub trait PostProcessor {
     /// next move must re-emit coordinates explicitly.
     fn probe_toward_z(&mut self, _distance_mm: f64, _feed_mm_min: u32) {}
 
+    /// Record the REFERENCE tool's sensor trigger so later tools can
+    /// difference against it. Called after
+    /// [`probe_toward_z`](Self::probe_toward_z) lands the reference
+    /// tool on the fixed sensor. `LinuxCNC` stores the probed work-Z
+    /// into the global named parameter `#<_ivac_tlref>`; GRBL / HPGL
+    /// no-op (GRBL's FixedSensor path is blocked by a pipeline warning).
+    fn store_probed_z_baseline(&mut self) {}
+
     /// Apply the just-probed tool length as a tool-length offset.
-    /// Called after [`probe_toward_z`](Self::probe_toward_z) lands the
-    /// tool on a fixed sensor in `FixedSensor` mode. The numeric
-    /// difference from the reference tool is a CONTROLLER-runtime value
-    /// (unknown at CAM time): `LinuxCNC` emits `G43.1 Z[#5063]` (the
-    /// probed-Z parameter); GRBL emits a comment deferring to its native
-    /// `$341` tool-measure; HPGL ignores. Touch-plate `Probe` mode does
-    /// NOT use this — it pins work Z directly via `tool_z_shift`.
+    /// Called after [`probe_toward_z`](Self::probe_toward_z) lands a
+    /// NON-reference tool on the fixed sensor. The numeric difference
+    /// from the reference tool is a CONTROLLER-runtime value (unknown
+    /// at CAM time): `LinuxCNC` emits `G43.1 Z[#5063 - #<_ivac_tlref>]`
+    /// — the probed work-Z minus the reference baseline, which cancels
+    /// the sensor-height and stock-zero terms and leaves exactly the
+    /// tool-length delta (a bare `Z[#5063]` over-offset by the full
+    /// sensor-to-stock height). GRBL emits a comment deferring to its
+    /// native `$341` tool-measure; HPGL ignores. Touch-plate `Probe`
+    /// mode does NOT use this — it pins work Z directly.
     fn apply_probed_tool_length(&mut self) {}
 
     /// Emit a dwell of `seconds` (used for laser pierce time).

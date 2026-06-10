@@ -63,7 +63,7 @@
   // `<tools>` token renders the actual multi-line listing the
   // generated gcode will carry (was: a single placeholder line).
   let toolsListing = $derived(
-    project.tools.map((t) => `T${t.id} (${t.name}) ⌀${t.diameter.toFixed(3)}`).join('\n'),
+    project.data.tools.map((t) => `T${t.id} (${t.name}) ⌀${t.diameter.toFixed(3)}`).join('\n'),
   );
   let preview = $derived(previewGcode(draft, toolsListing ? { toolsListing } : {}));
 

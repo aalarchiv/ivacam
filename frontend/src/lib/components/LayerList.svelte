@@ -113,7 +113,7 @@
   /// visibility toggles apply across imports.
   let usableLayers = $derived.by(() => {
     const byName = new Map<string, { name: string; color: number; segment_count: number }>();
-    for (const entry of project.imports) {
+    for (const entry of project.data.imports) {
       for (const l of entry.source.layers) {
         if (l.segment_count <= 0) continue;
         const existing = byName.get(l.name);
@@ -125,12 +125,12 @@
   });
 
   let allVisible = $derived(
-    usableLayers.length > 0 && usableLayers.every((l) => project.visibleLayers.has(l.name)),
+    usableLayers.length > 0 && usableLayers.every((l) => project.data.visibleLayers.has(l.name)),
   );
 
   function setAllVisible(on: boolean) {
     for (const l of usableLayers) {
-      const has = project.visibleLayers.has(l.name);
+      const has = project.data.visibleLayers.has(l.name);
       if (has !== on) project.toggleLayer(l.name);
     }
   }
@@ -167,19 +167,19 @@
         onchange={(e) => setAllVisible((e.currentTarget as HTMLInputElement).checked)}
       />
     {/if}
-    {#if project.imports.length === 1 && usableLayers.length > 0}
-      <span class="filename" title={project.imports[0].source.filename}>
-        {project.imports[0].source.filename}
+    {#if project.data.imports.length === 1 && usableLayers.length > 0}
+      <span class="filename" title={project.data.imports[0].source.filename}>
+        {project.data.imports[0].source.filename}
       </span>
       <span class="file-stats" title="Segments · layers">
-        {project.imports[0].source.segments.length} seg · {usableLayers.length} layer{usableLayers.length ===
+        {project.data.imports[0].source.segments.length} seg · {usableLayers.length} layer{usableLayers.length ===
         1
           ? ''
           : 's'}
       </span>
-    {:else if project.imports.length > 1}
+    {:else if project.data.imports.length > 1}
       <span class="group-name">Drawings</span>
-      <span class="group-count">{project.imports.length}</span>
+      <span class="group-count">{project.data.imports.length}</span>
     {:else}
       <span class="group-name">Layers</span>
       <span class="group-count">{usableLayers.length}</span>
@@ -234,11 +234,11 @@
   </div>
   {#if !collapsed}
     <div class="group-body">
-      {#each project.imports as entry (entry.id)}
+      {#each project.data.imports as entry (entry.id)}
         {@const xfActive = !isIdentityFileTransform(entry.fileTransform)}
         {@const transformOpen = openTransforms.has(entry.id)}
         <div class="import-card">
-          {#if project.imports.length > 1}
+          {#if project.data.imports.length > 1}
             <div class="import-head">
               <span class="import-filename" title={entry.source.filename}
                 >{entry.source.filename}</span
@@ -392,7 +392,7 @@
               <label class="layer-label">
                 <input
                   type="checkbox"
-                  checked={project.visibleLayers.has(layer.name)}
+                  checked={project.data.visibleLayers.has(layer.name)}
                   onchange={() => project.toggleLayer(layer.name)}
                   title="Active = included in pipeline + visible on canvas. Uncheck to deactivate."
                 />

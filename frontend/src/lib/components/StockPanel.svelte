@@ -16,7 +16,7 @@
   import { parseFiniteNumber } from '../cam/units';
   import { inferDefaultWorkOffset, type Wcs, type WorkOffset } from '../state/project-types';
 
-  function patch(p: Partial<typeof project.stock>) {
+  function patch(p: Partial<typeof project.data.stock>) {
     project.setStock(p);
   }
   function patchWorkOffset(p: Partial<WorkOffset>) {
@@ -37,7 +37,7 @@
       x_mm: 0,
       y_mm: 0,
       z_mm: 0,
-      wcs: project.workOffset.wcs,
+      wcs: project.data.workOffset.wcs,
     });
     patchWorkOffset({ x_mm: candidate.x_mm, y_mm: candidate.y_mm });
   }
@@ -51,7 +51,7 @@
   /// Without this the old `parseFloat(v) || 0` patterns silently
   /// snapped stock dims to 0 when the user typed "abc" or a negative.
   function commitStockNumber(
-    key: keyof typeof project.stock,
+    key: keyof typeof project.data.stock,
     raw: string,
     opts: { min?: number; allowNegative?: boolean } = {},
   ) {
@@ -70,7 +70,7 @@
   let invalidKey = $state<string | null>(null);
 
   function onStockNumberChange(
-    key: keyof typeof project.stock,
+    key: keyof typeof project.data.stock,
     e: Event,
     opts: { min?: number; allowNegative?: boolean } = {},
   ) {
@@ -93,7 +93,7 @@
   }
 
   const footprint = $derived(
-    computeFootprint(project.transformedImport, project.stock, project.machine.workArea),
+    computeFootprint(project.transformedImport, project.data.stock, project.data.machine.workArea),
   );
   const computedLength = $derived(Math.max(0, footprint.maxX - footprint.minX));
   const computedWidth = $derived(Math.max(0, footprint.maxY - footprint.minY));
@@ -107,7 +107,7 @@
         type="radio"
         name="stock-mode"
         value="auto"
-        checked={project.stock.mode === 'auto'}
+        checked={project.data.stock.mode === 'auto'}
         onchange={() => patch({ mode: 'auto' })}
       />
       <span>Auto (fit to drawing)</span>
@@ -117,7 +117,7 @@
         type="radio"
         name="stock-mode"
         value="manual"
-        checked={project.stock.mode === 'manual'}
+        checked={project.data.stock.mode === 'manual'}
         onchange={() => patch({ mode: 'manual' })}
       />
       <span>Manual</span>
@@ -129,14 +129,14 @@
     <label>
       <span>Length</span>
       <span class="field">
-        {#if project.stock.mode === 'auto'}
+        {#if project.data.stock.mode === 'auto'}
           <input type="number" value={computedLength.toFixed(1)} readonly tabindex="-1" />
         {:else}
           <input
             type="number"
             step="0.5"
             min="1"
-            value={project.stock.customX}
+            value={project.data.stock.customX}
             class:invalid={invalidKey === 'customX'}
             onchange={(e) => onStockNumberChange('customX', e, { min: 1 })}
           />
@@ -147,14 +147,14 @@
     <label>
       <span>Width</span>
       <span class="field">
-        {#if project.stock.mode === 'auto'}
+        {#if project.data.stock.mode === 'auto'}
           <input type="number" value={computedWidth.toFixed(1)} readonly tabindex="-1" />
         {:else}
           <input
             type="number"
             step="0.5"
             min="1"
-            value={project.stock.customY}
+            value={project.data.stock.customY}
             class:invalid={invalidKey === 'customY'}
             onchange={(e) => onStockNumberChange('customY', e, { min: 1 })}
           />
@@ -169,14 +169,14 @@
           type="number"
           step="0.5"
           min="0.1"
-          value={project.stock.thickness}
+          value={project.data.stock.thickness}
           class:invalid={invalidKey === 'thickness'}
           onchange={(e) => onStockNumberChange('thickness', e, { min: 0.1 })}
         />
         <span class="unit">mm</span>
       </span>
     </label>
-    {#if project.stock.mode === 'auto'}
+    {#if project.data.stock.mode === 'auto'}
       <label>
         <span>Margin</span>
         <span class="field">
@@ -184,7 +184,7 @@
             type="number"
             step="0.5"
             min="0"
-            value={project.stock.margin}
+            value={project.data.stock.margin}
             class:invalid={invalidKey === 'margin'}
             onchange={(e) => onStockNumberChange('margin', e, { min: 0 })}
             title="Adds to Length + Width (auto-fit case); Thickness is unaffected."
@@ -203,7 +203,7 @@
         <input
           type="number"
           step="0.5"
-          value={project.stock.offsetX ?? 0}
+          value={project.data.stock.offsetX ?? 0}
           class:invalid={invalidKey === 'offsetX'}
           onchange={(e) => onStockNumberChange('offsetX', e, { allowNegative: true })}
         />
@@ -216,7 +216,7 @@
         <input
           type="number"
           step="0.5"
-          value={project.stock.offsetY ?? 0}
+          value={project.data.stock.offsetY ?? 0}
           class:invalid={invalidKey === 'offsetY'}
           onchange={(e) => onStockNumberChange('offsetY', e, { allowNegative: true })}
         />
@@ -235,7 +235,7 @@
         <input
           type="number"
           step="0.5"
-          value={project.stock.offsetZ ?? 0}
+          value={project.data.stock.offsetZ ?? 0}
           class:invalid={invalidKey === 'offsetZ'}
           onchange={(e) => onStockNumberChange('offsetZ', e, { allowNegative: true })}
           title="Z of the stock top plane (mm). 0 = top at the WCS origin (zeroed on the stock top). Positive raises the stock above z=0 — e.g. set it to the stock thickness if you zeroed on the bed. Shifts the 3D stock box, sim heightmap, and out-of-stock check."
@@ -258,7 +258,7 @@
       <span>WCS</span>
       <span class="field">
         <select
-          value={project.workOffset.wcs}
+          value={project.data.workOffset.wcs}
           onchange={(e) =>
             patchWorkOffset({
               wcs: (e.currentTarget as HTMLSelectElement).value as Wcs,
@@ -276,7 +276,7 @@
         <input
           type="number"
           step="0.5"
-          value={project.workOffset.x_mm}
+          value={project.data.workOffset.x_mm}
           class:invalid={invalidKey === 'wo:x_mm'}
           onchange={(e) => onWorkOffsetNumberChange('x_mm', e)}
         />
@@ -289,7 +289,7 @@
         <input
           type="number"
           step="0.5"
-          value={project.workOffset.y_mm}
+          value={project.data.workOffset.y_mm}
           class:invalid={invalidKey === 'wo:y_mm'}
           onchange={(e) => onWorkOffsetNumberChange('y_mm', e)}
         />

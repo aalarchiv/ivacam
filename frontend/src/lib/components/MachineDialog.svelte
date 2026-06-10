@@ -46,13 +46,13 @@
   }
 
   const dd = new DialogDraft<MachineDraft>();
-  dd.open(compositeOf(project.machine));
+  dd.open(compositeOf(project.data.machine));
   /// Narrow aliases so the template / commit path keep reading
   /// `draft.*` / `jerkDraft.*` — two-way bindings still mutate the
   /// deeply-reactive dd.draft underneath. The `??` arms are unreachable
   /// (dd is opened at init and never close()d) but keep the types
   /// null-free.
-  const composite = $derived(dd.draft ?? compositeOf(project.machine));
+  const composite = $derived(dd.draft ?? compositeOf(project.data.machine));
   const draft = $derived(composite.machine);
   const jerkDraft = $derived(composite.jerk);
 
@@ -63,7 +63,7 @@
       // manifests as "every button still fires its onclick, but
       // visible state stops updating" (see App.svelte:117).
       try {
-        dd.open(compositeOf(project.machine));
+        dd.open(compositeOf(project.data.machine));
       } catch (e) {
         console.error('MachineDialog.open: init failed', e);
       }
@@ -858,7 +858,7 @@
             // Assigned directly (not dd.open) so the pristine snapshot
             // from open is kept — loading a different config counts as
             // an unsaved change, same as before.
-            const m = $state.snapshot(project.machine) as MachineSettings;
+            const m = $state.snapshot(project.data.machine) as MachineSettings;
             dd.draft = {
               machine: m,
               jerkEnabled: !!m.jerk,

@@ -58,7 +58,7 @@ export interface AppSettings {
   /// envelope turn this on for a hard pre-send gate. Generate/preview stay
   /// open so the violation can be seen and fixed.
   blockOnWorkAreaViolation: boolean;
-  /// 75op: when true, GenerateBar debounces project.dirty changes and
+  /// 75op: when true, GenerateBar debounces project.data.dirty changes and
   /// auto-runs Generate after a brief idle. Off by default; power
   /// users on big projects keep manual control.
   autoRegenerate: boolean;

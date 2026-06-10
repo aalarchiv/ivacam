@@ -2,7 +2,7 @@
   /// j7n: printable project-summary report. Single-column layout that
   /// prints cleanly via window.print() — operators can hand-off the
   /// printout with the cut. Pulls every value from data the frontend
-  /// already has (project state + project.generated). No new backend
+  /// already has (project state + project.gen.generated). No new backend
   /// computation; deeper analyses (material removed, per-op time
   /// breakdown) deferred to a follow-up — the bd issue notes 4-5 days
   /// of work, this MVP ships the user-visible 80%.
@@ -45,12 +45,12 @@
   const now = new Date();
   const date = $derived(now.toLocaleString());
 
-  const gen = $derived(project.generated);
+  const gen = $derived(project.gen.generated);
   const timeEst = $derived<TimeEstimate | null>(
     (gen as { time_estimate?: TimeEstimate } | null)?.time_estimate ?? null,
   );
 
-  const enabledOps = $derived(project.operations.filter((o) => o.enabled));
+  const enabledOps = $derived(project.data.operations.filter((o) => o.enabled));
   /// Distinct tool IDs referenced by enabled ops, excluding Pause
   /// (which carries toolId 0 but uses no tool).
   const usedToolIds = $derived(
@@ -58,7 +58,7 @@
   );
   const usedTools = $derived(
     usedToolIds
-      .map((id) => project.tools.find((t) => t.id === id))
+      .map((id) => project.data.tools.find((t) => t.id === id))
       .filter((t): t is NonNullable<typeof t> => t != null),
   );
 
@@ -106,7 +106,8 @@
   /// Assemble the report into the pure ReportData shape, then serialize
   /// to Markdown + front matter and save (vh6e).
   function reportData(): ReportData {
-    const toolNameFor = (id: number) => project.tools.find((t) => t.id === id)?.name ?? `#${id}`;
+    const toolNameFor = (id: number) =>
+      project.data.tools.find((t) => t.id === id)?.name ?? `#${id}`;
     return {
       projectName: projectName(),
       generatedBy,
@@ -253,7 +254,8 @@
                          missing-tool sentinel. -->
                     {isProgramOnlyOp(op.kind)
                       ? '—'
-                      : (project.tools.find((t) => t.id === op.toolId)?.name ?? `#${op.toolId}`)}
+                      : (project.data.tools.find((t) => t.id === op.toolId)?.name ??
+                        `#${op.toolId}`)}
                   </td>
                   <td>{opSourceSummary(op)}</td>
                   <td>{opDepth(op)}</td>

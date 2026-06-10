@@ -24,7 +24,7 @@
   /// pipeline / box-select hit-test (data-space, not pixels).
   function setCenterFromSelection(pol: Extract<PatternConfig, { kind: 'polar' }>) {
     const meta = project.transformedImport?.object_meta ?? [];
-    const sel = project.selectedObjects;
+    const sel = project.sel.selectedObjects;
     if (sel.size === 0 || meta.length === 0) return;
     let minX = Infinity;
     let minY = Infinity;
@@ -279,8 +279,8 @@
         type="button"
         class="center-btn"
         onclick={() => setCenterFromSelection(pol)}
-        disabled={project.selectedObjects.size === 0}
-        title={project.selectedObjects.size === 0
+        disabled={project.sel.selectedObjects.size === 0}
+        title={project.sel.selectedObjects.size === 0
           ? 'Select one or more objects on the canvas first.'
           : 'Compute center X / Y as the bbox center of the currently selected objects.'}
       >

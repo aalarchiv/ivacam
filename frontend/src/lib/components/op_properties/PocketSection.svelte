@@ -19,7 +19,7 @@
   }
   let { op, patch }: Props = $props();
 
-  let opTool = $derived(project.tools.find((tt) => tt.id === op.toolId));
+  let opTool = $derived(project.data.tools.find((tt) => tt.id === op.toolId));
 </script>
 
 {#if op.frameShape == null}

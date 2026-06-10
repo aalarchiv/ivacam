@@ -5,7 +5,7 @@
 /// The 2D canvas's onPointerDown handler used to do five things at
 /// once: decode modifiers, branch on hit-vs-no-hit, arm box-select on
 /// empty space, fire `project.selectObjects` / `project.clearSelection`
-/// / `project.seriesSelectTo` directly, and tweak `project.selectedOpId`.
+/// / `project.seriesSelectTo` directly, and tweak `project.sel.selectedOpId`.
 /// Extracted here so the same shape can be unit-tested without mounting
 /// the canvas, and so the component is now just event-capture → reducer
 /// → action dispatch.

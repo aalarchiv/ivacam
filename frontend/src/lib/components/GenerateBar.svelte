@@ -51,7 +51,7 @@
   }
 
   function timeEstimate(): TimeEstimate | null {
-    const r = project.generated as { time_estimate?: TimeEstimate } | null;
+    const r = project.gen.generated as { time_estimate?: TimeEstimate } | null;
     return r?.time_estimate ?? null;
   }
 
@@ -65,9 +65,9 @@
   // dialect. Derive from the machine, falling back to the last-used /
   // persisted choice when the machine doesn't specify one.
   const post = $derived<PostId>(
-    coercePost(project.machine.gcodeDialect ?? workspace.get().last_post_processor),
+    coercePost(project.data.machine.gcodeDialect ?? workspace.get().last_post_processor),
   );
-  /// Tracks which post-processor produced the currently cached `project.generated`
+  /// Tracks which post-processor produced the currently cached `project.gen.generated`
   /// gcode buffer. When the user flips the dropdown to a different dialect, the
   /// cached text is now wrong-dialect — exporting it via the Download button
   /// would write LinuxCNC gcode into a .plt (HPGL) file. Clear the cache so the
@@ -77,7 +77,7 @@
     // Drop the post tag whenever the cached gcode disappears (project
     // reload, manual clear, machine swap) so the next run re-captures
     // the current dropdown choice.
-    if (project.generated == null) generatedPost = null;
+    if (project.gen.generated == null) generatedPost = null;
   });
   $effect(() => {
     const current = post;
@@ -92,10 +92,10 @@
         console.warn('persist post processor:', e);
       }
     });
-    if (generatedPost != null && generatedPost !== current && project.generated != null) {
+    if (generatedPost != null && generatedPost !== current && project.gen.generated != null) {
       // Dialect changed — drop the cached gcode so Download can't emit
       // it into a file with the new dialect's extension.
-      project.generated = null;
+      project.gen.generated = null;
       generatedPost = null;
     }
   });
@@ -126,29 +126,29 @@
   });
 
   function cancelRun() {
-    if (project.pipelineState !== 'running') return;
+    if (project.gen.pipelineState !== 'running') return;
     project.cancelGenerate();
     abortController?.abort();
   }
 
-  // 75op: auto-regenerate on edit. Watch project.dirty + the setting;
+  // 75op: auto-regenerate on edit. Watch project.data.dirty + the setting;
   // when both are true and we're not already running, debounce ~1.5s
   // and fire run(). Cancel prior pending debounce on each new edit.
   let autoTimer: ReturnType<typeof setTimeout> | null = null;
   const AUTO_REGEN_DEBOUNCE_MS = 1500;
   $effect(() => {
-    void project.dirty;
-    void project.settings.autoRegenerate;
+    void project.data.dirty;
+    void project.data.settings.autoRegenerate;
     if (autoTimer) {
       clearTimeout(autoTimer);
       autoTimer = null;
     }
     if (
-      !project.settings.autoRegenerate ||
-      !project.dirty ||
+      !project.data.settings.autoRegenerate ||
+      !project.data.dirty ||
       !project.geometryView ||
-      project.pipelineState === 'running' ||
-      project.pipelineState === 'cancelling'
+      project.gen.pipelineState === 'running' ||
+      project.gen.pipelineState === 'cancelling'
     ) {
       return;
     }
@@ -157,11 +157,11 @@
       // Re-check guards at fire time — the user may have already hit
       // Generate manually, or pipelineState may have flipped.
       if (
-        project.settings.autoRegenerate &&
-        project.dirty &&
+        project.data.settings.autoRegenerate &&
+        project.data.dirty &&
         project.geometryView &&
-        project.pipelineState !== 'running' &&
-        project.pipelineState !== 'cancelling'
+        project.gen.pipelineState !== 'running' &&
+        project.gen.pipelineState !== 'cancelling'
       ) {
         void run();
       }
@@ -177,16 +177,16 @@
     };
   });
 
-  let warnings = $derived(project.simDiagnostics?.warnings ?? []);
+  let warnings = $derived(project.gen.simDiagnostics?.warnings ?? []);
   // dvs4: surface pipeline-level warnings in the same panel that
   // showed sim warnings before. Previously the panel was hard-coded to
-  // `project.simDiagnostics?.warnings` and the panel gate required a
+  // `project.gen.simDiagnostics?.warnings` and the panel gate required a
   // non-null simDiagnostics, so a Generate that raised, say,
   // `op_source_empty` or `tool_too_large` flagged the chip but
   // clicking it showed "No warnings — sim is clean." now we render
   // BOTH lists in one panel with a source tag per row.
   let pipelineWarnings = $derived<PipelineWarning[]>(
-    (project.generated as { warnings?: PipelineWarning[] } | null)?.warnings ?? [],
+    (project.gen.generated as { warnings?: PipelineWarning[] } | null)?.warnings ?? [],
   );
   // 94sf: critical-count now spans BOTH sim warnings AND pipeline-level
   // warnings (tool_too_large, op_order_suspect, frame_padding_below_tool_radius,
@@ -201,7 +201,7 @@
   // work-area half (`out_of_work_area`); vrrr moves the STOCK half
   // (`out_of_stock`, warnings.rs::push_stock_warning) now that the core
   // `Project` carries a resolved stock box (sent by `buildProject` via
-  // `computeFootprint`). Both ride in on `project.generated.warnings` →
+  // `computeFootprint`). Both ride in on `project.gen.generated.warnings` →
   // `pipelineWarnings`, so the frontend no longer synthesizes either —
   // doing so would double-count. `allPipelineWarnings` is now just the
   // pipeline's own findings.
@@ -234,7 +234,19 @@
     project.beginGenerate();
     abortController = new AbortController();
     try {
-      const opProject = buildProject(project);
+      const opProject = buildProject({
+        transformedImport: project.transformedImport,
+        geometryView: project.geometryView,
+        machine: project.data.machine,
+        tools: project.data.tools,
+        operations: project.data.operations,
+        fixtures: project.data.fixtures,
+        textLayers: project.data.textLayers,
+        workOffset: project.data.workOffset,
+        stock: project.data.stock,
+        reliefSources: project.data.reliefSources,
+        groupOpsByTool: project.data.groupOpsByTool,
+      });
       if (!opProject) {
         // Early bail: `beginGenerate()` flipped pipelineState to 'running'
         // above, so just `setError + return` would leave the UI stuck on
@@ -258,7 +270,7 @@
         r = await client.generateStreaming(
           req,
           (ev) => {
-            // Live progress is read from project.pipelineProgress, which
+            // Live progress is read from project.gen.pipelineProgress, which
             // notePipelineEvent maintains; the bar binds to that.
             project.notePipelineEvent(ev);
           },
@@ -266,7 +278,7 @@
         );
       } else if (client.generateStream) {
         // Coarse-grained streaming fallback (no per-op events). The bar
-        // shows an indeterminate running state via project.pipelineState;
+        // shows an indeterminate running state via project.gen.pipelineState;
         // there's no fraction to surface here, so the callback is a no-op.
         r = await client.generateStream(req, () => {});
       } else {
@@ -278,7 +290,7 @@
     } catch (e) {
       if (e instanceof CancelledError) {
         // Cancelled by the user — just snap back to idle.
-        project.pipelineState = 'idle';
+        project.gen.pipelineState = 'idle';
       } else {
         const raw = e instanceof Error ? e.message : String(e);
         const structured = tryParseStructuredError(raw);
@@ -301,7 +313,7 @@
     // material. `criticalCount` aggregates both, and simDiagnostics is
     // cleared on every Generate (see setGenerated) so it always reflects
     // the toolpath actually being exported.
-    if (project.settings.blockOnCriticalSimWarnings && criticalCount > 0) {
+    if (project.data.settings.blockOnCriticalSimWarnings && criticalCount > 0) {
       project.setError(
         `${criticalCount} critical warning${criticalCount === 1 ? '' : 's'} (collisions / unsafe cuts) — fix or disable the safety check in Settings before downloading`,
       );
@@ -311,7 +323,7 @@
     // only (Generate/preview stay open so the operator can see + fix the
     // violation). The toolpath leaves the machine envelope — sending it
     // risks a soft-limit fault or a gantry crash.
-    if (project.settings.blockOnWorkAreaViolation && workAreaViolationCount > 0) {
+    if (project.data.settings.blockOnWorkAreaViolation && workAreaViolationCount > 0) {
       project.setError(
         `${workAreaViolationCount} move${workAreaViolationCount === 1 ? '' : 's'} leave the machine work area — fix the path / work-offset, widen the work area, or disable the work-area gate in Settings`,
       );
@@ -322,12 +334,12 @@
 
   function flyToWarning(w: SimWarning) {
     const segIdx = simWarningSegmentIdx(w);
-    const cum = project.toolpathCumLen;
-    const total = project.toolpathTotalLen;
+    const cum = project.gen.toolpathCumLen;
+    const total = project.gen.toolpathTotalLen;
     if (cum && total > 0 && segIdx >= 0 && segIdx < cum.length) {
       project.playhead = Math.min(1, cum[segIdx] / total);
     } else {
-      const segs = project.generated?.toolpath.length ?? 0;
+      const segs = project.gen.generated?.toolpath.length ?? 0;
       if (segs > 0) project.playhead = Math.min(1, (segIdx + 1) / segs);
     }
   }
@@ -347,23 +359,23 @@
       x_mm: 0,
       y_mm: 0,
       z_mm: 0,
-      wcs: project.workOffset.wcs,
+      wcs: project.data.workOffset.wcs,
     });
     project.setWorkOffset({ x_mm: next.x_mm, y_mm: next.y_mm });
   }
 
   /// Sim status goes STALE the moment the user edits anything that
-  /// would change gcode (project.dirty flips true on every op / tool /
+  /// would change gcode (project.data.dirty flips true on every op / tool /
   /// stock / text mutation, and clears on the next successful Generate).
   /// The chip reflects this so the user knows the previous sim verdict
   /// no longer matches what's on the canvas.
-  let simStale = $derived(project.simDiagnostics != null && project.dirty);
+  let simStale = $derived(project.gen.simDiagnostics != null && project.data.dirty);
 
   function chipClass(): string {
     // dvs4: chip color reflects WORST of sim + pipeline warnings.
     // "idle" only when there's no generate-side state AND no sim run
     // yet (chip is hidden anyway in that case).
-    if (project.simDiagnostics == null && pipelineWarnings.length === 0) return 'sim-chip idle';
+    if (project.gen.simDiagnostics == null && pipelineWarnings.length === 0) return 'sim-chip idle';
     if (simStale) return 'sim-chip stale';
     if (criticalCount > 0) return 'sim-chip critical';
     if (totalWarningCount > 0) return 'sim-chip warning';
@@ -376,7 +388,7 @@
     // the sim diagnostic UI for a warning that was actually emitted
     // by the CAM pipeline. The panel that opens still tags each row
     // with its source (sim / pipeline) so attribution stays visible.
-    if (project.simDiagnostics == null && pipelineWarnings.length === 0) {
+    if (project.gen.simDiagnostics == null && pipelineWarnings.length === 0) {
       return 'Warnings: not run yet — Generate first';
     }
     if (simStale) return 'Warnings: stale — re-Generate';
@@ -388,7 +400,7 @@
   }
 
   function chipGlyph(): string {
-    if (project.simDiagnostics == null && pipelineWarnings.length === 0) return '🛡';
+    if (project.gen.simDiagnostics == null && pipelineWarnings.length === 0) return '🛡';
     if (simStale) return '↻';
     if (isClean) return '✓';
     if (criticalCount > 0) return '⛔';
@@ -401,27 +413,27 @@
 
 <div class="bar">
   <span class="title">Generate:</span>
-  {#if project.pipelineState === 'running' || project.pipelineState === 'cancelling'}
+  {#if project.gen.pipelineState === 'running' || project.gen.pipelineState === 'cancelling'}
     <GenerateProgress onCancel={cancelRun} />
   {:else}
     <button
       onclick={run}
-      disabled={!project.geometryView || project.generating}
-      class:stale={project.dirty && project.generated != null}
-      title={project.dirty && project.generated != null
+      disabled={!project.geometryView || project.gen.generating}
+      class:stale={project.data.dirty && project.gen.generated != null}
+      title={project.data.dirty && project.gen.generated != null
         ? 'The visible toolpath is stale — the project has changed since the last Generate. Click to refresh.'
         : 'Run the CAM pipeline and produce a toolpath. Reads the current ops, tools, stock, and machine — output is cached so unchanged ops re-emit instantly.'}
     >
-      {#if project.generating}
+      {#if project.gen.generating}
         Generating G-code…
-      {:else if project.dirty && project.generated != null}
+      {:else if project.data.dirty && project.gen.generated != null}
         Regenerate G-code
       {:else}
         Generate G-code
       {/if}
     </button>
   {/if}
-  {#if project.generated}
+  {#if project.gen.generated}
     <button
       onclick={downloadGcode}
       class="download"
@@ -430,11 +442,11 @@
       {post === 'hpgl' ? 'Download .plt' : 'Download .ngc'}
     </button>
     <span class="stats">
-      {project.generated.stats.object_count} obj · {project.generated.stats.offset_count} offsets · {project
-        .generated.toolpath.length} moves
-      {#if project.lastGenerateCachedCount > 0}
+      {project.gen.generated.stats.object_count} obj · {project.gen.generated.stats.offset_count} offsets
+      · {project.gen.generated.toolpath.length} moves
+      {#if project.gen.lastGenerateCachedCount > 0}
         <span class="cached-tag"
-          >· {project.lastGenerateCachedCount} of {project.lastGenerateOpCount} cached</span
+          >· {project.gen.lastGenerateCachedCount} of {project.gen.lastGenerateOpCount} cached</span
         >
       {/if}
     </span>
@@ -493,11 +505,11 @@
       </button>
     </span>
   {/if}
-  {#if project.simDiagnostics == null && project.generated == null}
+  {#if project.gen.simDiagnostics == null && project.gen.generated == null}
     <span class="sim-chip idle" title={SIM_IDLE_HINT}>
       🛡 {chipLabel()}
     </span>
-  {:else if project.simDiagnostics != null || totalWarningCount > 0}
+  {:else if project.gen.simDiagnostics != null || totalWarningCount > 0}
     <button
       class={chipClass()}
       onclick={() => (warningPanelOpen = !warningPanelOpen)}

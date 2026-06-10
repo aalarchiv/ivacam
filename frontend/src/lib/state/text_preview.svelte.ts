@@ -1,6 +1,6 @@
 /// Live 2D preview cache for editable text layers.
 ///
-/// Each `TextLayer` in `project.textLayers` maps to a rendered segment
+/// Each `TextLayer` in `project.data.textLayers` maps to a rendered segment
 /// list the canvas overlays on top of the imported geometry. Renders go
 /// through the `renderTextLayer` backend API (same code path the pipeline
 /// uses at Generate time, so preview and gcode agree).

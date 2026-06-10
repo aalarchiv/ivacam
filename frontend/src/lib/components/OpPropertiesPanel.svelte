@@ -1,7 +1,7 @@
 <script lang="ts">
-  /// Operation properties panel — bound to project.selectedOpId. Shows
+  /// Operation properties panel — bound to project.sel.selectedOpId. Shows
   /// the kind-specific parameters of the selected op plus a tool picker
-  /// fed from project.tools. Edits are pushed straight back through
+  /// fed from project.data.tools. Edits are pushed straight back through
   /// project.updateOperation, so the operation list updates instantly.
 
   import {
@@ -76,23 +76,23 @@
   let { embedded = false }: Props = $props();
 
   const op = $derived<OpEntry | null>(
-    project.selectedOpId == null
+    project.sel.selectedOpId == null
       ? null
-      : (project.operations.find((o) => o.id === project.selectedOpId) ?? null),
+      : (project.data.operations.find((o) => o.id === project.sel.selectedOpId) ?? null),
   );
 
   /// Resolve the assigned tool's defaultStep for the current op so the
   /// Step / pass input can fall back to it. null when no assignment.
   const toolDefaultStep = $derived<number | null>(
-    op == null ? null : (project.tools.find((t) => t.id === op.toolId)?.defaultStep ?? null),
+    op == null ? null : (project.data.tools.find((t) => t.id === op.toolId)?.defaultStep ?? null),
   );
   /// Tool defaults that the per-op feed / plunge fields inherit when
   /// unset. Placeholders below show these as concrete numbers (audit-bv6).
   const toolFeedRate = $derived<number | null>(
-    op == null ? null : (project.tools.find((t) => t.id === op.toolId)?.feedRate ?? null),
+    op == null ? null : (project.data.tools.find((t) => t.id === op.toolId)?.feedRate ?? null),
   );
   const toolPlungeRate = $derived<number | null>(
-    op == null ? null : (project.tools.find((t) => t.id === op.toolId)?.plungeRate ?? null),
+    op == null ? null : (project.data.tools.find((t) => t.id === op.toolId)?.plungeRate ?? null),
   );
   const stepInheriting = $derived(op != null && (op.step === null || op.step === undefined));
   const stepMissing = $derived(
@@ -130,7 +130,7 @@
   let helixPreviewLoading = $state(false);
 
   const helixToolDiameter = $derived<number | null>(
-    op == null ? null : (project.tools.find((t) => t.id === op.toolId)?.diameter ?? null),
+    op == null ? null : (project.data.tools.find((t) => t.id === op.toolId)?.diameter ?? null),
   );
   const helixAutoActive = $derived(
     op != null && op.plunge != null && op.plunge.kind === 'helix' && op.plunge.radiusMm === null,
@@ -165,12 +165,12 @@
           tool_diameter_mm: toolD,
         })
         .then((resp) => {
-          if (project.selectedOpId !== opIdAtStart) return;
+          if (project.sel.selectedOpId !== opIdAtStart) return;
           helixPreview = resp;
           helixPreviewLoading = false;
         })
         .catch(() => {
-          if (project.selectedOpId !== opIdAtStart) return;
+          if (project.sel.selectedOpId !== opIdAtStart) return;
           helixPreview = null;
           helixPreviewLoading = false;
         });
@@ -211,7 +211,7 @@
         oninput={(e) => patch('name', (e.currentTarget as HTMLInputElement).value)}
       />
     </label>
-    {@const reliefTool = project.tools.find((t) => t.id === op.toolId)}
+    {@const reliefTool = project.data.tools.find((t) => t.id === op.toolId)}
     {#if reliefTool != null && !isToolKindAcceptable(op.kind, reliefTool.kind)}
       <p
         class="warn-chip"
@@ -231,9 +231,9 @@
           onchange={(e) =>
             patch('toolId', parseInt((e.currentTarget as HTMLSelectElement).value, 10))}
         >
-          {#each project.tools as t (t.id)}
+          {#each project.data.tools as t (t.id)}
             <option value={t.id} title={t.comment ?? ''}
-              >#{t.id} {t.name} ({formatLength(t.diameter, project.machine.unit)})</option
+              >#{t.id} {t.name} ({formatLength(t.diameter, project.data.machine.unit)})</option
             >
           {/each}
         </select>
@@ -244,7 +244,7 @@
           aria-label="Edit this tool in the Tool library"
           onclick={(e) => {
             e.stopPropagation();
-            project.toolsDialogFocusId = op.toolId;
+            project.sel.toolsDialogFocusId = op.toolId;
           }}>⚙</button
         >
       </div>
@@ -261,7 +261,7 @@
         oninput={(e) => patch('name', (e.currentTarget as HTMLInputElement).value)}
       />
     </label>
-    {@const rasterTool = project.tools.find((t) => t.id === op.toolId)}
+    {@const rasterTool = project.data.tools.find((t) => t.id === op.toolId)}
     {#if rasterTool != null && !isToolKindAcceptable(op.kind, rasterTool.kind)}
       <p
         class="warn-chip"
@@ -281,9 +281,9 @@
           onchange={(e) =>
             patch('toolId', parseInt((e.currentTarget as HTMLSelectElement).value, 10))}
         >
-          {#each project.tools as t (t.id)}
+          {#each project.data.tools as t (t.id)}
             <option value={t.id} title={t.comment ?? ''}
-              >#{t.id} {t.name} ({formatLength(t.diameter, project.machine.unit)})</option
+              >#{t.id} {t.name} ({formatLength(t.diameter, project.data.machine.unit)})</option
             >
           {/each}
         </select>
@@ -294,7 +294,7 @@
           aria-label="Edit this tool in the Tool library"
           onclick={(e) => {
             e.stopPropagation();
-            project.toolsDialogFocusId = op.toolId;
+            project.sel.toolsDialogFocusId = op.toolId;
           }}>⚙</button
         >
       </div>
@@ -310,7 +310,7 @@
       />
     </label>
 
-    {@const selectedTool = project.tools.find((t) => t.id === op.toolId)}
+    {@const selectedTool = project.data.tools.find((t) => t.id === op.toolId)}
     {@const toolKindOk = selectedTool == null || isToolKindAcceptable(op.kind, selectedTool.kind)}
     {#if selectedTool != null && !toolKindOk}
       <p
@@ -333,9 +333,9 @@
           onchange={(e) =>
             patch('toolId', parseInt((e.currentTarget as HTMLSelectElement).value, 10))}
         >
-          {#each project.tools as t (t.id)}
+          {#each project.data.tools as t (t.id)}
             <option value={t.id} title={t.comment ?? ''}
-              >#{t.id} {t.name} ({formatLength(t.diameter, project.machine.unit)})</option
+              >#{t.id} {t.name} ({formatLength(t.diameter, project.data.machine.unit)})</option
             >
           {/each}
         </select>
@@ -346,7 +346,7 @@
           aria-label="Edit this tool in the Tool library"
           onclick={(e) => {
             e.stopPropagation();
-            project.toolsDialogFocusId = op.toolId;
+            project.sel.toolsDialogFocusId = op.toolId;
           }}>⚙</button
         >
       </div>
@@ -369,7 +369,7 @@
             }}
           >
             <option value="">— same as rough —</option>
-            {#each project.tools as t (t.id)}
+            {#each project.data.tools as t (t.id)}
               <option value={t.id} disabled={t.id === op.toolId}
                 >#{t.id} {t.name} ({t.diameter}mm)</option
               >
@@ -427,9 +427,9 @@
                  the engrave op with), so listing it here makes the text
                  source visible + re-selectable instead of rendering blank
                  and getting clobbered on the next edit. -->
-            {#if project.textLayers.length > 0}
+            {#if project.data.textLayers.length > 0}
               <optgroup label="Text">
-                {#each project.textLayers as t (t.id)}
+                {#each project.data.textLayers as t (t.id)}
                   <option value={`__text_${t.id}`}>{t.name}</option>
                 {/each}
               </optgroup>
@@ -466,22 +466,22 @@
       {/if}
       <button
         class="from-selection"
-        class:ghost={project.selectedObjects.size === 0}
+        class:ghost={project.sel.selectedObjects.size === 0}
         type="button"
-        disabled={project.selectedObjects.size === 0}
-        aria-label={project.selectedObjects.size === 0
+        disabled={project.sel.selectedObjects.size === 0}
+        aria-label={project.sel.selectedObjects.size === 0
           ? 'Select one or more objects in the 2D canvas first to enable this.'
-          : `Set sources from ${project.selectedObjects.size} selected`}
-        title={project.selectedObjects.size === 0
+          : `Set sources from ${project.sel.selectedObjects.size} selected`}
+        title={project.sel.selectedObjects.size === 0
           ? 'Select one or more objects in the 2D canvas first to enable this.'
           : 'Use the chains currently highlighted in the 2D pane'}
         onclick={() => {
           patch('sourceLayers', null);
-          patch('sourceObjects', [...project.selectedObjects]);
+          patch('sourceObjects', [...project.sel.selectedObjects]);
         }}
-        >{project.selectedObjects.size === 0
+        >{project.sel.selectedObjects.size === 0
           ? 'Set sources from selection'
-          : `Set sources from ${project.selectedObjects.size} selected`}</button
+          : `Set sources from ${project.sel.selectedObjects.size} selected`}</button
       >
     </fieldset>
 
@@ -603,7 +603,7 @@
 
       {#if op.kind === 'pocket' || op.kind === 'profile'}
         {@const pickActive =
-          project.pickMode?.kind === 'approach-point' && project.pickMode.opId === op.id}
+          project.sel.pickMode?.kind === 'approach-point' && project.sel.pickMode.opId === op.id}
         <div
           class="row"
           title="Approach point: user-picked XY where the cutter enters each closed ring. Each closed offset's start vertex is rotated to the segment closest to this point — plunge/lead-in then happens there instead of an auto-picked vertex. Empty = auto."
@@ -652,7 +652,7 @@
                 ? 'Picking — click in canvas, ESC to finalize'
                 : 'Pick the approach point by clicking in the 2D canvas (Shift = disable snap)'}
               onclick={() => {
-                project.pickMode = pickActive ? null : { kind: 'approach-point', opId: op.id };
+                project.sel.pickMode = pickActive ? null : { kind: 'approach-point', opId: op.id };
               }}>{pickActive ? 'picking…' : 'pick'}</button
             >
             {#if op.approachPoint}
@@ -754,7 +754,7 @@
                 });
               } else if (v === 'helix') {
                 // Sane default helix radius: 1.5 × tool radius, fallback 3mm.
-                const tool = project.tools.find((t) => t.id === op?.toolId);
+                const tool = project.data.tools.find((t) => t.id === op?.toolId);
                 const defaultRadius = tool ? Math.max(0.1, tool.diameter * 0.75) : 3;
                 patch('plunge', {
                   kind: 'helix',

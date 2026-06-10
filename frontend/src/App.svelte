@@ -73,9 +73,9 @@
   });
   // Open the Tool library dialog when OpPropertiesPanel's "edit this
   // tool" icon requests focus on a specific tool row. The dialog reads
-  // project.toolsDialogFocusId and handles scroll/highlight.
+  // project.sel.toolsDialogFocusId and handles scroll/highlight.
   $effect(() => {
-    if (project.toolsDialogFocusId != null) {
+    if (project.sel.toolsDialogFocusId != null) {
       toolsOpen = true;
     }
   });
@@ -152,8 +152,8 @@
     prevSidebarPane = next.prev;
   }
   const stockDimsLabel = $derived.by<string>(() => {
-    const cfg = project.stock;
-    const fp = computeFootprint(project.transformedImport, cfg, project.machine.workArea);
+    const cfg = project.data.stock;
+    const fp = computeFootprint(project.transformedImport, cfg, project.data.machine.workArea);
     const x = Math.max(0, fp.maxX - fp.minX);
     const y = Math.max(0, fp.maxY - fp.minY);
     const z = Math.max(0, cfg.thickness);
@@ -162,7 +162,7 @@
   });
 
   onMount(() => {
-    document.documentElement.dataset.theme = project.settings.theme;
+    document.documentElement.dataset.theme = project.data.settings.theme;
 
     // Global error capture. Silent throws inside Svelte 5 $effect bodies
     // can abort the reactivity scheduler — every button still fires its
@@ -270,7 +270,7 @@
   });
 
   $effect(() => {
-    document.documentElement.dataset.theme = project.settings.theme;
+    document.documentElement.dataset.theme = project.data.settings.theme;
   });
 
   let activePane = $state<'2d' | '3d'>('2d');
@@ -282,7 +282,7 @@
   /// reverses the cycle.
   const PREVIEW_CYCLE: ('both' | 'wireframe' | 'solid')[] = ['both', 'wireframe', 'solid'];
   const threeDLabel = $derived.by<string>(() => {
-    const m = project.settings.previewMode;
+    const m = project.data.settings.previewMode;
     if (m === 'wireframe') return '3Dwire';
     if (m === 'solid') return '3Dsolid';
     return '3D';
@@ -292,7 +292,7 @@
       activePane = '3d';
       return;
     }
-    const i = PREVIEW_CYCLE.indexOf(project.settings.previewMode);
+    const i = PREVIEW_CYCLE.indexOf(project.data.settings.previewMode);
     const step = e.shiftKey ? -1 : 1;
     const next = PREVIEW_CYCLE[(i + step + PREVIEW_CYCLE.length) % PREVIEW_CYCLE.length];
     project.updateSettings({ previewMode: next });
@@ -318,7 +318,7 @@
 
   // Auto-switch to 3D when /generate returns; people want to see the toolpath.
   $effect(() => {
-    if (project.generated) activePane = '3d';
+    if (project.gen.generated) activePane = '3d';
   });
 
   // Pull Scene3D in on first activation. The dynamic import becomes its
@@ -432,7 +432,7 @@
         void saveProject();
         break;
       case 'escape':
-        if (project.selectedEntities.size > 0) project.selectedEntities = new Set();
+        if (project.sel.selectedEntities.size > 0) project.sel.selectedEntities = new Set();
         menuBar?.closeAllMenus();
         break;
       case 'add-text':
@@ -534,9 +534,9 @@
   ///      to current state (selection multi-modifiers when there's an
   ///      active selection, context-menu hint while drawing-only).
   const selectedOpForHint = $derived(
-    project.selectedOpId == null
+    project.sel.selectedOpId == null
       ? null
-      : (project.operations.find((o) => o.id === project.selectedOpId) ?? null),
+      : (project.data.operations.find((o) => o.id === project.sel.selectedOpId) ?? null),
   );
   const tabPlacementForHint = $derived(
     !!selectedOpForHint &&
@@ -545,8 +545,8 @@
   );
   const modalStatusHint = $derived.by<string | null>(() => {
     if (
-      project.pickMode?.kind === 'approach-point' &&
-      project.pickMode.opId === project.selectedOpId
+      project.sel.pickMode?.kind === 'approach-point' &&
+      project.sel.pickMode.opId === project.sel.selectedOpId
     ) {
       return 'Picking approach point — click in canvas to place · Shift = disable snap · ESC = finalize';
     }
@@ -563,7 +563,7 @@
     const imp = project.transformedImport;
     if (!imp) return 'Ready';
     const meta = imp.object_meta ?? [];
-    const sel = project.selectedObjects;
+    const sel = project.sel.selectedObjects;
     if (sel.size > 0 && meta.length > 0) {
       // 7iej.7: object ids are NOT a dense 1-based index into `meta` —
       // combineImports namespaces later drawings' ids by an offset, so
@@ -602,7 +602,7 @@
   });
   const statusShortcutHints = $derived.by<string | null>(() => {
     if (!project.transformedImport) return null;
-    if (project.selectedEntities.size > 0) {
+    if (project.sel.selectedEntities.size > 0) {
       return 'Shift = add range · Ctrl/⌘ = toggle · ESC = clear · right-click for context menu';
     }
     return 'Click to select · Shift/Ctrl to multi-select · right-click for context menu · ? for shortcuts';
@@ -720,15 +720,16 @@
     <span class="tb-sep"></span>
     <GenerateBar />
     <span class="tb-flex"></span>
-    {#if project.generated && project.generated.regions && project.generated.regions.length > 0}
+    {#if project.gen.generated && project.gen.generated.regions && project.gen.generated.regions.length > 0}
       <label
         class="region-toggle"
         title="Show / hide the translucent fill that marks each pocket operation's machined region."
       >
         <input
           type="checkbox"
-          checked={project.regionsVisible}
-          onchange={(e) => (project.regionsVisible = (e.currentTarget as HTMLInputElement).checked)}
+          checked={project.data.regionsVisible}
+          onchange={(e) =>
+            (project.data.regionsVisible = (e.currentTarget as HTMLInputElement).checked)}
         />
         <span>Regions</span>
       </label>
@@ -784,7 +785,7 @@
         {/if}
         <LoadingOverlay visible={project.loading} message={project.loadingMessage} />
       </div>
-      {#if project.generated}
+      {#if project.gen.generated}
         <PlaybackBar />
         <div class="gcode-toggle">
           <button
@@ -794,7 +795,7 @@
           >
             {gcodeOpen ? '▼' : '▶'}
             G-code
-            <span class="hint">{project.generated.gcode.split('\n').length} lines</span>
+            <span class="hint">{project.gen.generated.gcode.split('\n').length} lines</span>
           </button>
         </div>
         {#if gcodeOpen}
@@ -882,7 +883,7 @@
       open={toolsOpen}
       onClose={() => {
         toolsOpen = false;
-        project.toolsDialogFocusId = null;
+        project.sel.toolsDialogFocusId = null;
       }}
     />
   {/if}

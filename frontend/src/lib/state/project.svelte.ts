@@ -11,12 +11,7 @@ import type {
 import { History } from './history';
 import { computeUnsavedWork } from './unsaved';
 import { invalidatePreview } from './text_preview.svelte';
-import {
-  GeneratedState,
-  type PipelineNoteEvent,
-  type PipelinePhase,
-  type PipelineProgress,
-} from './generated.svelte';
+import { GeneratedState, type PipelineNoteEvent } from './generated.svelte';
 import { SelectionState, type PickMode, type SelectionMode } from './selection.svelte';
 
 export type { PickMode };
@@ -232,17 +227,9 @@ export class ProjectState {
   /// `operations`, `tools`, `machine`, `stock`, `fixtures`,
   /// `textLayers`, `dirty`, `visibleLayers`, `regionsVisible`, and
   /// `settings` — i.e. every field the undo/redo command bus mutates.
-  /// The proxy getters/setters below forward `project.imported` etc.
-  /// to `this.data.…` so existing call sites stay unchanged.
+  /// Consumers read `project.data.<field>` directly (361x: the hand
+  /// proxies are gone); writes go through the command bus (mukh).
   data = new ProjectDataState();
-
-  /// Raw imports array (wrsu). Every external consumer reads this via
-  /// `transformedImport` (combined view); per-entry mutations go through
-  /// `addImported`, `removeImport`, `patchFileTransformForImport`, and
-  /// `resetFileTransformForImport`.
-  get imports(): ImportEntry[] {
-    return this.data.imports;
-  }
 
   /// All imports merged into one ImportResponse with each entry's
   /// fileTransform applied (wrsu Phase 2). Every visual consumer (canvas
@@ -280,97 +267,20 @@ export class ProjectState {
   /// upload, save dialogs, etc.); `WiacError` for backend pipeline /
   /// import errors so the toast can render recovery hints + auto-fix.
   error = $state<string | WiacError | null>(null);
-  get visibleLayers(): Set<string> {
-    return this.data.visibleLayers;
-  }
-  set visibleLayers(v: Set<string>) {
-    this.data.visibleLayers = v;
-  }
 
   /// Generate-pipeline slice (audit 6cpl step 2). Holds `generated`,
-  /// `generating`, `pipelineState`/`pipelineProgress`,
-  /// `lastGenerateOpCount` / `lastGenerateCachedCount`,
-  /// `toolpathCumLen` / `toolpathTotalLen`, `simDiagnostics`, plus
-  /// the lifecycle methods. The `get …` accessors below forward every
-  /// `project.generated` / `project.pipelineState` etc. call site to
-  /// `this.gen.…` so the existing API surface is unchanged.
+  /// `generating`, `pipelineState`/`pipelineProgress`, the cached-count
+  /// stats, `toolpathCumLen` / `toolpathTotalLen`, `simDiagnostics`,
+  /// plus the lifecycle methods. Consumers read/write
+  /// `project.gen.<field>` directly (361x: the hand proxies are gone).
   gen = new GeneratedState();
-
-  get generated(): GenerateResponse | null {
-    return this.gen.generated;
-  }
-  set generated(v: GenerateResponse | null) {
-    this.gen.generated = v;
-  }
-  get generatedVersion(): number {
-    return this.gen.generatedVersion;
-  }
-  set generatedVersion(v: number) {
-    this.gen.generatedVersion = v;
-  }
-  get generating(): boolean {
-    return this.gen.generating;
-  }
-  set generating(v: boolean) {
-    this.gen.generating = v;
-  }
-  get pipelineState(): PipelinePhase {
-    return this.gen.pipelineState;
-  }
-  set pipelineState(v: PipelinePhase) {
-    this.gen.pipelineState = v;
-  }
-  get pipelineProgress(): PipelineProgress | null {
-    return this.gen.pipelineProgress;
-  }
-  set pipelineProgress(v: PipelineProgress | null) {
-    this.gen.pipelineProgress = v;
-  }
-  get lastGenerateCachedCount(): number {
-    return this.gen.lastGenerateCachedCount;
-  }
-  set lastGenerateCachedCount(v: number) {
-    this.gen.lastGenerateCachedCount = v;
-  }
-  get lastGenerateOpCount(): number {
-    return this.gen.lastGenerateOpCount;
-  }
-  set lastGenerateOpCount(v: number) {
-    this.gen.lastGenerateOpCount = v;
-  }
 
   /// UI-selection slice (audit 6cpl). Holds hoverSegment, the
   /// selectedObjects / anchor / entities sets, plus the selectedOpId /
   /// selectedFixtureId / selectedTextLayerId / toolsDialogFocusId
-  /// pointers. The proxy accessors below forward
-  /// `project.selectedObjects` / `project.selectedOpId` etc. to
-  /// `this.sel.…` so existing call sites stay unchanged.
+  /// pointers. Consumers read/write `project.sel.<field>` directly
+  /// (361x: the hand proxies are gone).
   sel = new SelectionState();
-
-  get hoverSegment(): number | null {
-    return this.sel.hoverSegment;
-  }
-  set hoverSegment(v: number | null) {
-    this.sel.hoverSegment = v;
-  }
-  get selectedObjects(): Set<number> {
-    return this.sel.selectedObjects;
-  }
-  set selectedObjects(v: Set<number>) {
-    this.sel.selectedObjects = v;
-  }
-  get selectionAnchorObjectId(): number | null {
-    return this.sel.selectionAnchorObjectId;
-  }
-  set selectionAnchorObjectId(v: number | null) {
-    this.sel.selectionAnchorObjectId = v;
-  }
-  get selectedEntities(): Set<number> {
-    return this.sel.selectedEntities;
-  }
-  set selectedEntities(v: Set<number>) {
-    this.sel.selectedEntities = v;
-  }
 
   /// Toolpath scrub position in [0, 1]. Read by Scene3D for the tool-tip
   /// indicator and by PlaybackBar for the slider. Interpreted as a
@@ -379,81 +289,6 @@ export class ProjectState {
   /// playhead → segment mapping uses `toolpathCumLen` below.
   playhead = $state(1.0);
 
-  /// Cumulative arc length per toolpath segment, computed when
-  /// `setGenerated` is called. Index `i` holds the length-up-through
-  /// segment `i` (so cumLen[total-1] = total arc length, cumLen[0] =
-  /// length of segment 0). Used by `playheadToSegment` to map
-  /// playhead → segment index by arc length so playback feels uniform
-  /// across segment densities (a 50 mm boundary edge and a 1.5 mm
-  /// zigzag connector each take time proportional to length, instead
-  /// of both consuming 1/total_segments of playback).
-  ///
-  /// Arcs (MoveKind::Arc) are approximated as their straight-line
-  /// chord here — slight underestimate but fine for visual playback
-  /// since we don't have I/J center data on the frontend.
-  get toolpathCumLen(): Float64Array | null {
-    return this.gen.toolpathCumLen;
-  }
-  set toolpathCumLen(v: Float64Array | null) {
-    this.gen.toolpathCumLen = v;
-  }
-  get toolpathTotalLen(): number {
-    return this.gen.toolpathTotalLen;
-  }
-  set toolpathTotalLen(v: number) {
-    this.gen.toolpathTotalLen = v;
-  }
-
-  get fixtures(): Fixture[] {
-    return this.data.fixtures;
-  }
-  get selectedFixtureId(): number | null {
-    return this.sel.selectedFixtureId;
-  }
-  set selectedFixtureId(v: number | null) {
-    this.sel.selectedFixtureId = v;
-  }
-
-  get stock(): StockConfig {
-    return this.data.stock;
-  }
-
-  /// i5g4: program-level WCS offset (j4tv wiring). Defaults to all-zero
-  /// at G54, which serializes as "no work_offset field" on the wire to
-  /// keep the payload compact.
-  get workOffset(): WorkOffset {
-    return this.data.workOffset;
-  }
-
-  get tools(): ToolEntry[] {
-    return this.data.tools;
-  }
-
-  get machine(): MachineSettings {
-    return this.data.machine;
-  }
-
-  get operations(): OpEntry[] {
-    return this.data.operations;
-  }
-  get selectedOpId(): number | null {
-    return this.sel.selectedOpId;
-  }
-  set selectedOpId(v: number | null) {
-    this.sel.selectedOpId = v;
-  }
-
-  get reliefSources(): ReliefSource[] {
-    return this.data.reliefSources;
-  }
-
-  /// l8lk: opt-in tool-change-order optimization (group ops by tool).
-  /// Changing it reorders the emitted program, so it invalidates the
-  /// cached toolpath (the user has to re-Generate) the same way a
-  /// machine edit does.
-  get groupOpsByTool(): boolean {
-    return this.data.groupOpsByTool;
-  }
   /// Undoable UI entry point for the tool-grouping toggle (7iej.8 —
   /// the plain write lives on the data slice for command apply/revert
   /// and load/clear paths, which manage dirty + generated + history
@@ -464,24 +299,8 @@ export class ProjectState {
   setGroupOpsByTool(v: boolean) {
     if (this.data.groupOpsByTool === v) return;
     this.history.exec(setGroupOpsByToolCommand(v), this.target());
-    this.generated = null;
-    this.toolpathCumLen = null;
-  }
-
-  get textLayers(): TextLayer[] {
-    return this.data.textLayers;
-  }
-  get selectedTextLayerId(): number | null {
-    return this.sel.selectedTextLayerId;
-  }
-  set selectedTextLayerId(v: number | null) {
-    this.sel.selectedTextLayerId = v;
-  }
-  get dirty(): boolean {
-    return this.data.dirty;
-  }
-  set dirty(v: boolean) {
-    this.data.dirty = v;
+    this.gen.generated = null;
+    this.gen.toolpathCumLen = null;
   }
 
   /// True when discarding the current project would lose work the user
@@ -502,27 +321,6 @@ export class ProjectState {
       dirty: this.data.dirty,
       savedToProject: this.savedToProject,
     });
-  }
-
-  get regionsVisible(): boolean {
-    return this.data.regionsVisible;
-  }
-  set regionsVisible(v: boolean) {
-    this.data.regionsVisible = v;
-  }
-
-  get settings(): AppSettings {
-    return this.data.settings;
-  }
-
-  /// Most recent sim diagnostics, written through by the sim driver
-  /// after each forward advance(). Null = no sim run yet (or the
-  /// preview is in pure wireframe mode and no driver is built).
-  get simDiagnostics(): SimDiagnostics | null {
-    return this.gen.simDiagnostics;
-  }
-  set simDiagnostics(v: SimDiagnostics | null) {
-    this.gen.simDiagnostics = v;
   }
 
   /// Undo / redo. Per-session only; not serialized to .vc-project.json.
@@ -561,19 +359,6 @@ export class ProjectState {
   /// the user has `autoReloadSources` disabled. SourceStaleToast renders
   /// from this and clears it on Reload / Ignore. Auto-reloads bypass it.
   sourceFileStaleNotice = $state<{ path: string; auto_reload: boolean } | null>(null);
-
-  get toolsDialogFocusId(): number | null {
-    return this.sel.toolsDialogFocusId;
-  }
-  set toolsDialogFocusId(v: number | null) {
-    this.sel.toolsDialogFocusId = v;
-  }
-  get pickMode(): PickMode | null {
-    return this.sel.pickMode;
-  }
-  set pickMode(v: PickMode | null) {
-    this.sel.pickMode = v;
-  }
 
   constructor() {
     this.history.subscribe(() => {
@@ -641,18 +426,18 @@ export class ProjectState {
   }
 
   setSimDiagnostics(d: SimDiagnostics | null) {
-    this.simDiagnostics = d;
+    this.gen.simDiagnostics = d;
   }
 
   /// Persist `settings` to localStorage. Cheap (one JSON.stringify on a
   /// tiny object) so we just call it on every mutation rather than
   /// debouncing — the dialog won't fire updates fast enough to matter.
   saveSettings() {
-    saveSettings(this.settings);
+    saveSettings(this.data.settings);
   }
 
   updateSettings(patch: Partial<AppSettings>) {
-    this.data.settings = { ...this.settings, ...patch };
+    this.data.settings = { ...this.data.settings, ...patch };
     this.saveSettings();
   }
 
@@ -673,7 +458,7 @@ export class ProjectState {
     z_top: number,
     name?: string,
   ): Fixture {
-    const nextId = this.fixtures.reduce((m, f) => Math.max(m, f.id), 0) + 1;
+    const nextId = this.data.fixtures.reduce((m, f) => Math.max(m, f.id), 0) + 1;
     const f: Fixture = {
       id: nextId,
       name: name ?? defaultFixtureName(kind, nextId),
@@ -684,20 +469,20 @@ export class ProjectState {
       color: DEFAULT_FIXTURE_COLOR,
     };
     this.history.exec(addFixtureCommand(f), this.target());
-    this.selectedFixtureId = f.id;
+    this.sel.selectedFixtureId = f.id;
     return f;
   }
 
   updateFixture(id: number, patch: Partial<Fixture>) {
     if (Object.keys(patch).length === 0) return;
-    if (!this.fixtures.some((f) => f.id === id)) return;
+    if (!this.data.fixtures.some((f) => f.id === id)) return;
     this.history.exec(updateFixtureCommand(id, patch), this.target());
   }
 
   removeFixture(id: number) {
-    if (!this.fixtures.some((f) => f.id === id)) return;
+    if (!this.data.fixtures.some((f) => f.id === id)) return;
     this.history.exec(removeFixtureCommand(id), this.target());
-    if (this.selectedFixtureId === id) this.selectedFixtureId = null;
+    if (this.sel.selectedFixtureId === id) this.sel.selectedFixtureId = null;
   }
 
   selectFixture(id: number | null) {
@@ -786,13 +571,13 @@ export class ProjectState {
   /// hidden chains can't be accidentally swept in. (audit-eqxd)
   seriesSelectTo(targetId: number) {
     if (targetId <= 0) return;
-    const anchorId = this.selectionAnchorObjectId;
+    const anchorId = this.sel.selectionAnchorObjectId;
     const meta = this.transformedImport?.object_meta ?? [];
     if (anchorId == null || anchorId === targetId || meta.length === 0) {
       this.selectObjects([targetId], 'replace');
       return;
     }
-    const visible = this.visibleLayers;
+    const visible = this.data.visibleLayers;
     const byId = new Map<number, (typeof meta)[number]>();
     for (const m of meta) byId.set(m.id, m);
     const a = byId.get(anchorId);
@@ -830,8 +615,8 @@ export class ProjectState {
   }
 
   setGenerated(r: GenerateResponse) {
-    this.generated = r;
-    this.generatedVersion += 1;
+    this.gen.generated = r;
+    this.gen.generatedVersion += 1;
     // Pre-compute cumulative arc length over the toolpath so playback
     // can advance by physical distance instead of segment count. See
     // `playheadToSegment` for the inverse lookup.
@@ -847,11 +632,11 @@ export class ProjectState {
         acc += Math.hypot(dx, dy, dz);
         cum[i] = acc;
       }
-      this.toolpathCumLen = cum;
-      this.toolpathTotalLen = acc;
+      this.gen.toolpathCumLen = cum;
+      this.gen.toolpathTotalLen = acc;
     } else {
-      this.toolpathCumLen = null;
-      this.toolpathTotalLen = 0;
+      this.gen.toolpathCumLen = null;
+      this.gen.toolpathTotalLen = 0;
     }
     // A fresh toolpath invalidates the previous heightfield-sim run: its
     // warnings (collisions, rapid-through-material) described the OLD
@@ -859,8 +644,8 @@ export class ProjectState {
     // the 3D pane's sim re-runs (keyed on generatedVersion) and repopulates
     // when it's visible. Without this, a stale critical sim warning kept
     // showing in the warning chip after a fix-and-regenerate.
-    this.simDiagnostics = null;
-    this.dirty = false;
+    this.gen.simDiagnostics = null;
+    this.data.dirty = false;
     this.error = null;
     this.playhead = 1.0;
   }
@@ -944,21 +729,21 @@ export class ProjectState {
     // users select first, then click "+ Pocket"); empty selection keeps the
     // All default.
     const op = buildOpEntry(kind, {
-      nextId: this.operations.reduce((m, o) => Math.max(m, o.id), 0) + 1,
-      tools: this.tools,
-      reliefSources: this.reliefSources,
-      selectionIds: [...this.selectedObjects],
+      nextId: this.data.operations.reduce((m, o) => Math.max(m, o.id), 0) + 1,
+      tools: this.data.tools,
+      reliefSources: this.data.reliefSources,
+      selectionIds: [...this.sel.selectedObjects],
       objectMeta: this.transformedImport?.object_meta ?? [],
     });
     this.history.exec(addOperationCommand(op), this.target());
-    this.selectedOpId = op.id;
+    this.sel.selectedOpId = op.id;
     return op;
   }
 
   removeOperation(id: number) {
-    if (!this.operations.some((o) => o.id === id)) return;
+    if (!this.data.operations.some((o) => o.id === id)) return;
     this.history.exec(deleteOperationCommand(id), this.target());
-    if (this.selectedOpId === id) this.selectedOpId = null;
+    if (this.sel.selectedOpId === id) this.sel.selectedOpId = null;
   }
 
   /// Insert a text layer with the given configuration; `id` and the
@@ -967,7 +752,7 @@ export class ProjectState {
   addTextLayer(
     seed: Omit<TextLayer, 'id' | 'name'> & Partial<Pick<TextLayer, 'id' | 'name'>>,
   ): TextLayer {
-    const nextId = seed.id ?? this.textLayers.reduce((m, t) => Math.max(m, t.id), 0) + 1;
+    const nextId = seed.id ?? this.data.textLayers.reduce((m, t) => Math.max(m, t.id), 0) + 1;
     const previewText = seed.text.split(/\r?\n/, 1)[0] ?? '';
     const truncated = previewText.length > 20 ? `${previewText.slice(0, 20)}…` : previewText;
     const defaultName = `${seed.kind} — "${truncated}"`;
@@ -982,7 +767,7 @@ export class ProjectState {
   addReliefSource(
     seed: Omit<ReliefSource, 'id'> & Partial<Pick<ReliefSource, 'id'>>,
   ): ReliefSource {
-    const nextId = seed.id ?? this.reliefSources.reduce((m, s) => Math.max(m, s.id), 0) + 1;
+    const nextId = seed.id ?? this.data.reliefSources.reduce((m, s) => Math.max(m, s.id), 0) + 1;
     const source: ReliefSource = { ...seed, id: nextId };
     this.history.exec(addReliefSourceCommand(source), this.target());
     return source;
@@ -990,18 +775,18 @@ export class ProjectState {
 
   updateReliefSource(id: number, patch: Partial<ReliefSource>) {
     if (Object.keys(patch).length === 0) return;
-    if (!this.reliefSources.some((s) => s.id === id)) return;
+    if (!this.data.reliefSources.some((s) => s.id === id)) return;
     this.history.exec(updateReliefSourceCommand(id, patch), this.target());
   }
 
   removeReliefSource(id: number) {
-    if (!this.reliefSources.some((s) => s.id === id)) return;
+    if (!this.data.reliefSources.some((s) => s.id === id)) return;
     this.history.exec(deleteReliefSourceCommand(id), this.target());
   }
 
   updateTextLayer(id: number, patch: Partial<TextLayer>) {
     if (Object.keys(patch).length === 0) return;
-    if (!this.textLayers.some((t) => t.id === id)) return;
+    if (!this.data.textLayers.some((t) => t.id === id)) return;
     this.history.exec(updateTextLayerCommand(id, patch), this.target());
   }
 
@@ -1054,7 +839,7 @@ export class ProjectState {
   }
 
   removeTextLayer(id: number) {
-    if (!this.textLayers.some((t) => t.id === id)) return;
+    if (!this.data.textLayers.some((t) => t.id === id)) return;
     const syntheticLayer = `__text_${id}`;
     // Drop the cached preview segments so the canvas doesn't keep
     // painting glyphs from a layer that no longer exists.
@@ -1062,7 +847,7 @@ export class ProjectState {
     // Cascade-delete any ops whose source targets the text layer's
     // synthetic geometry layer — leaving them around would make the
     // pipeline raise "no segments on layer __text_<id>".
-    const dependentOps = this.operations.filter(
+    const dependentOps = this.data.operations.filter(
       (o) => Array.isArray(o.sourceLayers) && o.sourceLayers.includes(syntheticLayer),
     );
     if (dependentOps.length > 0) {
@@ -1075,15 +860,15 @@ export class ProjectState {
     } else {
       this.history.exec(deleteTextLayerCommand(id), this.target());
     }
-    if (this.selectedTextLayerId === id) this.selectedTextLayerId = null;
+    if (this.sel.selectedTextLayerId === id) this.sel.selectedTextLayerId = null;
   }
 
   /// Deep-clone the op and insert it immediately after the original.
   /// Returns the new op or null if `id` is unknown.
   duplicateOperation(id: number): OpEntry | null {
-    const src = this.operations.find((o) => o.id === id);
+    const src = this.data.operations.find((o) => o.id === id);
     if (!src) return null;
-    const nextId = this.operations.reduce((m, o) => Math.max(m, o.id), 0) + 1;
+    const nextId = this.data.operations.reduce((m, o) => Math.max(m, o.id), 0) + 1;
     // JSON-roundtrip clone: Svelte 5 `$state` proxies make
     // structuredClone throw DataCloneError in production builds — the
     // dup button would die with an uncaught exception and look dead.
@@ -1093,13 +878,13 @@ export class ProjectState {
       name: `${src.name} (copy)`,
     };
     this.history.exec(duplicateOperationCommand(id, copy, id), this.target());
-    this.selectedOpId = copy.id;
+    this.sel.selectedOpId = copy.id;
     return copy;
   }
 
   updateOperation(id: number, patch: Partial<OpEntry>) {
     if (Object.keys(patch).length === 0) return;
-    if (!this.operations.some((o) => o.id === id)) return;
+    if (!this.data.operations.some((o) => o.id === id)) return;
     this.history.exec(updateOperationCommand(id, patch), this.target());
   }
 
@@ -1109,9 +894,9 @@ export class ProjectState {
   /// but the previously-generated gcode stays on screen until the user
   /// clicks Generate again.)
   reorderOperation(id: number, toIndex: number) {
-    const cur = this.operations.findIndex((o) => o.id === id);
+    const cur = this.data.operations.findIndex((o) => o.id === id);
     if (cur < 0) return;
-    const clamped = Math.max(0, Math.min(toIndex, this.operations.length - 1));
+    const clamped = Math.max(0, Math.min(toIndex, this.data.operations.length - 1));
     if (clamped === cur) return;
     this.history.exec(reorderOperationCommand(id, clamped), this.target());
   }
@@ -1132,7 +917,7 @@ export class ProjectState {
   }
 
   removeTool(id: number) {
-    if (!this.tools.some((t) => t.id === id)) return;
+    if (!this.data.tools.some((t) => t.id === id)) return;
     this.history.exec(deleteToolCommand(id), this.target());
   }
 
@@ -1147,7 +932,7 @@ export class ProjectState {
     // The user has to regen; clearing here lets the GcodePanel + Scene3D
     // empty-state messaging show the stale-vs-fresh distinction
     // immediately instead of silently lying.
-    this.generated = null;
+    this.gen.generated = null;
   }
 
   setStock(patch: Partial<StockConfig>) {

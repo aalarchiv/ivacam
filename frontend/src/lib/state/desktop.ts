@@ -31,9 +31,9 @@ export async function wireSourceWatch(): Promise<() => void> {
       // wrsu Phase 5a: with multi-file imports every entry has its own
       // lastImportPath. Accept the event if any current import is
       // watching this path (reimportFromPath addresses the right entry).
-      const watched = project.imports.some((e) => e.lastImportPath === path);
+      const watched = project.data.imports.some((e) => e.lastImportPath === path);
       if (!watched) return;
-      if (project.settings.autoReloadSources) {
+      if (project.data.settings.autoReloadSources) {
         await project.reimportFromPath(path);
       } else {
         project.sourceFileStaleNotice = { path, auto_reload: false };

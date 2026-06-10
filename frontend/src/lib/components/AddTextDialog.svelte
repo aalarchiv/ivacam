@@ -217,13 +217,17 @@
     // nothing is selected.
     const origin = selectionOrigin(
       project.transformedImport?.object_meta ?? [],
-      project.selectedObjects,
+      project.sel.selectedObjects,
     );
     if (origin) return origin;
     // Center the new text on the effective stock footprint — same
     // computation Scene3D / sim use, so the preview lands inside the
     // visible workpiece regardless of whether a drawing is loaded.
-    const fp = computeFootprint(project.transformedImport, project.stock, project.machine.workArea);
+    const fp = computeFootprint(
+      project.transformedImport,
+      project.data.stock,
+      project.data.machine.workArea,
+    );
     return {
       x: (fp.minX + fp.maxX) / 2,
       y: (fp.minY + fp.maxY) / 2,
@@ -232,17 +236,17 @@
 
   function pickDefaultTool(s: TextStyle): number {
     const want = STYLE_TABLE[s].toolKind;
-    if (!want) return project.tools[0]?.id ?? 1;
-    const match = project.tools.find((t) => t.kind === want);
+    if (!want) return project.data.tools[0]?.id ?? 1;
+    const match = project.data.tools.find((t) => t.kind === want);
     if (match) return match.id;
     // Fall back to any tool if the required kind isn't in the library.
-    return project.tools[0]?.id ?? 1;
+    return project.data.tools[0]?.id ?? 1;
   }
 
   const filteredTools = $derived.by(() => {
     const want = STYLE_TABLE[d.style].toolKind;
-    if (!want) return project.tools;
-    return project.tools.filter((t) => t.kind === want);
+    if (!want) return project.data.tools;
+    return project.data.tools.filter((t) => t.kind === want);
   });
 
   const styleEngravingMismatch = $derived(
@@ -395,7 +399,7 @@
       }
       project.history.commitTransaction();
       txOpen = false;
-      project.selectedTextLayerId = layer.id;
+      project.sel.selectedTextLayerId = layer.id;
       onClose();
     } catch (e) {
       if (txOpen) project.cancelTransaction();
@@ -587,7 +591,7 @@
           <select bind:value={d.toolId}>
             {#each filteredTools as t (t.id)}
               <option value={t.id}
-                >{t.name} ({t.kind}, {formatLength(t.diameter, project.machine.unit)})</option
+                >{t.name} ({t.kind}, {formatLength(t.diameter, project.data.machine.unit)})</option
               >
             {/each}
             {#if filteredTools.length === 0}

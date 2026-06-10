@@ -2,7 +2,7 @@
   /// Tool library dialog. Project-scoped table of every tool the user
   /// has configured; ops will reference an entry by id once UX-7 lands.
   /// Each row is editable in place; the modal commits/cancels as a
-  /// single unit so the user can revert without touching project.tools.
+  /// single unit so the user can revert without touching project.data.tools.
   import {
     project,
     type ToolEntry,
@@ -50,12 +50,14 @@
 
   $effect(() => {
     if (open) {
-      dd.open(project.tools);
+      dd.open(project.data.tools);
       // k94n: tools whose kind has a REQUIRED kind-specific field
       // open by default so the user sees `dragoff` / `cornerRadiusMm`
       // / T-slot neck dims without hunting for them. Other kinds
       // start collapsed.
-      expanded = new Set(project.tools.filter((t) => kindNeedsExpansion(t.kind)).map((t) => t.id));
+      expanded = new Set(
+        project.data.tools.filter((t) => kindNeedsExpansion(t.kind)).map((t) => t.id),
+      );
     }
   });
 
@@ -74,7 +76,7 @@
   }
 
   $effect(() => {
-    const focusId = project.toolsDialogFocusId;
+    const focusId = project.sel.toolsDialogFocusId;
     if (!open || focusId == null) return;
     queueMicrotask(() => {
       const host = bodyEl;
@@ -1567,7 +1569,7 @@
                   </label>
                 </div>
               {/if}
-              {#if project.machine.mode === 'plasma'}
+              {#if project.data.machine.mode === 'plasma'}
                 <div class="holder-row pass-overrides">
                   <span
                     class="holder-label"
@@ -1672,7 +1674,7 @@
             // doesn't keep showing stale entries. Assigned directly
             // (not dd.open) so the pristine snapshot from open is
             // kept — a load counts as an unsaved change.
-            dd.draft = project.tools.map((t) => ({ ...t }));
+            dd.draft = project.data.tools.map((t) => ({ ...t }));
           }}
           title="Replace the current tools with the contents of a .ivac-toolset.json file."
         >
@@ -1682,7 +1684,7 @@
           class="btn-secondary"
           onclick={async () => {
             await fileOps.loadToolset('add');
-            dd.draft = project.tools.map((t) => ({ ...t }));
+            dd.draft = project.data.tools.map((t) => ({ ...t }));
           }}
           title="Add tools from a .ivac-toolset.json file. Tools whose name already exists are skipped."
         >

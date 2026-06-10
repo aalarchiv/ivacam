@@ -1,7 +1,7 @@
 <script lang="ts">
   /// Editable text-layer panel — phase 3 of the text-engraving rework.
   ///
-  /// Lists every `project.textLayers` entry as a collapsible row. The
+  /// Lists every `project.data.textLayers` entry as a collapsible row. The
   /// active row expands an inline edit form (text content, font label,
   /// size, position, rotation, spacing, alignment, kind). Edits flow
   /// through `project.updateTextLayer` so they undo cleanly and the
@@ -21,7 +21,7 @@
   /// selection" affordance — the on-demand equivalent of the placement
   /// AddTextDialog does at creation time.
   const selOrigin = $derived(
-    selectionOrigin(project.transformedImport?.object_meta ?? [], project.selectedObjects),
+    selectionOrigin(project.transformedImport?.object_meta ?? [], project.sel.selectedObjects),
   );
   function snapOriginToSelection(id: number) {
     if (!selOrigin) return;
@@ -38,16 +38,16 @@
   let collapsed = $derived(!active);
 
   function isSelected(id: number): boolean {
-    return project.selectedTextLayerId === id;
+    return project.sel.selectedTextLayerId === id;
   }
 
   function select(id: number) {
-    if (project.selectedTextLayerId === id) {
-      project.selectedTextLayerId = null;
+    if (project.sel.selectedTextLayerId === id) {
+      project.sel.selectedTextLayerId = null;
     } else {
-      project.selectedTextLayerId = id;
+      project.sel.selectedTextLayerId = id;
       // Deselect any op so the properties pane shows the text form.
-      project.selectedOpId = null;
+      project.sel.selectedOpId = null;
     }
   }
 
@@ -96,7 +96,7 @@
   }
 
   function patchOrigin(id: number, axis: 'x' | 'y', value: number) {
-    const cur = project.textLayers.find((t) => t.id === id);
+    const cur = project.data.textLayers.find((t) => t.id === id);
     if (!cur) return;
     const origin = axis === 'x' ? { x: value, y: cur.origin.y } : { x: cur.origin.x, y: value };
     project.updateTextLayer(id, { origin });
@@ -131,7 +131,7 @@
       >{active ? '▾' : '▸'}</button
     >
     <span class="group-name">Text</span>
-    <span class="group-count">{project.textLayers.length}</span>
+    <span class="group-count">{project.data.textLayers.length}</span>
     {#if onAddText}
       <button
         type="button"
@@ -146,13 +146,13 @@
   </div>
   {#if !collapsed}
     <div class="group-body">
-      {#if project.textLayers.length === 0}
+      {#if project.data.textLayers.length === 0}
         <p class="empty">
           No text yet. Click <strong>+ Add</strong> to create an editable text engraving.
         </p>
       {:else}
         <ul>
-          {#each project.textLayers as layer (layer.id)}
+          {#each project.data.textLayers as layer (layer.id)}
             <li class="text-row" class:active={isSelected(layer.id)}>
               <div class="row-head">
                 <button

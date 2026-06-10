@@ -152,7 +152,8 @@ frontend/src/lib/
 
 `ProjectState` (in `project.svelte.ts`) is the root of frontend state.
 It's split into focused **slices**, each a `*.svelte.ts` class that
-`ProjectState` composes and re-exposes via proxy getters/setters:
+`ProjectState` composes and exposes directly (`project.data.…`,
+`project.gen.…`, `project.sel.…`):
 
 - `generated.svelte.ts` — pipeline output (gcode, toolpath, sim diagnostics, version, progress)
 - `selection.svelte.ts` — selectedObjects / hover / selectedOpId / …
@@ -161,13 +162,20 @@ It's split into focused **slices**, each a `*.svelte.ts` class that
 - `text_preview.svelte.ts` — live text-entity preview
 - `warning-focus.svelte.ts` — which pipeline warning is focused
 - `confirm.svelte.ts` — the shared styled-confirm prompt store
-- `project.svelte.ts` — the root composer; owns what hasn't been peeled into a slice yet
+- `project.svelte.ts` — the root composer: slice wiring, the command
+  bus (`history` + `target()`), cross-slice deriveds
+  (`transformedImport`, `geometryView`, `hasUnsavedWork`), and the
+  command-wrapping mutation methods
+- `import-ops.ts` / `project-file-ops.ts` — the import-lifecycle and
+  save/load/workspace domains, as functions over the live `ProjectState`
 
-`ProjectState` keeps **proxy getters/setters** for every field that
-moved out, so call sites (`project.generated`, `project.selectedOpId`)
-read the same as before. This lets us extract slices without a
-big-bang rename. **When you add a new field, decide which slice owns
-it; don't pile it back onto `ProjectState` directly.**
+Call sites address slices directly: `project.gen.generated`,
+`project.sel.selectedOpId`, `project.data.operations` (the old root
+proxy accessors were dropped in `361x`). The command-target fields on
+`project.data` are read-only from outside the state layer — undoable
+edits must go through the command-wrapping methods (`mukh`). **When you
+add a new field, decide which slice owns it; don't pile it onto
+`ProjectState` directly.**
 
 ### `schema/` (the contract seam)
 

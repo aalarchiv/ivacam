@@ -406,7 +406,7 @@ export interface GcodeIncludeOp extends OpBase {
 /// the surface comes from the relief source, not the imported chains.
 export interface ReliefMillOp extends OpBase {
   kind: 'relief_mill';
-  /// Id of the `ReliefSource` (in `project.reliefSources`) this op cuts.
+  /// Id of the `ReliefSource` (in `project.data.reliefSources`) this op cuts.
   sourceId: number;
   /// Deepest cut Z (mm, negative) — where the darkest pixels map.
   zMinMm: number;
@@ -432,7 +432,7 @@ export interface ReliefMillOp extends OpBase {
 /// picker (OP_REQUIRES: ['laser']); the backend emits M3/S/M5 gcode.
 export interface RasterEngraveOp extends OpBase {
   kind: 'raster_engrave';
-  /// Id of the `ReliefSource` (in `project.reliefSources`) to engrave.
+  /// Id of the `ReliefSource` (in `project.data.reliefSources`) to engrave.
   sourceId: number;
   /// Per-pixel scan resolution (mm). The brightness grid is resampled to
   /// this pitch at planning time. 0 = use the source's native cell size.

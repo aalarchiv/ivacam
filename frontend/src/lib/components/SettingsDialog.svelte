@@ -35,7 +35,7 @@
   /// jump to ends. Selection moves with focus per the radiogroup pattern.
   const THEMES: Array<'auto' | 'light' | 'dark'> = ['auto', 'light', 'dark'];
   function onThemeKey(e: KeyboardEvent) {
-    const cur = THEMES.indexOf(project.settings.theme as (typeof THEMES)[number]);
+    const cur = THEMES.indexOf(project.data.settings.theme as (typeof THEMES)[number]);
     let next: number;
     if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
       next = (cur - 1 + THEMES.length) % THEMES.length;
@@ -82,25 +82,25 @@
             >
               <button
                 role="radio"
-                aria-checked={project.settings.theme === 'auto'}
-                tabindex={project.settings.theme === 'auto' ? 0 : -1}
-                class:active={project.settings.theme === 'auto'}
+                aria-checked={project.data.settings.theme === 'auto'}
+                tabindex={project.data.settings.theme === 'auto' ? 0 : -1}
+                class:active={project.data.settings.theme === 'auto'}
                 onclick={() => update('theme', 'auto')}
                 type="button">Auto</button
               >
               <button
                 role="radio"
-                aria-checked={project.settings.theme === 'light'}
-                tabindex={project.settings.theme === 'light' ? 0 : -1}
-                class:active={project.settings.theme === 'light'}
+                aria-checked={project.data.settings.theme === 'light'}
+                tabindex={project.data.settings.theme === 'light' ? 0 : -1}
+                class:active={project.data.settings.theme === 'light'}
                 onclick={() => update('theme', 'light')}
                 type="button">Light</button
               >
               <button
                 role="radio"
-                aria-checked={project.settings.theme === 'dark'}
-                tabindex={project.settings.theme === 'dark' ? 0 : -1}
-                class:active={project.settings.theme === 'dark'}
+                aria-checked={project.data.settings.theme === 'dark'}
+                tabindex={project.data.settings.theme === 'dark' ? 0 : -1}
+                class:active={project.data.settings.theme === 'dark'}
                 onclick={() => update('theme', 'dark')}
                 type="button">Dark</button
               >
@@ -115,7 +115,7 @@
           <label class="check">
             <input
               type="checkbox"
-              checked={project.settings.showStockBox}
+              checked={project.data.settings.showStockBox}
               onchange={(e) =>
                 update('showStockBox', (e.currentTarget as HTMLInputElement).checked)}
             />
@@ -134,7 +134,7 @@
           <label
             >Default mode
             <select
-              value={project.settings.previewMode}
+              value={project.data.settings.previewMode}
               onchange={(e) =>
                 update(
                   'previewMode',
@@ -152,13 +152,13 @@
             <div class="color">
               <input
                 type="color"
-                value={project.settings.solidColor}
+                value={project.data.settings.solidColor}
                 oninput={(e) => update('solidColor', (e.currentTarget as HTMLInputElement).value)}
               />
               <input
                 type="text"
                 class="hex"
-                value={project.settings.solidColor}
+                value={project.data.settings.solidColor}
                 oninput={(e) => update('solidColor', (e.currentTarget as HTMLInputElement).value)}
               />
             </div>
@@ -172,19 +172,19 @@
                 min="0.1"
                 max="1"
                 step="0.05"
-                value={project.settings.solidOpacity}
+                value={project.data.settings.solidOpacity}
                 onchange={(e) =>
                   update(
                     'solidOpacity',
                     toNumber(
                       (e.currentTarget as HTMLInputElement).value,
-                      project.settings.solidOpacity,
+                      project.data.settings.solidOpacity,
                       0.1,
                       1,
                     ),
                   )}
               />
-              <span class="num">{project.settings.solidOpacity.toFixed(2)}</span>
+              <span class="num">{project.data.settings.solidOpacity.toFixed(2)}</span>
             </div>
           </label>
 
@@ -193,13 +193,13 @@
             <div class="color">
               <input
                 type="color"
-                value={project.settings.edgeColor}
+                value={project.data.settings.edgeColor}
                 oninput={(e) => update('edgeColor', (e.currentTarget as HTMLInputElement).value)}
               />
               <input
                 type="text"
                 class="hex"
-                value={project.settings.edgeColor}
+                value={project.data.settings.edgeColor}
                 oninput={(e) => update('edgeColor', (e.currentTarget as HTMLInputElement).value)}
               />
             </div>
@@ -213,19 +213,19 @@
                 min="0"
                 max="1"
                 step="0.05"
-                value={project.settings.edgeOpacity}
+                value={project.data.settings.edgeOpacity}
                 onchange={(e) =>
                   update(
                     'edgeOpacity',
                     toNumber(
                       (e.currentTarget as HTMLInputElement).value,
-                      project.settings.edgeOpacity,
+                      project.data.settings.edgeOpacity,
                       0,
                       1,
                     ),
                   )}
               />
-              <span class="num">{project.settings.edgeOpacity.toFixed(2)}</span>
+              <span class="num">{project.data.settings.edgeOpacity.toFixed(2)}</span>
             </div>
           </label>
 
@@ -237,19 +237,19 @@
                 min="0.5"
                 max="6"
                 step="0.5"
-                value={project.settings.previewLineWidth}
+                value={project.data.settings.previewLineWidth}
                 onchange={(e) =>
                   update(
                     'previewLineWidth',
                     toNumber(
                       (e.currentTarget as HTMLInputElement).value,
-                      project.settings.previewLineWidth,
+                      project.data.settings.previewLineWidth,
                       0.5,
                       6,
                     ),
                   )}
               />
-              <span class="num">{project.settings.previewLineWidth.toFixed(1)} px</span>
+              <span class="num">{project.data.settings.previewLineWidth.toFixed(1)} px</span>
             </div>
           </label>
 
@@ -261,22 +261,22 @@
                 min="0"
                 max="3"
                 step="0.25"
-                value={project.settings.toolMoveArrowDensity}
+                value={project.data.settings.toolMoveArrowDensity}
                 onchange={(e) =>
                   update(
                     'toolMoveArrowDensity',
                     toNumber(
                       (e.currentTarget as HTMLInputElement).value,
-                      project.settings.toolMoveArrowDensity,
+                      project.data.settings.toolMoveArrowDensity,
                       0,
                       3,
                     ),
                   )}
               />
               <span class="num"
-                >{project.settings.toolMoveArrowDensity === 0
+                >{project.data.settings.toolMoveArrowDensity === 0
                   ? 'off'
-                  : `${project.settings.toolMoveArrowDensity.toFixed(2)}×`}</span
+                  : `${project.data.settings.toolMoveArrowDensity.toFixed(2)}×`}</span
               >
             </div>
           </label>
@@ -284,7 +284,7 @@
           <label
             >Cell resolution
             <select
-              value={project.settings.cellResolutionMode}
+              value={project.data.settings.cellResolutionMode}
               onchange={(e) =>
                 update(
                   'cellResolutionMode',
@@ -296,7 +296,7 @@
             </select>
           </label>
 
-          {#if project.settings.cellResolutionMode === 'manual'}
+          {#if project.data.settings.cellResolutionMode === 'manual'}
             <label
               >Cell size (mm)
               <input
@@ -305,13 +305,13 @@
                 max="5"
                 step="0.05"
                 title="Voxel resolution for the sim heightmap. Below 0.05 mm explodes RAM; above ~2 mm loses tab + sliver detail. Cap is 5 mm to keep the sim sane."
-                value={project.settings.cellResolutionMm}
+                value={project.data.settings.cellResolutionMm}
                 onchange={(e) =>
                   update(
                     'cellResolutionMm',
                     toNumber(
                       (e.currentTarget as HTMLInputElement).value,
-                      project.settings.cellResolutionMm,
+                      project.data.settings.cellResolutionMm,
                       0.01,
                       5,
                     ),
@@ -328,7 +328,7 @@
           <label class="check">
             <input
               type="checkbox"
-              checked={project.settings.solidPreviewByDefault}
+              checked={project.data.settings.solidPreviewByDefault}
               onchange={(e) =>
                 update('solidPreviewByDefault', (e.currentTarget as HTMLInputElement).checked)}
             />
@@ -341,14 +341,14 @@
               type="number"
               min="100000"
               step="100000"
-              value={project.settings.maxSimulationCells}
+              value={project.data.settings.maxSimulationCells}
               onchange={(e) =>
                 update(
                   'maxSimulationCells',
                   Math.round(
                     toNumber(
                       (e.currentTarget as HTMLInputElement).value,
-                      project.settings.maxSimulationCells,
+                      project.data.settings.maxSimulationCells,
                       100_000,
                     ),
                   ),
@@ -362,14 +362,14 @@
               type="number"
               min="100000"
               step="100000"
-              value={project.settings.maxRenderTriangles}
+              value={project.data.settings.maxRenderTriangles}
               onchange={(e) =>
                 update(
                   'maxRenderTriangles',
                   Math.round(
                     toNumber(
                       (e.currentTarget as HTMLInputElement).value,
-                      project.settings.maxRenderTriangles,
+                      project.data.settings.maxRenderTriangles,
                       100_000,
                     ),
                   ),
@@ -396,7 +396,7 @@
         <label class="check">
           <input
             type="checkbox"
-            checked={project.settings.exactSimRewind}
+            checked={project.data.settings.exactSimRewind}
             onchange={(e) =>
               update('exactSimRewind', (e.currentTarget as HTMLInputElement).checked)}
           />
@@ -423,7 +423,7 @@
           <label class="check">
             <input
               type="checkbox"
-              checked={project.settings.blockOnCriticalSimWarnings}
+              checked={project.data.settings.blockOnCriticalSimWarnings}
               onchange={(e) =>
                 update('blockOnCriticalSimWarnings', (e.currentTarget as HTMLInputElement).checked)}
             />
@@ -435,7 +435,7 @@
           >
             <input
               type="checkbox"
-              checked={project.settings.blockOnWorkAreaViolation}
+              checked={project.data.settings.blockOnWorkAreaViolation}
               onchange={(e) =>
                 update('blockOnWorkAreaViolation', (e.currentTarget as HTMLInputElement).checked)}
             />
@@ -444,7 +444,7 @@
           <label class="check">
             <input
               type="checkbox"
-              checked={project.settings.autoRunSimOnSave}
+              checked={project.data.settings.autoRunSimOnSave}
               onchange={(e) =>
                 update('autoRunSimOnSave', (e.currentTarget as HTMLInputElement).checked)}
             />
@@ -456,7 +456,7 @@
           >
             <input
               type="checkbox"
-              checked={project.settings.autoRegenerate}
+              checked={project.data.settings.autoRegenerate}
               onchange={(e) =>
                 update('autoRegenerate', (e.currentTarget as HTMLInputElement).checked)}
             />
@@ -476,7 +476,7 @@
           <label class="check">
             <input
               type="checkbox"
-              checked={project.settings.autoReloadSources}
+              checked={project.data.settings.autoReloadSources}
               onchange={(e) =>
                 update('autoReloadSources', (e.currentTarget as HTMLInputElement).checked)}
             />
@@ -498,12 +498,12 @@
             <label class="check" title={o.help}>
               <input
                 type="checkbox"
-                checked={!!project.settings.osnap?.[
+                checked={!!project.data.settings.osnap?.[
                   o.key as 'endpoint' | 'midpoint' | 'intersection' | 'center' | 'grid'
                 ]}
                 onchange={(e) =>
                   update('osnap', {
-                    ...project.settings.osnap,
+                    ...project.data.settings.osnap,
                     [o.key]: (e.currentTarget as HTMLInputElement).checked,
                   })}
               />
@@ -517,15 +517,15 @@
               type="number"
               min="0.1"
               step="0.1"
-              value={project.settings.osnap?.gridStepMm ?? 5}
+              value={project.data.settings.osnap?.gridStepMm ?? 5}
               onchange={(e) =>
                 update('osnap', {
-                  ...project.settings.osnap,
+                  ...project.data.settings.osnap,
                   gridStepMm: Math.max(
                     0.1,
                     toNumber(
                       (e.currentTarget as HTMLInputElement).value,
-                      project.settings.osnap?.gridStepMm ?? 5,
+                      project.data.settings.osnap?.gridStepMm ?? 5,
                       0.1,
                     ),
                   ),

@@ -186,7 +186,7 @@
         <button
           role="menuitem"
           class="item"
-          disabled={!project.generated}
+          disabled={!project.gen.generated}
           onclick={() => pickMenu(exportGcode)}
         >
           <span class="label">Export G-code…</span>
@@ -194,7 +194,7 @@
         <button
           role="menuitem"
           class="item"
-          disabled={!project.generated}
+          disabled={!project.gen.generated}
           onclick={() => pickMenu(exportSimulatedStockStl)}
           title="Save the carved simulated stock as a binary STL. Run Generate first so the heightfield reflects the planned cuts."
         >
@@ -328,7 +328,7 @@
           role="menuitem"
           class="item"
           class:checked={gcodeOpen}
-          disabled={!project.generated}
+          disabled={!project.gen.generated}
           onclick={() => pickMenu(() => (gcodeOpen = !gcodeOpen))}
         >
           <span class="label">G-code panel</span>

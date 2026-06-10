@@ -166,24 +166,24 @@
 
   $effect(() => {
     void project.geometryView;
-    void project.visibleLayers;
-    void project.regionsVisible;
-    void project.generated;
+    void project.data.visibleLayers;
+    void project.data.regionsVisible;
+    void project.gen.generated;
     // Repaints on origin too (drag): cheap now that an origin change no
     // longer triggers a backend render — drawTextPreview just re-strokes
     // the cached glyphs at the live origin via a draw-time translation (k9cz).
-    void project.textLayers;
-    void project.selectedTextLayerId;
+    void project.data.textLayers;
+    void project.sel.selectedTextLayerId;
     void previewVersion.v;
-    void project.machine.workArea;
-    void project.stock;
-    void project.settings.previewLineWidth;
+    void project.data.machine.workArea;
+    void project.data.stock;
+    void project.data.settings.previewLineWidth;
     // rt1.12 (fvb0): a raster-engrave-only project (no imported geometry)
     // draws its grid / axes fit to the placement bbox, so the bg must
     // react to sources / ops appearing / moving. Same per-frame cost as
     // a pan (which already repaints this layer), so no new regression.
-    void project.reliefSources;
-    void project.operations;
+    void project.data.reliefSources;
+    void project.data.operations;
     void userZoom;
     void userPanX;
     void userPanY;
@@ -192,17 +192,17 @@
 
   $effect(() => {
     void project.geometryView;
-    void project.visibleLayers;
-    void project.selectedObjects;
-    void project.operations;
-    void project.selectedOpId;
-    void project.fixtures;
-    void project.selectedFixtureId;
-    void project.selectedTextLayerId;
+    void project.data.visibleLayers;
+    void project.sel.selectedObjects;
+    void project.data.operations;
+    void project.sel.selectedOpId;
+    void project.data.fixtures;
+    void project.sel.selectedFixtureId;
+    void project.sel.selectedTextLayerId;
     // rt1.12 (j7b4): raster-engrave placement images live on the overlay
     // (faint, under the interaction chrome) so the heavy bg layer stays
     // pure. Repaint when a source moves / resizes.
-    void project.reliefSources;
+    void project.data.reliefSources;
     void hoverIdx;
     void hoverTextId;
     void ghostTab;
@@ -217,7 +217,7 @@
   // for a render — the helper deduplicates by content hash and
   // debounces, so this is cheap when nothing changed.
   $effect(() => {
-    for (const layer of project.textLayers) {
+    for (const layer of project.data.textLayers) {
       requestPreview(layer);
     }
   });
@@ -227,9 +227,9 @@
   /// mixed, the canvas behaves as a tab-placement surface: hover
   /// shows a ghost tab; click toggles a placement.
   const selectedOp = $derived(
-    project.selectedOpId == null
+    project.sel.selectedOpId == null
       ? null
-      : (project.operations.find((o) => o.id === project.selectedOpId) ?? null),
+      : (project.data.operations.find((o) => o.id === project.sel.selectedOpId) ?? null),
   );
   const tabPlacementActive = $derived(
     !!selectedOp &&
@@ -256,14 +256,14 @@
   /// free-form pick anywhere in the canvas.
   let shiftDown = $state(false);
 
-  /// Approach-point picker (n79). Active when project.pickMode is
+  /// Approach-point picker (n79). Active when project.sel.pickMode is
   /// `{ kind: 'approach-point', opId: <selected op id> }`. Cursor
   /// becomes a crosshair, a preview marker tracks the mouse (snapped
   /// to source-object vertices unless Shift is held), and a click
   /// commits the point to `op.approachPoint` while staying in pick
   /// mode (sticky — ESC exits).
   const approachPickActive = $derived(
-    project.pickMode?.kind === 'approach-point' && project.pickMode.opId === selectedOp?.id,
+    project.sel.pickMode?.kind === 'approach-point' && project.sel.pickMode.opId === selectedOp?.id,
   );
 
   /// Live preview state while picking. `lastTransform`-relative data
@@ -315,10 +315,10 @@
       : { endpoints: [], midpoints: [], intersections: [], centers: [] },
   );
 
-  /// OSnap settings come from `project.settings.osnap` (li0m). Falls
+  /// OSnap settings come from `project.data.settings.osnap` (li0m). Falls
   /// back to the hardcoded defaults for the brief window between
   /// component mount and the settings hydration completing.
-  const osnapSettings = $derived(project.settings.osnap ?? DEFAULT_OSNAP_SETTINGS);
+  const osnapSettings = $derived(project.data.settings.osnap ?? DEFAULT_OSNAP_SETTINGS);
 
   // Mouse → segment hit testing. We project each segment to canvas space
   // and pick the nearest one within `HIT_PIXEL_TOL`.
@@ -413,7 +413,7 @@
   /// behaviour.
   const objectToOps = $derived.by<Map<number, number[]>>(() => {
     const out = new Map<number, number[]>();
-    for (const op of project.operations) {
+    for (const op of project.data.operations) {
       const refs = op.sourceObjects;
       if (!refs) continue;
       for (const id of refs) {
@@ -458,7 +458,7 @@
       (l) =>
         // 8jce/vm3c: the synthetic stock-outline layer isn't in the
         // user's visibleLayers set, but it must always be hittable.
-        l === STOCK_OUTLINE_LAYER || project.visibleLayers.has(l),
+        l === STOCK_OUTLINE_LAYER || project.data.visibleLayers.has(l),
     );
   }
 
@@ -593,9 +593,9 @@
     // draggable but invisibly so.
     {
       const selOp =
-        project.selectedOpId == null
+        project.sel.selectedOpId == null
           ? null
-          : project.operations.find((o) => o.id === project.selectedOpId);
+          : project.data.operations.find((o) => o.id === project.sel.selectedOpId);
       if (
         selOp &&
         (selOp.kind === 'profile' || selOp.kind === 'pocket') &&
@@ -808,7 +808,7 @@
     if (!data || !lastTransform) return [];
     return objectsContainedInBox(
       data.object_meta ?? [],
-      project.visibleLayers,
+      project.data.visibleLayers,
       lastTransform,
       x0,
       y0,
@@ -913,8 +913,8 @@
     // every empty right-click. A right-click over a tab (handled above)
     // or with a real selection still opens its menu every time.
     if (
-      project.selectedTextLayerId == null &&
-      project.selectedObjects.size === 0 &&
+      project.sel.selectedTextLayerId == null &&
+      project.sel.selectedObjects.size === 0 &&
       !consumeSelectHint()
     ) {
       ctxMenu = null;
@@ -934,7 +934,7 @@
   /// the user right-clicked at. No-op when no text layer is selected.
   function setTextOriginHere() {
     if (!ctxMenu) return;
-    const id = project.selectedTextLayerId;
+    const id = project.sel.selectedTextLayerId;
     if (id == null) {
       ctxMenu = null;
       return;
@@ -963,7 +963,7 @@
     const tolPx = 10;
     const objects = getObjectPolylines();
     let best: { opId: number; placementIdx: number; d2: number } | null = null;
-    for (const op of project.operations) {
+    for (const op of project.data.operations) {
       if (!isContourOp(op)) continue;
       const mode = op.tabMode?.kind ?? 'off';
       if (mode !== 'manual' && mode !== 'mixed') continue;
@@ -991,7 +991,7 @@
     placementIdx: number,
     patch: { widthOverrideMm?: number | undefined; heightOverrideMm?: number | undefined },
   ) {
-    const op = project.operations.find((o) => o.id === opId);
+    const op = project.data.operations.find((o) => o.id === opId);
     if (!op || !isContourOp(op)) return;
     const cur = op.tabPlacements ?? [];
     if (placementIdx < 0 || placementIdx >= cur.length) return;
@@ -1002,7 +1002,7 @@
   /// Delete one tab placement (via toggleTabPlacement — its remove
   /// branch fires when the target is within tolerance).
   function deleteTabPlacement(opId: number, placementIdx: number) {
-    const op = project.operations.find((o) => o.id === opId);
+    const op = project.data.operations.find((o) => o.id === opId);
     if (!op || !isContourOp(op)) return;
     const cur = op.tabPlacements ?? [];
     if (placementIdx < 0 || placementIdx >= cur.length) return;
@@ -1041,7 +1041,7 @@
     }
     // n79: ESC finalizes the approach-point picker (sticky mode exit).
     if (e.key === 'Escape' && approachPickActive) {
-      project.pickMode = null;
+      project.sel.pickMode = null;
       approachPreview = null;
       canvas.style.cursor = 'default';
       e.preventDefault();
@@ -1073,7 +1073,7 @@
   }
 
   function pickFromCtx(kind: PickerKind) {
-    const sel = [...project.selectedObjects];
+    const sel = [...project.sel.selectedObjects];
     if (sel.length === 0) {
       ctxMenu = null;
       return;
@@ -1082,7 +1082,8 @@
     project.history.beginTransaction(label);
     try {
       if (kind === 'pocket_outside') {
-        const endmill = project.tools.find((t) => t.kind === 'endmill') ?? project.tools[0];
+        const endmill =
+          project.data.tools.find((t) => t.kind === 'endmill') ?? project.data.tools[0];
         const toolDiameter = endmill?.diameter ?? 3;
         const op = project.addOperation('pocket');
         project.updateOperation(op.id, {
@@ -1248,7 +1249,7 @@
         return;
       }
       case 'approach-exit':
-        project.pickMode = null;
+        project.sel.pickMode = null;
         approachPreview = null;
         e.preventDefault();
         return;
@@ -1260,7 +1261,7 @@
         grabPointer();
         return;
       case 'raster-drag':
-        project.selectedOpId = intent.grab.opId;
+        project.sel.selectedOpId = intent.grab.opId;
         rasterDrag = {
           sourceId: intent.grab.sourceId,
           pointerId: e.pointerId,
@@ -1270,7 +1271,7 @@
         grabPointer();
         return;
       case 'text-drag':
-        project.selectedTextLayerId = intent.grab.id;
+        project.sel.selectedTextLayerId = intent.grab.id;
         project.clearSelection();
         project.selectFixture(null);
         textDrag = { ...intent.grab, pointerId: e.pointerId };
@@ -1283,7 +1284,7 @@
         return;
       case 'fixture-select':
         project.selectFixture(intent.id);
-        project.selectedTextLayerId = null; // fx06: keep selection single-domain
+        project.sel.selectedTextLayerId = null; // fx06: keep selection single-domain
         return;
       case 'entity-click':
         break;
@@ -1292,7 +1293,7 @@
     // fx06: a left-click on geometry / empty space (not consumed by a
     // text-stroke hit above) deselects any active text layer, so text
     // and object selection stay mutually exclusive.
-    project.selectedTextLayerId = null;
+    project.sel.selectedTextLayerId = null;
 
     const idx = pixelHit(cx, cy);
     // Map segment index → its 1-based object id (or null for empty
@@ -1326,7 +1327,7 @@
           project.seriesSelectTo(action.id);
           break;
         case 'set-active-op':
-          if (project.selectedOpId !== action.opId) project.selectedOpId = action.opId;
+          if (project.sel.selectedOpId !== action.opId) project.sel.selectedOpId = action.opId;
           break;
         case 'arm-box-select':
           boxSelect = {
@@ -1362,7 +1363,7 @@
     const { scale, offX, offY } = lastTransform;
     const dataX = (canvasX - offX) / scale;
     const dataY = (offY - canvasY) / scale;
-    return fixtureAt(project.fixtures, dataX, dataY);
+    return fixtureAt(project.data.fixtures, dataX, dataY);
   }
 
   function colorFor(c: number): string {
@@ -1460,11 +1461,15 @@
       x: themeVar('--axis-x', '#882222'),
       y: themeVar('--axis-y', '#226622'),
     });
-    drawWorkArea(ctx, project2, project.machine.workArea, themeVar('--text-muted', '#888'));
+    drawWorkArea(ctx, project2, project.data.machine.workArea, themeVar('--text-muted', '#888'));
     drawStock(
       ctx,
       project2,
-      computeFootprint(project.transformedImport, project.stock, project.machine.workArea),
+      computeFootprint(
+        project.transformedImport,
+        project.data.stock,
+        project.data.machine.workArea,
+      ),
       themeVar('--stock-edge', '#888'),
     );
 
@@ -1475,8 +1480,8 @@
       // Filled-region preview painted under the wireframe so contours
       // stay legible. Regions come from the backend (pipeline.rs
       // build_region_previews).
-      const regions = project.generated?.regions ?? [];
-      if (regions.length > 0 && project.regionsVisible) {
+      const regions = project.gen.generated?.regions ?? [];
+      if (regions.length > 0 && project.data.regionsVisible) {
         drawRegions(
           ctx,
           regionPathCache,
@@ -1484,7 +1489,7 @@
           scale,
           offX,
           offY,
-          project.selectedOpId,
+          project.sel.selectedOpId,
           themeVar('--accent', '#2d6cdf'),
         );
       }
@@ -1492,14 +1497,14 @@
       // Imported segments — paint in BASE layer color only. State-bearing
       // overlays (selection / hover / op-assignment halos) go on the
       // overlay canvas, so editing those does NOT invalidate this layer.
-      const visibleLayersSnap = new Set(project.visibleLayers);
+      const visibleLayersSnap = new Set(project.data.visibleLayers);
       visibleLayersSnap.add(STOCK_OUTLINE_LAYER); // vm3c: synthetic layer always drawn
       drawImportedWireframe(
         ctx,
         project2,
         data.segments,
         visibleLayersSnap,
-        project.settings.previewLineWidth,
+        project.data.settings.previewLineWidth,
         colorFor,
       );
     }
@@ -1508,15 +1513,15 @@
     // a text-only engrave project is visible (and draggable) on a bare
     // canvas. The cache is filled by requestPreview() in the top-of-file
     // effect; the active layer (selectedTextLayerId) gets the highlight.
-    if (project.textLayers.length > 0) {
+    if (project.data.textLayers.length > 0) {
       drawTextPreview(
         ctx,
         project2,
-        project.textLayers.map((layer) => ({
+        project.data.textLayers.map((layer) => ({
           // Segments come back translated to the layer's current origin, so
           // a drag repositions the glyphs with no re-render (k9cz).
           segments: previewSegmentsFor(layer.id, layer.origin) ?? [],
-          isActive: project.selectedTextLayerId === layer.id,
+          isActive: project.sel.selectedTextLayerId === layer.id,
         })),
         {
           accent: themeVar('--accent', '#2d6cdf'),
@@ -1556,15 +1561,18 @@
       project2,
       scale,
       rasterImageCache,
-      rasterPlacements().map(({ op, src }) => ({ src, selected: project.selectedOpId === op.id })),
+      rasterPlacements().map(({ op, src }) => ({
+        src,
+        selected: project.sel.selectedOpId === op.id,
+      })),
       { accent, border: themeVar('--border', '#555') },
     );
 
     // fx06: hover highlight for the text layer under the cursor (the
     // selected-layer highlight stays on the bg in drawTextPreview). Drawn
     // on the overlay so frequent hover repaints don't touch the bg layer.
-    if (hoverTextId != null && hoverTextId !== project.selectedTextLayerId) {
-      const hoverLayer = project.textLayers.find((l) => l.id === hoverTextId);
+    if (hoverTextId != null && hoverTextId !== project.sel.selectedTextLayerId) {
+      const hoverLayer = project.data.textLayers.find((l) => l.id === hoverTextId);
       const segs = hoverLayer ? previewSegmentsFor(hoverTextId, hoverLayer.origin) : null;
       if (segs && segs.length > 0) {
         const hoverColor = themeVar('--accent-strong', '#6e9ce6');
@@ -1575,16 +1583,16 @@
     }
 
     if (hasGeom && data) {
-      const visibleLayersSnap = new Set(project.visibleLayers);
+      const visibleLayersSnap = new Set(project.data.visibleLayers);
       visibleLayersSnap.add(STOCK_OUTLINE_LAYER); // vm3c: synthetic layer always drawn
       drawEntityHalos(ctx, project2, {
         segments: data.segments,
         objects: data.objects,
         visibleLayers: visibleLayersSnap,
-        selectedObjects: new Set(project.selectedObjects),
+        selectedObjects: new Set(project.sel.selectedObjects),
         hoverObjectId: hoverIdx == null ? 0 : (data.objects?.[hoverIdx] ?? 0),
         objectToOps,
-        selectedOpId: project.selectedOpId,
+        selectedOpId: project.sel.selectedOpId,
         opColor: opSourceCss,
         colors: {
           hover: themeVar('--accent-strong', '#6e9ce6'),
@@ -1596,12 +1604,12 @@
       });
     }
 
-    drawFixtures(ctx, project2, project.fixtures, project.selectedFixtureId, accent);
+    drawFixtures(ctx, project2, project.data.fixtures, project.sel.selectedFixtureId, accent);
     drawTabs(
       ctx,
       project2,
       scale,
-      project.operations.filter(isContourOp),
+      project.data.operations.filter(isContourOp),
       getObjectPolylines(),
       // Ghost: selected op + manual/mixed mode + cursor over contour.
       ghostTab && tabPlacementActive && selectedOp && isContourOp(selectedOp)
@@ -1641,9 +1649,9 @@
   function rasterPlacements(): { op: OpEntry; src: ReliefSource }[] {
     const out: { op: OpEntry; src: ReliefSource }[] = [];
     const seen = new Set<number>();
-    for (const op of project.operations) {
+    for (const op of project.data.operations) {
       if (op.kind !== 'raster_engrave' || !op.enabled) continue;
-      const src = project.reliefSources.find((s) => s.id === op.sourceId);
+      const src = project.data.reliefSources.find((s) => s.id === op.sourceId);
       if (!src || src.cols <= 0 || src.rows <= 0 || seen.has(src.id)) continue;
       seen.add(src.id);
       out.push({ op, src });
@@ -1657,7 +1665,8 @@
   function rasterPlacementAtData(x: number, y: number): { op: OpEntry; src: ReliefSource } | null {
     const ordered = rasterPlacements().sort(
       (a, b) =>
-        (a.op.id === project.selectedOpId ? 1 : 0) - (b.op.id === project.selectedOpId ? 1 : 0),
+        (a.op.id === project.sel.selectedOpId ? 1 : 0) -
+        (b.op.id === project.sel.selectedOpId ? 1 : 0),
     );
     for (let i = ordered.length - 1; i >= 0; i--) {
       const { src } = ordered[i];
@@ -1692,12 +1701,12 @@
         maxY: src.origin.y + src.rows * src.cell,
       });
     }
-    for (const layer of project.textLayers) {
+    for (const layer of project.data.textLayers) {
       const bb = segsBBox(previewSegmentsFor(layer.id, layer.origin) ?? []);
       if (bb) rects.push(bb);
     }
     if (rects.length === 0) return null;
-    const wa = project.machine.workArea;
+    const wa = project.data.machine.workArea;
     if (wa && wa.x > 0 && wa.y > 0) {
       return { min_x: 0, min_y: 0, max_x: wa.x, max_y: wa.y };
     }
@@ -1710,10 +1719,10 @@
   /// steal clicks; topmost layer wins a tie. Drives both hover and
   /// click-select / drag.
   function textHitAtData(x: number, y: number): TextLayer | null {
-    if (!lastTransform || project.textLayers.length === 0) return null;
+    if (!lastTransform || project.data.textLayers.length === 0) return null;
     const tol = HIT_PIXEL_TOL / Math.max(Math.abs(lastTransform.scale), 1e-6);
     const hit = nearestTextLayer(
-      project.textLayers.map((l) => ({
+      project.data.textLayers.map((l) => ({
         id: l.id,
         segments: previewSegmentsFor(l.id, l.origin) ?? [],
       })),
@@ -1721,7 +1730,7 @@
       y,
       tol,
     );
-    return hit ? (project.textLayers.find((l) => l.id === hit.id) ?? null) : null;
+    return hit ? (project.data.textLayers.find((l) => l.id === hit.id) ?? null) : null;
   }
 
   /// Path2D cache for region previews — see RegionPathCache
@@ -1759,8 +1768,8 @@
     ondblclick={onDblClick}
   ></canvas>
   <canvas bind:this={canvasOverlay} class="overlay"></canvas>
-  {#if project.selectedEntities.size > 0}
-    <div class="selection-hud">{project.selectedEntities.size} selected · esc to clear</div>
+  {#if project.sel.selectedEntities.size > 0}
+    <div class="selection-hud">{project.sel.selectedEntities.size} selected · esc to clear</div>
   {/if}
   {#if cursorXY}
     <div class="cursor-hud" aria-hidden="true">
@@ -1773,7 +1782,7 @@
       {/if}
     </div>
   {/if}
-  {#if project.transformedImport && project.operations.length === 0}
+  {#if project.transformedImport && project.data.operations.length === 0}
     <div class="firstrun-hint" role="status">
       <span class="firstrun-step">1</span>
       <span>Click an object to select it</span>
@@ -1783,7 +1792,7 @@
     </div>
   {/if}
   {#if tabPopover}
-    {@const op = project.operations.find((o) => o.id === tabPopover!.opId)}
+    {@const op = project.data.operations.find((o) => o.id === tabPopover!.opId)}
     {@const placement = op && isContourOp(op) ? op.tabPlacements?.[tabPopover!.placementIdx] : null}
     {#if op && isContourOp(op) && placement}
       <div
@@ -1842,8 +1851,8 @@
     {/if}
   {/if}
   {#if ctxMenu}
-    {@const hasTextSelected = project.selectedTextLayerId != null}
-    {@const hasObjsSelected = project.selectedObjects.size > 0}
+    {@const hasTextSelected = project.sel.selectedTextLayerId != null}
+    {@const hasObjsSelected = project.sel.selectedObjects.size > 0}
     {#if !hasTextSelected && !hasObjsSelected}
       <div
         class="ctx-menu empty"

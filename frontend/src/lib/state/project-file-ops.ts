@@ -32,24 +32,24 @@ export function clearProject(p: ProjectState) {
   p.data.textLayers = [];
   p.data.reliefSources = [];
   p.data.groupOpsByTool = false;
-  p.data.stock = { ...p.stock };
+  p.data.stock = { ...p.data.stock };
   // j4tv: workOffset is per-project (the user pre-zeros their machine
   // at a different point per drawing), so reset to default like ops.
   p.data.workOffset = defaultWorkOffset();
-  p.generated = null;
-  p.toolpathCumLen = null;
-  p.toolpathTotalLen = 0;
-  p.selectedEntities = new Set();
-  p.selectedObjects = new Set();
-  p.selectedOpId = null;
-  p.selectedFixtureId = null;
-  p.selectedTextLayerId = null;
-  p.hoverSegment = null;
-  p.visibleLayers = new Set();
+  p.gen.generated = null;
+  p.gen.toolpathCumLen = null;
+  p.gen.toolpathTotalLen = 0;
+  p.sel.selectedEntities = new Set();
+  p.sel.selectedObjects = new Set();
+  p.sel.selectedOpId = null;
+  p.sel.selectedFixtureId = null;
+  p.sel.selectedTextLayerId = null;
+  p.sel.hoverSegment = null;
+  p.data.visibleLayers = new Set();
   p.activeProjectPath = null;
   p.sourceFileStaleNotice = null;
   p.error = null;
-  p.dirty = false;
+  p.data.dirty = false;
   p.savedToProject = false;
   resetPreviewCache();
   p.history.clear();
@@ -70,10 +70,13 @@ export function setActiveProjectPath(p: ProjectState, path: string | null) {
   if (view && saved.visible_layers.length > 0) {
     const valid = new Set(view.layers.map((l) => l.name));
     const restored = saved.visible_layers.filter((n) => valid.has(n));
-    if (restored.length > 0) p.visibleLayers = new Set(restored);
+    if (restored.length > 0) p.data.visibleLayers = new Set(restored);
   }
-  if (saved.selected_op_id != null && p.operations.some((o) => o.id === saved.selected_op_id)) {
-    p.selectedOpId = saved.selected_op_id;
+  if (
+    saved.selected_op_id != null &&
+    p.data.operations.some((o) => o.id === saved.selected_op_id)
+  ) {
+    p.sel.selectedOpId = saved.selected_op_id;
   }
   if (typeof saved.playhead === 'number') {
     p.playhead = Math.max(0, Math.min(1, saved.playhead));
@@ -96,8 +99,8 @@ export function persistPerProjectState(p: ProjectState) {
   const path = p.activeProjectPath;
   if (!path) return;
   const snapshot = {
-    visible_layers: [...p.visibleLayers],
-    selected_op_id: p.selectedOpId,
+    visible_layers: [...p.data.visibleLayers],
+    selected_op_id: p.sel.selectedOpId,
     playhead: p.playhead,
   };
   queueMicrotask(() => {
@@ -126,19 +129,19 @@ export function snapshotProject(p: ProjectState): ProjectFile {
     imports: p.data.imports,
     visibleLayers: [],
     selectedEntities: [],
-    stock: p.stock,
-    tools: p.tools,
-    machine: p.machine,
-    operations: p.operations,
-    fixtures: p.fixtures,
-    textLayers: p.textLayers,
-    ...(p.reliefSources.length > 0 ? { reliefSources: p.reliefSources } : {}),
+    stock: p.data.stock,
+    tools: p.data.tools,
+    machine: p.data.machine,
+    operations: p.data.operations,
+    fixtures: p.data.fixtures,
+    textLayers: p.data.textLayers,
+    ...(p.data.reliefSources.length > 0 ? { reliefSources: p.data.reliefSources } : {}),
     // i5g4 / j4tv: only persist work_offset when non-default so legacy
     // / unset projects keep their compact .ivac-project payloads. The
     // restore() side defaults to defaultWorkOffset() when absent.
-    ...(isDefaultWorkOffset(p.workOffset) ? {} : { workOffset: p.workOffset }),
+    ...(isDefaultWorkOffset(p.data.workOffset) ? {} : { workOffset: p.data.workOffset }),
     // l8lk: persist the tool-grouping toggle only when on.
-    ...(p.groupOpsByTool ? { groupOpsByTool: true } : {}),
+    ...(p.data.groupOpsByTool ? { groupOpsByTool: true } : {}),
   };
 }
 
@@ -165,15 +168,15 @@ export function restoreProject(p: ProjectState, file: ProjectFile) {
   // through to setImported defaults — new saves OMIT these fields
   // (audit vep) so workspace can be the single source of truth.
   if (Array.isArray(file.visibleLayers) && file.visibleLayers.length > 0) {
-    p.visibleLayers = new Set(file.visibleLayers);
+    p.data.visibleLayers = new Set(file.visibleLayers);
   }
   if (Array.isArray(file.selectedEntities) && file.selectedEntities.length > 0) {
-    p.selectedEntities = new Set(file.selectedEntities);
+    p.sel.selectedEntities = new Set(file.selectedEntities);
   }
-  if (file.stock) p.data.stock = { ...p.stock, ...file.stock };
+  if (file.stock) p.data.stock = { ...p.data.stock, ...file.stock };
   if (Array.isArray(file.tools) && file.tools.length > 0)
     p.data.tools = file.tools.map(migrateLegacyToolTerms);
-  if (file.machine) p.data.machine = { ...p.machine, ...migrateMachineSettings(file.machine) };
+  if (file.machine) p.data.machine = { ...p.data.machine, ...migrateMachineSettings(file.machine) };
   if (Array.isArray(file.operations)) p.data.operations = file.operations;
   p.data.fixtures = Array.isArray(file.fixtures) ? file.fixtures : [];
   p.data.textLayers = Array.isArray(file.textLayers) ? file.textLayers : [];
@@ -186,8 +189,8 @@ export function restoreProject(p: ProjectState, file: ProjectFile) {
     : defaultWorkOffset();
   // l8lk: restore the tool-grouping toggle (legacy files lack it → false).
   p.data.groupOpsByTool = file.groupOpsByTool === true;
-  p.selectedFixtureId = null;
-  p.selectedOpId = null;
+  p.sel.selectedFixtureId = null;
+  p.sel.selectedOpId = null;
   // This content came from a saved .ivac-project file — mark it saved
   // so re-opening it (unedited) doesn't trigger the unsaved-work guard.
   // Must run AFTER the internal setImported above, which clears it.

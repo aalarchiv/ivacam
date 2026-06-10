@@ -12,7 +12,7 @@
 ///
 /// `ProjectState` retains `gen = new GeneratedState()` and exposes
 /// proxy getters/setters for backwards compatibility so every
-/// existing `project.generated`, `project.pipelineState`, etc.
+/// existing `project.gen.generated`, `project.gen.pipelineState`, etc.
 /// call site keeps working unchanged.
 
 import type { GenerateResponse, SimDiagnostics } from '../api/types';

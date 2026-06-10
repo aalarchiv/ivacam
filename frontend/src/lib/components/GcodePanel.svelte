@@ -15,7 +15,7 @@
   /// the actual gcode bytes don't change until the user clicks Generate
   /// again.
   ///
-  /// Powered by project.generated.gcode_index (lines_to_segment +
+  /// Powered by project.gen.generated.gcode_index (lines_to_segment +
   /// segments_to_line) emitted by ivac_core::gcode::preview.
 
   import { project, playheadToSegment } from '../state/project.svelte';
@@ -23,10 +23,10 @@
 
   // Split the gcode lazily — only when the project's generated output
   // changes — so scrolling a 5000-line program doesn't redo work.
-  const lines = $derived(project.generated?.gcode.split('\n') ?? []);
-  const idx = $derived(project.generated?.gcode_index ?? null);
+  const lines = $derived(project.gen.generated?.gcode.split('\n') ?? []);
+  const idx = $derived(project.gen.generated?.gcode_index ?? null);
 
-  const chapters = $derived(parseGcodeChapters(lines, project.operations));
+  const chapters = $derived(parseGcodeChapters(lines, project.data.operations));
 
   /// Lookup: line → chapter index. Fast for the prev/next nav + the
   /// per-line "is this line silenced" check inside the row render.
@@ -48,13 +48,13 @@
   // mapping goes via arc length so dense connectors don't blow past
   // the gcode-panel highlight faster than long boundary edges.
   const activeLine = $derived.by<number | null>(() => {
-    const gen = project.generated;
+    const gen = project.gen.generated;
     if (!gen || gen.toolpath.length === 0 || !idx) return null;
     const total = gen.toolpath.length;
     const mapped = playheadToSegment(
       project.playhead,
-      project.toolpathCumLen,
-      project.toolpathTotalLen,
+      project.gen.toolpathCumLen,
+      project.gen.toolpathTotalLen,
     );
     const headIdx =
       mapped.segIdx >= 0
@@ -79,7 +79,7 @@
   });
 
   function jumpToLine(line: number) {
-    const gen = project.generated;
+    const gen = project.gen.generated;
     if (!gen || !idx) return;
     // 1-based → array index. Walk back to the nearest preceding line
     // that does have a segment (comment-only lines have NO_SEGMENT).
@@ -90,8 +90,8 @@
     // Map segIdx → playhead via cumulative arc length so the
     // arc-length playback consumer (Scene3D, this panel) lands on the
     // same segment.
-    const cum = project.toolpathCumLen;
-    const total = project.toolpathTotalLen;
+    const cum = project.gen.toolpathCumLen;
+    const total = project.gen.toolpathTotalLen;
     const segs = gen.toolpath.length;
     if (cum && total > 0 && segIdx < cum.length) {
       project.playhead = Math.min(1, cum[segIdx] / total);
@@ -144,17 +144,17 @@
   });
 </script>
 
-{#if project.generated && project.generated.gcode}
+{#if project.gen.generated && project.gen.generated.gcode}
   <div
     class="gcode"
-    class:stale={project.dirty}
+    class:stale={project.data.dirty}
     bind:this={host}
     role="listbox"
     aria-label="G-code"
     tabindex="0"
     onkeydown={onPanelKey}
   >
-    {#if project.dirty}
+    {#if project.data.dirty}
       <div
         class="stale-badge"
         title="The project has been edited since this G-code was generated. Click Generate G-code to refresh."

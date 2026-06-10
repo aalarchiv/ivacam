@@ -31,7 +31,7 @@ export interface ImportedGeometryInput {
   selectedOpId: number | null;
   selectedObjects: Set<number>;
   textLayers: TextLayer[];
-  /// !!project.generated — switches the base wireframe to faded color.
+  /// !!project.gen.generated — switches the base wireframe to faded color.
   hasGenerated: boolean;
   previewMode: string;
   edgeColor: string;

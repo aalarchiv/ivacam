@@ -144,7 +144,7 @@ export async function confirmDiscardIfDirty(action: string): Promise<boolean> {
   if (choice === 'cancel') return false;
   if (choice === 'extra') return true; // discard unsaved changes, proceed
   // 'primary' → save first, then proceed only if the save actually
-  // landed. saveProject() clears `project.dirty` on a successful write;
+  // landed. saveProject() clears `project.data.dirty` on a successful write;
   // if the user cancels the native save dialog (desktop) or the write
   // errors, dirty stays true — abort the load rather than silently
   // discarding the work the user just asked to keep.
@@ -183,7 +183,7 @@ export async function openProject() {
       const filename = selected.split(/[\\/]/).pop() ?? selected;
       workspace.addRecentProject(selected, filename);
       project.setActiveProjectPath(selected);
-      project.dirty = false;
+      project.data.dirty = false;
     } catch (e) {
       project.setError(`load project: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -218,7 +218,7 @@ export async function loadFromPath(path: string) {
     project.setActiveProjectPath(path);
     // setImported flips dirty=true; reset because the freshly-loaded
     // file matches what's on disk and the user hasn't edited yet.
-    project.dirty = false;
+    project.data.dirty = false;
   } catch (e) {
     reportError(e);
   } finally {
@@ -265,7 +265,7 @@ export async function loadProjectPath(path: string) {
     const filename = path.split(/[\\/]/).pop() ?? path;
     workspace.addRecentProject(path, filename);
     project.setActiveProjectPath(path);
-    project.dirty = false;
+    project.data.dirty = false;
   } catch (e) {
     project.setError(`load project: ${e instanceof Error ? e.message : String(e)}`);
   } finally {
@@ -289,7 +289,7 @@ export async function loadFile(file: File) {
     await clearPipelineCacheOnReplace();
     project.setImported(result);
     await project.convertImportedTextEntities();
-    project.dirty = false;
+    project.data.dirty = false;
   } catch (e) {
     reportError(e);
   } finally {
@@ -309,7 +309,7 @@ export async function loadProjectFile(file: File) {
     project.clearProject();
     await clearPipelineCacheOnReplace();
     project.restore(JSON.parse(text));
-    project.dirty = false;
+    project.data.dirty = false;
   } catch (e) {
     project.setError(`load project: ${e instanceof Error ? e.message : String(e)}`);
   } finally {
@@ -343,7 +343,7 @@ export async function saveProject() {
         // contract every load path upholds. Otherwise the quit-confirm
         // dialog, the confirmDiscardIfDirty prompt on a later Open, and
         // the stale-gcode indicators all fire right after a save.
-        project.dirty = false;
+        project.data.dirty = false;
         // The project now lives in a saved file — clears hasUnsavedWork
         // so a later Open doesn't prompt on a just-saved project.
         project.savedToProject = true;
@@ -362,7 +362,7 @@ export async function saveProject() {
   URL.revokeObjectURL(url);
   // amwo: the browser download IS the save; mirror the desktop branch and
   // clear dirty so the snapshot just written to disk isn't reported unsaved.
-  project.dirty = false;
+  project.data.dirty = false;
   project.savedToProject = true;
 }
 
@@ -411,7 +411,7 @@ export async function loadSample(url: string) {
     project.clearProject();
     await clearPipelineCacheOnReplace();
     project.setImported(data);
-    project.dirty = false;
+    project.data.dirty = false;
   } catch (e) {
     project.setError(e instanceof Error ? e.message : String(e));
   } finally {
@@ -420,15 +420,15 @@ export async function loadSample(url: string) {
   }
 }
 
-/// Export the current `project.generated.gcode` to disk. Mirrors
+/// Export the current `project.gen.generated.gcode` to disk. Mirrors
 /// `saveProject` — native save dialog on Tauri, anchor-tag download in
 /// the browser. Filename suffix is .plt for HPGL output, .ngc otherwise.
 /// `postProcessor` controls the suffix only; the gcode buffer is
-/// already post-processed by the time it lands in `project.generated`.
+/// already post-processed by the time it lands in `project.gen.generated`.
 export async function exportGeneratedGcode(
   postProcessor: 'linuxcnc' | 'grbl' | 'hpgl',
 ): Promise<void> {
-  if (!project.generated) return;
+  if (!project.gen.generated) return;
   const base = project.transformedImport?.filename?.replace(/\.[^.]+$/, '') ?? 'output';
   const ext = postProcessor === 'hpgl' ? 'plt' : 'ngc';
   const filename = `${base}.${ext}`;
@@ -441,14 +441,14 @@ export async function exportGeneratedGcode(
     });
     if (typeof path === 'string') {
       try {
-        await writeTextFile(path, project.generated.gcode);
+        await writeTextFile(path, project.gen.generated.gcode);
       } catch (e) {
         project.setError(`save: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
     return;
   }
-  const blob = new Blob([project.generated.gcode], { type: 'text/plain' });
+  const blob = new Blob([project.gen.generated.gcode], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -469,7 +469,7 @@ export async function exportSimulatedStockStl(): Promise<void> {
     project.setError('No simulated stock to export — run Generate first.');
     return;
   }
-  const stock = project.stock;
+  const stock = project.data.stock;
   const topZ = 0; // stock top sits at WCS Z=0 by the project convention
   const stockBottomZ = topZ - Math.max(stock.thickness, 0);
   const bytes = driver.exportStl(stockBottomZ);
@@ -612,7 +612,7 @@ export async function saveToolset() {
     kind: 'toolset',
     format_version: TOOLSET_FORMAT_VERSION,
     updated_at: new Date().toISOString(),
-    payload: project.tools.map((t) => ({ ...t })),
+    payload: project.data.tools.map((t) => ({ ...t })),
   };
   await writeJson('toolset.ivac-toolset.json', JSON.stringify(envelope, null, 2), [
     { name: 'ivaCAM toolset', extensions: ['ivac-toolset.json', 'json'] },
@@ -666,8 +666,8 @@ export async function loadToolset(mode: 'replace' | 'add') {
     return;
   }
   // Add: append everything not already present by name (case-insensitive).
-  const existingNames = new Set(project.tools.map((t) => t.name.toLowerCase()));
-  let nextId = project.tools.reduce((m, t) => Math.max(m, t.id), 0);
+  const existingNames = new Set(project.data.tools.map((t) => t.name.toLowerCase()));
+  let nextId = project.data.tools.reduce((m, t) => Math.max(m, t.id), 0);
   const additions: ToolEntry[] = [];
   for (const t of incoming) {
     if (existingNames.has(t.name.toLowerCase())) continue;
@@ -675,7 +675,7 @@ export async function loadToolset(mode: 'replace' | 'add') {
     additions.push({ ...t, id: nextId });
   }
   if (additions.length > 0) {
-    project.replaceTools([...project.tools, ...additions]);
+    project.replaceTools([...project.data.tools, ...additions]);
   }
 }
 
@@ -685,9 +685,9 @@ export async function saveMachine() {
     kind: 'machine',
     format_version: MACHINE_FORMAT_VERSION,
     updated_at: new Date().toISOString(),
-    payload: { ...project.machine },
+    payload: { ...project.data.machine },
   };
-  const fileBase = (project.machine.name && project.machine.name.trim()) || 'machine';
+  const fileBase = (project.data.machine.name && project.data.machine.name.trim()) || 'machine';
   await writeJson(`${fileBase}.ivac-machine.json`, JSON.stringify(envelope, null, 2), [
     { name: 'ivaCAM machine', extensions: ['ivac-machine.json', 'json'] },
   ]);

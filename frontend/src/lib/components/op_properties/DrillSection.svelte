@@ -143,7 +143,7 @@
           patch('spotFirst', undefined);
           return;
         }
-        const firstTool = project.tools[0]?.id ?? op.toolId;
+        const firstTool = project.data.tools[0]?.id ?? op.toolId;
         patch('spotFirst', {
           spotDepthMm: op.spotFirst?.spotDepthMm ?? -0.5,
           spotToolId: op.spotFirst?.spotToolId ?? firstTool,
@@ -182,7 +182,7 @@
             if (op.spotFirst) patch('spotFirst', { ...op.spotFirst, spotToolId: id });
           }}
         >
-          {#each project.tools as t (t.id)}
+          {#each project.data.tools as t (t.id)}
             <option value={t.id}>{t.id}: {t.name}</option>
           {/each}
         </select>

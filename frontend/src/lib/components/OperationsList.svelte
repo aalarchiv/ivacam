@@ -29,7 +29,7 @@
   let dragOverId = $state<number | null>(null);
 
   function toolName(toolId: number): string {
-    const t = project.tools.find((x) => x.id === toolId);
+    const t = project.data.tools.find((x) => x.id === toolId);
     return t ? t.name : `tool #${toolId}`;
   }
 
@@ -51,7 +51,7 @@
     // drawing's layer list — but an op sourcing it is perfectly valid.
     // Include those names so a text op (the default source AddTextDialog
     // seeds) doesn't read as an orphaned source / false ⚠ warning.
-    for (const t of project.textLayers) set.add(`__text_${t.id}`);
+    for (const t of project.data.textLayers) set.add(`__text_${t.id}`);
     return set;
   });
 
@@ -70,9 +70,9 @@
   /// re-import that changed object ids, the user selects the new
   /// equivalents and clicks 'Re-pick'.
   function repickFromSelection(opId: number) {
-    if (project.selectedObjects.size === 0) return;
+    if (project.sel.selectedObjects.size === 0) return;
     project.updateOperation(opId, {
-      sourceObjects: [...project.selectedObjects],
+      sourceObjects: [...project.sel.selectedObjects],
       sourceLayers: null,
     });
   }
@@ -127,7 +127,7 @@
           'G-code include op — splices an external file into the program. The file may carry its own toolchange; no project tool required at this slot.',
       };
     }
-    if (!project.tools.find((t) => t.id === op.toolId)) {
+    if (!project.data.tools.find((t) => t.id === op.toolId)) {
       return {
         label: '✘',
         tone: 'bad',
@@ -161,7 +161,7 @@
         };
       }
     }
-    if (project.dirty) {
+    if (project.data.dirty) {
       return {
         label: '⚠',
         tone: 'warn',
@@ -169,14 +169,14 @@
           "Project changed since the last Generate — re-Generate to refresh this operation's G-code.",
       };
     }
-    if (!project.generated) {
+    if (!project.gen.generated) {
       return {
         label: '·',
         tone: 'warn',
         reason: "Not generated yet — click Generate to produce this operation's G-code.",
       };
     }
-    const opWarnings = (project.generated.warnings ?? []).filter((w) => w.op_id === op.id);
+    const opWarnings = (project.gen.generated.warnings ?? []).filter((w) => w.op_id === op.id);
     if (opWarnings.length > 0) {
       const bad = opWarnings.find(
         (w) => w.kind === 'tool_kind_mismatch' || w.kind === 'tool_geometry_impossible',
@@ -193,19 +193,19 @@
   /// Status tones from non-panel reasons (missing tool, orphan source)
   /// stay a plain tooltip — there's nothing to reveal in the panel.
   function opHasPanelWarning(op: OpEntry): boolean {
-    return (project.generated?.warnings ?? []).some((w) => w.op_id === op.id);
+    return (project.gen.generated?.warnings ?? []).some((w) => w.op_id === op.id);
   }
 
   function selectOp(id: number) {
-    const wasSelected = project.selectedOpId === id;
-    project.selectedOpId = wasSelected ? null : id;
+    const wasSelected = project.sel.selectedOpId === id;
+    project.sel.selectedOpId = wasSelected ? null : id;
     if (!wasSelected) {
       // gucf: highlight the op's source objects on the canvas so the
       // user can see what this op will cut. Only act when sourceObjects
       // is explicitly set — when undefined the op runs over "all" or
       // "all in these layers", and overwriting the canvas selection
       // with that potentially-huge set would surprise mid-edit.
-      const op = project.operations.find((o) => o.id === id);
+      const op = project.data.operations.find((o) => o.id === id);
       if (op?.sourceObjects && op.sourceObjects.length > 0) {
         project.selectObjects(op.sourceObjects, 'replace');
       }
@@ -230,8 +230,8 @@
   /// frame_shape so the pipeline auto-derives a rectangular frame from
   /// the current selection at generate time.
   function addPocketOutside() {
-    if (project.selectedObjects.size === 0) return;
-    const endmill = project.tools.find((t) => t.kind === 'endmill') ?? project.tools[0];
+    if (project.sel.selectedObjects.size === 0) return;
+    const endmill = project.data.tools.find((t) => t.kind === 'endmill') ?? project.data.tools[0];
     const toolDiameter = endmill?.diameter ?? 3;
     project.history.beginTransaction('Add Pocket Outside');
     try {
@@ -240,7 +240,7 @@
         name: 'Pocket Outside',
         toolId: endmill?.id ?? op.toolId,
         sourceLayers: null,
-        sourceObjects: [...project.selectedObjects],
+        sourceObjects: [...project.sel.selectedObjects],
         sourceCombine: 'difference',
         frameShape: 'rectangle',
         framePaddingMm: 3 * toolDiameter,
@@ -272,7 +272,7 @@
   }
   function onDrop(_e: DragEvent, id: number) {
     if (dragId == null) return;
-    const targetIdx = project.operations.findIndex((o) => o.id === id);
+    const targetIdx = project.data.operations.findIndex((o) => o.id === id);
     if (targetIdx >= 0) project.reorderOperation(dragId, targetIdx);
     dragId = null;
     dragOverId = null;
@@ -286,11 +286,11 @@
   /// drag-grip's mouse-only counterpart, audit xc3a). Roving tabindex
   /// on each row: only the selected op is in the tab order.
   function onListKey(e: KeyboardEvent) {
-    const ops = project.operations;
+    const ops = project.data.operations;
     if (ops.length === 0) return;
     const curIdx = Math.max(
       0,
-      ops.findIndex((o) => o.id === project.selectedOpId),
+      ops.findIndex((o) => o.id === project.sel.selectedOpId),
     );
     // Alt + Arrow: reorder — keyboard counterpart to drag-grip. Checked
     // BEFORE the bare-arrow navigation branches below, because both keys
@@ -350,7 +350,7 @@
       {active ? '▾' : '▸'}
     </button>
     <span class="group-name">Operations</span>
-    <span class="group-count" title="Number of operations">{project.operations.length}</span>
+    <span class="group-count" title="Number of operations">{project.data.operations.length}</span>
     <button
       class="add-btn"
       onclick={(e) => {
@@ -372,7 +372,7 @@
       </div>
     {/if}
 
-    {#if project.operations.length > 1}
+    {#if project.data.operations.length > 1}
       <!-- l8lk: project-level tool-change-order optimization. Groups
            consecutive same-tool ops so a T1/T2/T1 program emits one
            tool change instead of two. Pin individual ops (in the op
@@ -383,14 +383,14 @@
       >
         <input
           type="checkbox"
-          checked={project.groupOpsByTool}
+          checked={project.data.groupOpsByTool}
           onchange={(e) => project.setGroupOpsByTool((e.currentTarget as HTMLInputElement).checked)}
         />
         Group ops by tool
       </label>
     {/if}
 
-    {#if project.operations.length === 0}
+    {#if project.data.operations.length === 0}
       <div class="empty-card">
         <p class="empty-title">No operations yet</p>
         <p class="empty-sub">
@@ -402,9 +402,9 @@
       </div>
     {:else}
       <ul role="listbox" class="ops-list" tabindex="-1" onkeydown={onListKey}>
-        {#each project.operations as op (op.id)}
+        {#each project.data.operations as op (op.id)}
           {@const status = statusFor(op)}
-          {@const selected = project.selectedOpId === op.id}
+          {@const selected = project.sel.selectedOpId === op.id}
           {@const dragOver = dragOverId === op.id}
           {@const orphans = orphansFor(op)}
           {@const hasOrphans = orphans.objectIds.length > 0 || orphans.layers.length > 0}
@@ -480,14 +480,14 @@
               {#if hasOrphans}
                 <button
                   class="repick"
-                  disabled={project.selectedObjects.size === 0}
+                  disabled={project.sel.selectedObjects.size === 0}
                   onclick={(e) => {
                     e.stopPropagation();
                     repickFromSelection(op.id);
                   }}
-                  title={project.selectedObjects.size === 0
+                  title={project.sel.selectedObjects.size === 0
                     ? `Source references ${orphans.objectIds.length} object id(s)${orphans.layers.length ? ` + ${orphans.layers.length} layer(s)` : ''} that no longer exist. Select objects on the canvas, then click Re-pick to attach them to this op.`
-                    : `Replace this op's source with the ${project.selectedObjects.size} currently-selected object${project.selectedObjects.size === 1 ? '' : 's'}.`}
+                    : `Replace this op's source with the ${project.sel.selectedObjects.size} currently-selected object${project.sel.selectedObjects.size === 1 ? '' : 's'}.`}
                   aria-label={`Re-pick source for operation ${op.name}`}
                 >
                   Re-pick

@@ -91,8 +91,8 @@ export async function acceptReopen(): Promise<void> {
   // the previous behavior (audit zxee). If the user had every layer
   // hidden when they closed (rare but possible), expand to
   // all-visible so the user isn't staring at an empty canvas.
-  if (project.transformedImport && project.visibleLayers.size === 0) {
-    project.visibleLayers = new Set(project.transformedImport.layers.map((l) => l.name));
+  if (project.transformedImport && project.data.visibleLayers.size === 0) {
+    project.data.visibleLayers = new Set(project.transformedImport.layers.map((l) => l.name));
   }
 }
 
@@ -122,8 +122,8 @@ export function dismissReopenOnceLoaded(): void {
 /// when the user adjusts visible layers / selected op / playhead. The
 /// `void` reads register the effect's subscriptions.
 export function persistPerProjectStateOnChange(): void {
-  void project.visibleLayers;
-  void project.selectedOpId;
+  void project.data.visibleLayers;
+  void project.sel.selectedOpId;
   void project.playhead;
   if (project.activeProjectPath) {
     project.persistPerProjectState();

@@ -34,7 +34,7 @@
   let lastTs = 0;
 
   $effect(() => {
-    if (playing && project.generated) {
+    if (playing && project.gen.generated) {
       lastTs = performance.now();
       raf = requestAnimationFrame(tick);
     }
@@ -55,7 +55,7 @@
   }
 
   function togglePlay() {
-    if (!project.generated) return;
+    if (!project.gen.generated) return;
     if (project.playhead >= 0.999) project.playhead = 0;
     playing = !playing;
   }
@@ -66,7 +66,7 @@
   /// nothing.
   function onWindowKeydown(e: KeyboardEvent) {
     if (e.code !== 'Space' && e.key !== ' ') return;
-    if (!project.generated) return;
+    if (!project.gen.generated) return;
     const t = e.target as HTMLElement | null;
     const tag = t?.tagName ?? '';
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t?.isContentEditable) {
@@ -86,8 +86,8 @@
   /// markers line up with the slider. Returns null when there's no
   /// length table yet.
   function segIdxToFraction(segIdx: number): number | null {
-    const cum = project.toolpathCumLen;
-    const total = project.toolpathTotalLen;
+    const cum = project.gen.toolpathCumLen;
+    const total = project.gen.toolpathTotalLen;
     if (!cum || cum.length === 0 || total <= 0) return null;
     const i = Math.max(0, Math.min(cum.length - 1, segIdx));
     return Math.max(0, Math.min(1, cum[i] / total));
@@ -102,7 +102,7 @@
     }
   }
 
-  let warnings = $derived(project.simDiagnostics?.warnings ?? []);
+  let warnings = $derived(project.gen.simDiagnostics?.warnings ?? []);
 
   // Op chapters — driven by the same `; OP N` markers GcodePanel reads.
   // Each chapter that produces at least one motion segment becomes a
@@ -112,9 +112,9 @@
     segIdx: number;
     fraction: number;
   }
-  const gcodeLines = $derived(project.generated?.gcode.split('\n') ?? []);
-  const gcodeIdx = $derived(project.generated?.gcode_index ?? null);
-  const chapters = $derived(parseGcodeChapters(gcodeLines, project.operations));
+  const gcodeLines = $derived(project.gen.generated?.gcode.split('\n') ?? []);
+  const gcodeIdx = $derived(project.gen.generated?.gcode_index ?? null);
+  const chapters = $derived(parseGcodeChapters(gcodeLines, project.data.operations));
 
   const chapterTicks = $derived.by<ChapterTick[]>(() => {
     if (!gcodeIdx) return [];
@@ -193,7 +193,7 @@
 
 <svelte:window onkeydown={onWindowKeydown} />
 
-{#if project.generated && project.generated.toolpath.length > 0}
+{#if project.gen.generated && project.gen.generated.toolpath.length > 0}
   <div class="bar">
     <button
       type="button"
@@ -208,7 +208,7 @@
     <button
       class="play"
       onclick={togglePlay}
-      disabled={!project.generated}
+      disabled={!project.gen.generated}
       aria-label={playing ? 'Pause' : 'Play'}
       title={playing ? 'Pause' : 'Play'}
     >
@@ -236,7 +236,7 @@
         aria-valuetext={chapterTicks.length > 0 && activeTickIdx >= 0
           ? `${Math.round(project.playhead * 100)} percent · ${chapterTicks[activeTickIdx].chapter.name}`
           : `${Math.round(project.playhead * 100)} percent`}
-        title={project.settings.exactSimRewind
+        title={project.data.settings.exactSimRewind
           ? 'Scrub: the 3D heightfield exactly tracks the playhead — backstep reruns the carve from t=0. On very long programs this may stutter; toggle "Exact 3D rewind" off in Settings → Performance for fast scrubbing at the price of time-accurate rewind.'
           : 'Scrub: the 3D heightfield is forward-only — backstep is a no-op for the sim. Cells retain their deepest-ever cuts. After Generate the playhead sits at 1.0 so the terrain may read as end-of-program until you re-scrub forward. Toggle "Exact 3D rewind" ON in Settings → Performance for time-accurate backstep.'}
       />
@@ -287,11 +287,11 @@
     >
     <span class="counter">
       {(() => {
-        const total = project.generated.toolpath.length;
+        const total = project.gen.generated.toolpath.length;
         const mapped = playheadToSegment(
           project.playhead,
-          project.toolpathCumLen,
-          project.toolpathTotalLen,
+          project.gen.toolpathCumLen,
+          project.gen.toolpathTotalLen,
         );
         const shown =
           mapped.segIdx >= 0

@@ -9,22 +9,24 @@
   let { onCancel }: { onCancel: () => void } = $props();
 
   let percent = $derived(
-    project.pipelineProgress
+    project.gen.pipelineProgress
       ? Math.round(
-          ((project.pipelineProgress.opIdx + project.pipelineProgress.opFraction) /
-            Math.max(1, project.pipelineProgress.opTotal)) *
+          ((project.gen.pipelineProgress.opIdx + project.gen.pipelineProgress.opFraction) /
+            Math.max(1, project.gen.pipelineProgress.opTotal)) *
             100,
         )
       : 0,
   );
   let label = $derived(
-    project.pipelineProgress
-      ? `${project.pipelineProgress.opIdx + 1} / ${project.pipelineProgress.opTotal} — ${project.pipelineProgress.opName}`
+    project.gen.pipelineProgress
+      ? `${project.gen.pipelineProgress.opIdx + 1} / ${project.gen.pipelineProgress.opTotal} — ${project.gen.pipelineProgress.opName}`
       : '',
   );
-  let cancelling = $derived(project.pipelineState === 'cancelling');
+  let cancelling = $derived(project.gen.pipelineState === 'cancelling');
   let cachedHint = $derived(
-    project.lastGenerateCachedCount > 0 ? ` (${project.lastGenerateCachedCount} cached)` : '',
+    project.gen.lastGenerateCachedCount > 0
+      ? ` (${project.gen.lastGenerateCachedCount} cached)`
+      : '',
   );
 </script>
 

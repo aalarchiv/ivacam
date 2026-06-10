@@ -34,7 +34,7 @@
   let loadError = $state<string | null>(null);
   let fileInput: HTMLInputElement | null = $state(null);
 
-  const source = $derived(project.reliefSources.find((s) => s.id === op.sourceId) ?? null);
+  const source = $derived(project.data.reliefSources.find((s) => s.id === op.sourceId) ?? null);
   const widthMm = $derived(source ? source.cols * source.cell : 0);
   const heightMm = $derived(source ? source.rows * source.cell : 0);
 
@@ -43,7 +43,7 @@
   const effectiveResMm = $derived(op.resolutionMm > 0 ? op.resolutionMm : source ? source.cell : 0);
   const dpi = $derived(effectiveResMm > 0 ? Math.round(25.4 / effectiveResMm) : 0);
 
-  const tool = $derived(project.tools.find((t) => t.id === op.toolId) ?? null);
+  const tool = $derived(project.data.tools.find((t) => t.id === op.toolId) ?? null);
   const burnSeconds = $derived(
     source && tool
       ? estimateBurnSeconds({
@@ -215,10 +215,10 @@
         onchange={(e) =>
           patch('sourceId', parseInt((e.currentTarget as HTMLSelectElement).value, 10))}
       >
-        {#if project.reliefSources.length === 0}
+        {#if project.data.reliefSources.length === 0}
           <option value={0}>— none loaded —</option>
         {/if}
-        {#each project.reliefSources as s (s.id)}
+        {#each project.data.reliefSources as s (s.id)}
           <option value={s.id}>{s.name} ({s.cols}×{s.rows})</option>
         {/each}
       </select>

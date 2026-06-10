@@ -613,7 +613,7 @@ export function isIdentityFileTransform(t: FileTransform): boolean {
   );
 }
 
-/// One slot in `project.imports[]` (wrsu Phase 1). Each entry holds the
+/// One slot in `project.data.imports[]` (wrsu Phase 1). Each entry holds the
 /// imported drawing, its own non-destructive layout transform (bww),
 /// and the absolute path on disk for the source-file watcher.
 /// Multi-file workflows (wrsu Phase 2+) just push more entries onto

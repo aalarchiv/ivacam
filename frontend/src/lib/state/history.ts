@@ -4,14 +4,14 @@
 ///
 /// Excluded from history (view-state, not project state):
 ///   • project.playhead         — toolpath scrub position
-///   • project.selectedOpId     — currently-selected operation
-///   • project.selectedEntities — legacy per-segment selection
-///   • project.selectedFixtureId
-///   • project.visibleLayers    — layer visibility toggles
-///   • project.hoverSegment, project.tabMode, project.regionsVisible
-///   • project.settings         — per-installation prefs (localStorage)
-///   • project.error, project.dirty, project.loading, project.generating
-///   • project.simDiagnostics, project.generated, project.toolpath*
+///   • project.sel.selectedOpId     — currently-selected operation
+///   • project.sel.selectedEntities — legacy per-segment selection
+///   • project.sel.selectedFixtureId
+///   • project.data.visibleLayers    — layer visibility toggles
+///   • project.sel.hoverSegment, project.tabMode, project.data.regionsVisible
+///   • project.data.settings         — per-installation prefs (localStorage)
+///   • project.error, project.data.dirty, project.loading, project.gen.generating
+///   • project.gen.simDiagnostics, project.gen.generated, project.toolpath*
 ///
 /// Selection-aware commands (80gv): object selection IS in the undo
 /// stack so Ctrl+Z reverts to the previous selection set. Commands

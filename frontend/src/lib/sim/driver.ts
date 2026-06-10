@@ -1,5 +1,5 @@
 /// Glue between the WASM Simulator (jbj) and the HeightfieldMesh (hvv):
-/// owns one Simulator + one HeightfieldMesh per active project.generated,
+/// owns one Simulator + one HeightfieldMesh per active project.gen.generated,
 /// drives advance() on playhead change, and refreshes the affected mesh
 /// region using the Float32Array view re-taken after every advance.
 ///
@@ -10,7 +10,7 @@
 ///     re-take the Float32Array view (memory growth can detach the old
 ///     one), and call mesh.updateHeights(view, aabb).
 ///   * scrub backward: reset the simulator and replay 0..head.
-///   * project.generated changes: rebuild both Simulator + mesh.
+///   * project.gen.generated changes: rebuild both Simulator + mesh.
 
 import * as THREE from 'three';
 import { HeightfieldMeshPyramid, pickMinLodLevelForBudget } from './heightfield_mesh';
@@ -526,7 +526,7 @@ export class HeightfieldDriver {
     };
     // Defensive re-cache if the toolpath identity drifts from the
     // build()-time snapshot (e.g. a Generate response replaced
-    // `project.generated.toolpath` without going through build()).
+    // `project.gen.generated.toolpath` without going through build()).
     // The common path is a no-op compare (audit-9l52).
     if (segments !== this.cachedToolpath) {
       this.sim.set_toolpath(segments);

@@ -62,12 +62,12 @@ export function addImported(p: ProjectState, r: ImportResponse, sourcePath?: str
   p.history.exec(setImportsCommand(before, after, label), p.target());
   // Visibility lives outside history (UI-only); reveal the new layers
   // now even though undo won't reverse the toggle.
-  const nextVis = new Set(p.visibleLayers);
+  const nextVis = new Set(p.data.visibleLayers);
   for (const l of r.layers) nextVis.add(l.name);
-  p.visibleLayers = nextVis;
-  p.generated = null;
-  p.toolpathCumLen = null;
-  p.toolpathTotalLen = 0;
+  p.data.visibleLayers = nextVis;
+  p.gen.generated = null;
+  p.gen.toolpathCumLen = null;
+  p.gen.toolpathTotalLen = 0;
   p.error = null;
   void refreshSourceWatch(p);
 }
@@ -86,11 +86,11 @@ export function removeImport(p: ProjectState, id: number) {
   const stillThere = new Set<string>();
   for (const e of after) for (const l of e.source.layers) stillThere.add(l.name);
   const filtered = new Set<string>();
-  for (const l of p.visibleLayers) if (stillThere.has(l)) filtered.add(l);
-  p.visibleLayers = filtered;
-  p.generated = null;
-  p.toolpathCumLen = null;
-  p.toolpathTotalLen = 0;
+  for (const l of p.data.visibleLayers) if (stillThere.has(l)) filtered.add(l);
+  p.data.visibleLayers = filtered;
+  p.gen.generated = null;
+  p.gen.toolpathCumLen = null;
+  p.gen.toolpathTotalLen = 0;
   void refreshSourceWatch(p);
 }
 
@@ -106,7 +106,7 @@ export function setImported(p: ProjectState, r: ImportResponse, sourcePath?: str
   // (unless it already sits fully inside the bed) so the emitted g-code
   // is reachable. Translate-only; flows through the normal FileTransform
   // path so the pipeline / g-code see the placed coordinates.
-  const placement = placementFileTransform(r.bbox, p.machine.workArea);
+  const placement = placementFileTransform(r.bbox, p.data.machine.workArea);
   p.data.imports = [
     {
       id: prev?.id ?? 1,
@@ -115,20 +115,20 @@ export function setImported(p: ProjectState, r: ImportResponse, sourcePath?: str
       lastImportPath: nextPath,
     },
   ];
-  p.generated = null;
-  p.toolpathCumLen = null;
-  p.toolpathTotalLen = 0;
-  p.dirty = true;
+  p.gen.generated = null;
+  p.gen.toolpathCumLen = null;
+  p.gen.toolpathTotalLen = 0;
+  p.data.dirty = true;
   // A raw drawing import is not a saved project — even before any edit,
   // discarding it loses the user's imported work, so `hasUnsavedWork`
   // must flag it. `restore()` calls setImported while loading a saved
   // project and flips this back to true at its end.
   p.savedToProject = false;
   p.error = null;
-  p.visibleLayers = new Set(r.layers.map((l) => l.name));
-  p.selectedEntities = new Set();
-  p.selectedObjects = new Set();
-  p.hoverSegment = null;
+  p.data.visibleLayers = new Set(r.layers.map((l) => l.name));
+  p.sel.selectedEntities = new Set();
+  p.sel.selectedObjects = new Set();
+  p.sel.hoverSegment = null;
   p.sourceFileStaleNotice = null;
   // gldc: auto-default work_offset to the geometry bbox's bottom-left
   // when the drawing was authored off-origin in CAD and the user
@@ -146,7 +146,7 @@ export function setImported(p: ProjectState, r: ImportResponse, sourcePath?: str
     max_x: r.bbox.max_x + placement.translate.x,
     max_y: r.bbox.max_y + placement.translate.y,
   };
-  p.data.workOffset = inferDefaultWorkOffset(placedBbox, p.workOffset);
+  p.data.workOffset = inferDefaultWorkOffset(placedBbox, p.data.workOffset);
   // Replacing the imported geometry implies a new project boundary —
   // drop any text-preview segments cached from the previous project
   // so we don't paint stale TextLayer glyphs over the new file.
@@ -226,7 +226,7 @@ export async function reimportFromPath(p: ProjectState, path: string): Promise<b
   const next = [...p.data.imports];
   next[idx] = { ...next[idx], source: after };
   p.data.imports = next;
-  p.dirty = true;
+  p.data.dirty = true;
   p.sourceFileStaleNotice = null;
   // Orphan-source detection runs against the merged view (post-reload)
   // so ops keyed by ids from OTHER imports still see their objects.
@@ -235,7 +235,7 @@ export async function reimportFromPath(p: ProjectState, path: string): Promise<b
   // Use the augmented view so an op targeting the synthetic stock
   // outline (STOCK_OUTLINE_ID) isn't mistaken for an orphan (8jce).
   const presentIds = new Set(p.geometryView?.objects ?? []);
-  for (const op of p.operations) {
+  for (const op of p.data.operations) {
     if (!Array.isArray(op.sourceObjects) || op.sourceObjects.length === 0) continue;
     const orphans = op.sourceObjects.filter((id) => !presentIds.has(id));
     if (orphans.length > 0) {
@@ -248,10 +248,10 @@ export async function reimportFromPath(p: ProjectState, path: string): Promise<b
 }
 
 export function toggleLayer(p: ProjectState, name: string) {
-  const next = new Set(p.visibleLayers);
+  const next = new Set(p.data.visibleLayers);
   if (next.has(name)) next.delete(name);
   else next.add(name);
-  p.visibleLayers = next;
+  p.data.visibleLayers = next;
 }
 
 /// Delete every imported segment that belongs to `layerName`. Drops
@@ -293,10 +293,10 @@ export function removeImportedLayer(p: ProjectState, layerName: string) {
   p.history.exec(setImportsCommand(before, after, `Delete layer "${layerName}"`), p.target());
   // Drop visibility tracking for the gone layer too — visibleLayers
   // lives outside the command target, so this is a plain mutation.
-  if (p.visibleLayers.has(layerName)) {
-    const next = new Set(p.visibleLayers);
+  if (p.data.visibleLayers.has(layerName)) {
+    const next = new Set(p.data.visibleLayers);
     next.delete(layerName);
-    p.visibleLayers = next;
+    p.data.visibleLayers = next;
   }
   p.history.commitTransaction();
 }
@@ -430,7 +430,7 @@ export function appendImportedSegments(
   };
   const after: ImportEntry[] = [{ ...seedEntry, source: afterSource }, ...before.slice(1)];
   p.history.exec(setImportsCommand(before, after, 'Add geometry'), p.target());
-  p.visibleLayers = new Set([...p.visibleLayers, layerName]);
+  p.data.visibleLayers = new Set([...p.data.visibleLayers, layerName]);
 
   // Return the de-duplicated set of new object ids (in insertion order).
   const distinct: number[] = [];
@@ -539,7 +539,7 @@ function computeOpPatchesForXfDelta(
     Number(beforeXf.mirrorX) !== Number(afterXf.mirrorX) ||
     Number(beforeXf.mirrorY) !== Number(afterXf.mirrorY);
   const out: { opId: number; patch: OpPatch }[] = [];
-  for (const op of p.operations) {
+  for (const op of p.data.operations) {
     // approachPoint + tabPlacements live on contour ops only.
     // Non-contour ops (Drill / VCarve / …) have no markers to keep
     // attached, so skip them — also avoids narrowing pain on the

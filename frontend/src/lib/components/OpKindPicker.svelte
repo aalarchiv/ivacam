@@ -136,7 +136,7 @@
   let { onPick, requireSelectionForPocketOutside = true }: Props = $props();
 
   const pocketOutsideDisabled = $derived(
-    requireSelectionForPocketOutside && project.selectedObjects.size === 0,
+    requireSelectionForPocketOutside && project.sel.selectedObjects.size === 0,
   );
 
   /// h0tx: each op kind's required machine capability. The picker
@@ -172,9 +172,9 @@
     gcode_include: ['mill', 'laser', 'drag', 'plasma'],
   };
   const machineCapabilities = $derived<('mill' | 'laser' | 'drag' | 'plasma')[]>(
-    project.machine.capabilities && project.machine.capabilities.length > 0
-      ? project.machine.capabilities
-      : [project.machine.mode],
+    project.data.machine.capabilities && project.data.machine.capabilities.length > 0
+      ? project.data.machine.capabilities
+      : [project.data.machine.mode],
   );
   function isPickerKindSupported(kind: PickerKind): boolean {
     const req = OP_REQUIRES[kind];

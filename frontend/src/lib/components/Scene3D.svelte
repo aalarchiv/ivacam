@@ -114,7 +114,7 @@
       renderHeightPx: renderer.domElement.clientHeight,
     });
     if (ppc == null) return;
-    driver.setLodHint(ppc, project.settings.maxRenderTriangles);
+    driver.setLodHint(ppc, project.data.settings.maxRenderTriangles);
   }
 
   /// Apply the saved camera pose, if any. Run once after the initial
@@ -183,7 +183,7 @@
 
   /// Heightfield-based cutting simulator. Lazy-loaded on first need
   /// (the WASM module is async). Owns its own group inside `scene`;
-  /// shows / hides per project.settings.previewMode.
+  /// shows / hides per project.data.settings.previewMode.
   let driver: HeightfieldDriver | undefined;
   let driverInitPromise: Promise<void> | undefined;
   /// Cache the inputs that trigger a sim rebuild (footprint or grid
@@ -225,7 +225,7 @@
     // With nothing selected the menu is just the "click geometry to
     // select" hint — show it at most once per session (shared with the
     // 2D pane) instead of nagging on every empty right-click.
-    if (project.selectedObjects.size === 0 && !consumeSelectHint()) return;
+    if (project.sel.selectedObjects.size === 0 && !consumeSelectHint()) return;
     const rect = host.getBoundingClientRect();
     const x = Math.max(4, Math.min(clientX - rect.left, host.clientWidth - 260));
     const y = Math.max(4, Math.min(clientY - rect.top, host.clientHeight - 220));
@@ -485,7 +485,7 @@
   // bumps `previewVersion`). Keying on the id set instead of the raw array
   // stops a full imported-geometry teardown/rebuild on every pointermove
   // of a text-origin drag (k9cz).
-  const textLayerIdKey = $derived(project.textLayers.map((l) => l.id).join(','));
+  const textLayerIdKey = $derived(project.data.textLayers.map((l) => l.id).join(','));
 
   // Imported drawing + text-layer previews. textLayerIdKey (not the raw
   // textLayers array) keys the text-layer dep so a text-origin drag doesn't
@@ -497,15 +497,15 @@
     void themeVersion;
     importedBuilder?.build({
       data: project.transformedImport,
-      visibleLayers: project.visibleLayers,
-      operations: project.operations, // op-source assignments drive the tint
-      selectedOpId: project.selectedOpId, // selected op renders emphasized
-      selectedObjects: project.selectedObjects,
-      textLayers: project.textLayers,
-      hasGenerated: !!project.generated, // affects fade for non-selected imports
-      previewMode: project.settings.previewMode, // contrast-against-stock color
-      edgeColor: project.settings.edgeColor,
-      lineWidth: project.settings.previewLineWidth,
+      visibleLayers: project.data.visibleLayers,
+      operations: project.data.operations, // op-source assignments drive the tint
+      selectedOpId: project.sel.selectedOpId, // selected op renders emphasized
+      selectedObjects: project.sel.selectedObjects,
+      textLayers: project.data.textLayers,
+      hasGenerated: !!project.gen.generated, // affects fade for non-selected imports
+      previewMode: project.data.settings.previewMode, // contrast-against-stock color
+      edgeColor: project.data.settings.edgeColor,
+      lineWidth: project.data.settings.previewLineWidth,
       wireVisible,
       width: host?.clientWidth || 1,
       height: host?.clientHeight || 1,
@@ -530,17 +530,17 @@
     // in-place fade during a scrub.
     const fade = untrack(() => ({
       playhead: project.playhead,
-      cumLen: project.toolpathCumLen,
-      totalLen: project.toolpathTotalLen,
+      cumLen: project.gen.toolpathCumLen,
+      totalLen: project.gen.toolpathTotalLen,
     }));
     // rt1.12 (nrob): the raster heatmap re-derives S from the source
     // brightness + placement, so refresh when a source changes.
     toolpathBuilder?.build({
-      generated: project.generated,
-      operations: project.operations,
-      reliefSources: project.reliefSources,
-      arrowDensity: project.settings.toolMoveArrowDensity,
-      lineWidth: project.settings.previewLineWidth,
+      generated: project.gen.generated,
+      operations: project.data.operations,
+      reliefSources: project.data.reliefSources,
+      arrowDensity: project.data.settings.toolMoveArrowDensity,
+      lineWidth: project.data.settings.previewLineWidth,
       width: host?.clientWidth || 1,
       height: host?.clientHeight || 1,
       wireVisible,
@@ -555,7 +555,7 @@
   // Fat-line thickness (68ab): update the live materials in place rather
   // than rebuilding geometry, so dragging the slider is cheap.
   $effect(() => {
-    const lw = Math.max(0.5, project.settings.previewLineWidth);
+    const lw = Math.max(0.5, project.data.settings.previewLineWidth);
     importedBuilder?.setLineWidth(lw);
     toolpathBuilder?.setLineWidth(lw);
     requestRender();
@@ -564,7 +564,7 @@
   // Keep the text-preview cache warm independent of the 2D canvas — the
   // user might never visit 2D and still expects text to show in 3D.
   $effect(() => {
-    for (const layer of project.textLayers) {
+    for (const layer of project.data.textLayers) {
       requestPreview(layer);
     }
   });
@@ -573,7 +573,7 @@
   $effect(() => {
     tabsBuilder?.build({
       imported: project.transformedImport,
-      operations: project.operations,
+      operations: project.data.operations,
     });
     requestRender();
   });
@@ -584,9 +584,9 @@
   // stays uncluttered.
   $effect(() => {
     approachBuilder?.build({
-      selectedOpId: project.selectedOpId,
-      operations: project.operations,
-      fastMoveZ: project.machine.fastMoveZ,
+      selectedOpId: project.sel.selectedOpId,
+      operations: project.data.operations,
+      fastMoveZ: project.data.machine.fastMoveZ,
     });
     requestRender();
   });
@@ -595,10 +595,10 @@
   // toolpath wireframe.
   $effect(() => {
     stockBuilder?.build({
-      stock: project.stock,
-      showStockBox: project.settings.showStockBox,
+      stock: project.data.stock,
+      showStockBox: project.data.settings.showStockBox,
       imported: project.transformedImport,
-      workArea: project.machine.workArea,
+      workArea: project.data.machine.workArea,
     });
     requestRender();
   });
@@ -608,7 +608,7 @@
   // as "limit, not solid", and dim opacity so it sits in the back of
   // the scene without competing with the toolpath.
   $effect(() => {
-    workAreaBuilder?.build({ workArea: project.machine.workArea });
+    workAreaBuilder?.build({ workArea: project.data.machine.workArea });
     requestRender();
   });
 
@@ -616,8 +616,8 @@
   // No reason to rebuild the toolpath when the user clicks a fixture.
   $effect(() => {
     fixturesBuilder?.build({
-      fixtures: project.fixtures,
-      selectedFixtureId: project.selectedFixtureId,
+      fixtures: project.data.fixtures,
+      selectedFixtureId: project.sel.selectedFixtureId,
     });
     requestRender();
   });
@@ -646,9 +646,10 @@
   let lastLayerCount = -1;
   let lastGenVersion = -1;
   $effect(() => {
-    const importCount = project.imports.length;
-    const layerCount = (project.transformedImport?.layers.length ?? 0) + project.textLayers.length;
-    const genVersion = project.generatedVersion;
+    const importCount = project.data.imports.length;
+    const layerCount =
+      (project.transformedImport?.layers.length ?? 0) + project.data.textLayers.length;
+    const genVersion = project.gen.generatedVersion;
     const grew = importCount > lastImportCount || layerCount > lastLayerCount;
     const regenerated = genVersion !== lastGenVersion;
     lastImportCount = importCount;
@@ -662,7 +663,7 @@
   /// Falls through to a full rebuild only if the geometry is missing
   /// (e.g. before the first rebuild has run).
   $effect(() => {
-    const sel = project.selectedObjects;
+    const sel = project.sel.selectedObjects;
     if (!importedBuilder?.pickable) {
       // Geometry hasn't been built yet; the next build picks up the current
       // selection naturally.
@@ -673,18 +674,22 @@
   });
 
   $effect(() => {
-    void project.machine; // mode drives the cutter shape; whole-machine dep
+    void project.data.machine; // mode drives the cutter shape; whole-machine dep
     toolGlyphBuilder?.build({
-      generated: project.generated,
+      generated: project.gen.generated,
       playhead: project.playhead,
-      cumLen: project.toolpathCumLen,
-      totalLen: project.toolpathTotalLen,
-      operations: project.operations, // op→tool assignment drives the cutter
-      selectedOpId: project.selectedOpId,
-      tools: project.tools,
-      machineMode: project.machine.mode,
+      cumLen: project.gen.toolpathCumLen,
+      totalLen: project.gen.toolpathTotalLen,
+      operations: project.data.operations, // op→tool assignment drives the cutter
+      selectedOpId: project.sel.selectedOpId,
+      tools: project.data.tools,
+      machineMode: project.data.machine.mode,
     });
-    toolpathBuilder?.applyFade(project.playhead, project.toolpathCumLen, project.toolpathTotalLen);
+    toolpathBuilder?.applyFade(
+      project.playhead,
+      project.gen.toolpathCumLen,
+      project.gen.toolpathTotalLen,
+    );
     requestRender();
   });
 
@@ -711,7 +716,7 @@
   /// functions so freshly-created LineSegments start with the right
   /// visibility (otherwise toggling solid → wireframe would only affect
   /// the buffer that was alive at the toggle moment).
-  const wireVisible = $derived(project.settings.previewMode !== 'solid');
+  const wireVisible = $derived(project.data.settings.previewMode !== 'solid');
 
   /// Build a per-segment tool resolver for the sim: each toolpath segment
   /// is carved with ITS op's tool (looked up by op_id), so a multi-op
@@ -719,17 +724,17 @@
   /// with the correct cutter cross-section instead of one tool for all.
   function toolForSegment(segs: ToolpathSegment[]): (i: number) => ToolEntry {
     const byOp = new Map<number, ToolEntry>();
-    for (const op of project.operations) {
-      const t = project.tools.find((tt) => tt.id === op.toolId);
+    for (const op of project.data.operations) {
+      const t = project.data.tools.find((tt) => tt.id === op.toolId);
       if (t) byOp.set(op.id, t);
     }
-    const fallback = project.tools[0];
+    const fallback = project.data.tools[0];
     return (i) => byOp.get(segs[i]?.op_id ?? -1) ?? fallback;
   }
 
   $effect(() => {
     if (!scene) return;
-    const settings = project.settings;
+    const settings = project.data.settings;
     // Wire-mesh visibility tracks the preview mode: wireframe / both
     // show the toolpath + imported lines; solid hides them in favor of
     // the heightfield carved-stock mesh. wireVisible is a $derived at
@@ -742,9 +747,10 @@
       return;
     }
     const imported = project.transformedImport;
-    const generated = project.generated;
-    const firstOp = project.operations[0];
-    const tool = project.tools.find((t) => t.id === (firstOp?.toolId ?? 0)) ?? project.tools[0];
+    const generated = project.gen.generated;
+    const firstOp = project.data.operations[0];
+    const tool =
+      project.data.tools.find((t) => t.id === (firstOp?.toolId ?? 0)) ?? project.data.tools[0];
     if (!imported || !generated || !tool) {
       driver?.setVisible(false);
       requestRender();
@@ -756,7 +762,7 @@
     // fixture POSITIONS / GEOMETRY (not color or name). Hashing the full
     // fixture array re-rendered the sim every time the user tweaked a
     // fixture's color, which is a cosmetic-only change.
-    const fixturesKey = project.fixtures
+    const fixturesKey = project.data.fixtures
       .map((f) => {
         const k = f.kind;
         let shape: string;
@@ -768,12 +774,12 @@
       .join(';');
     const key = JSON.stringify({
       bbox: imported.bbox,
-      stock: project.stock,
+      stock: project.data.stock,
       tool_id: tool.id,
       tool_dia: tool.diameter,
       cellRes,
       maxCells: settings.maxSimulationCells,
-      gen_id: project.generatedVersion,
+      gen_id: project.gen.generatedVersion,
       fixturesKey,
     });
     if (key === lastSimKey) {
@@ -799,9 +805,9 @@
             imported,
             generated,
             tool,
-            stock: project.stock,
+            stock: project.data.stock,
             settings,
-            fixtures: project.fixtures,
+            fixtures: project.data.fixtures,
           });
           driver.setVisible(true);
           driver.setSolidVisible(
@@ -817,8 +823,8 @@
             project.playhead,
             generated.toolpath,
             toolForSegment(generated.toolpath),
-            project.toolpathCumLen,
-            project.toolpathTotalLen,
+            project.gen.toolpathCumLen,
+            project.gen.toolpathTotalLen,
           );
           // 9tba: select the right LOD level for the current camera
           // distance once the new pyramid exists, so the first paint
@@ -838,33 +844,33 @@
   $effect(() => {
     void project.playhead;
     if (!driver) return;
-    const generated = project.generated;
-    if (!generated || project.tools.length === 0) return;
+    const generated = project.gen.generated;
+    if (!generated || project.data.tools.length === 0) return;
     driver.advanceTo(
       project.playhead,
       generated.toolpath,
       toolForSegment(generated.toolpath),
-      project.toolpathCumLen,
-      project.toolpathTotalLen,
+      project.gen.toolpathCumLen,
+      project.gen.toolpathTotalLen,
       // 27ng: pass the user's exact-rewind preference through to the
       // driver. Default false leaves the heightfield untouched on
       // backstep (deepest-ever state retained); true triggers the
       // reset + forward-replay path.
-      project.settings.exactSimRewind,
+      project.data.settings.exactSimRewind,
     );
   });
 
   /// Live-apply cosmetic settings (color / opacity).
   $effect(() => {
-    void project.settings.solidColor;
-    void project.settings.solidOpacity;
-    void project.settings.edgeColor;
-    void project.settings.edgeOpacity;
+    void project.data.settings.solidColor;
+    void project.data.settings.solidOpacity;
+    void project.data.settings.edgeColor;
+    void project.data.settings.edgeOpacity;
     driver?.applyStyle({
-      solidColor: project.settings.solidColor,
-      solidOpacity: project.settings.solidOpacity,
-      edgeColor: project.settings.edgeColor,
-      edgeOpacity: project.settings.edgeOpacity,
+      solidColor: project.data.settings.solidColor,
+      solidOpacity: project.data.settings.solidOpacity,
+      edgeColor: project.data.settings.edgeColor,
+      edgeOpacity: project.data.settings.edgeOpacity,
     });
   });
 
@@ -885,8 +891,12 @@
   // Sim-warning tints: rebuild the toolpath's per-segment override map and
   // re-apply the fade (warnings can repaint any past/future segment).
   $effect(() => {
-    toolpathBuilder?.setWarnings(project.simDiagnostics?.warnings ?? []);
-    toolpathBuilder?.applyFade(project.playhead, project.toolpathCumLen, project.toolpathTotalLen);
+    toolpathBuilder?.setWarnings(project.gen.simDiagnostics?.warnings ?? []);
+    toolpathBuilder?.applyFade(
+      project.playhead,
+      project.gen.toolpathCumLen,
+      project.gen.toolpathTotalLen,
+    );
     requestRender();
   });
 
@@ -904,10 +914,10 @@
   let toolpathBuilder: ToolpathBuilder | undefined;
 
   $effect(() => {
-    void project.simDiagnostics;
+    void project.gen.simDiagnostics;
     warningMarkersBuilder?.build({
-      warnings: project.simDiagnostics?.warnings ?? [],
-      toolpath: project.generated?.toolpath,
+      warnings: project.gen.simDiagnostics?.warnings ?? [],
+      toolpath: project.gen.generated?.toolpath,
       sceneRadius,
     });
     requestRender();
@@ -919,16 +929,16 @@
   /// fixture).
   $effect(() => {
     void project.playhead;
-    void project.simDiagnostics;
-    void project.fixtures;
-    const warnings = project.simDiagnostics?.warnings ?? [];
+    void project.gen.simDiagnostics;
+    void project.data.fixtures;
+    const warnings = project.gen.simDiagnostics?.warnings ?? [];
     const collisions = warnings.filter((w) => w.kind === 'fixture_collision');
     const next = new Set<number>();
     if (collisions.length > 0) {
       const { segIdx } = playheadToSegment(
         project.playhead,
-        project.toolpathCumLen,
-        project.toolpathTotalLen,
+        project.gen.toolpathCumLen,
+        project.gen.toolpathTotalLen,
       );
       const window = 2;
       for (const w of collisions) {
@@ -1079,7 +1089,7 @@
   /// the current 3D selection. `pocket_outside` gets the same frame +
   /// difference-combine pre-fill as the 2D path.
   function pickFromCtx(kind: PickerKind) {
-    const sel = [...project.selectedObjects];
+    const sel = [...project.sel.selectedObjects];
     if (sel.length === 0) {
       ctxMenu = null;
       return;
@@ -1088,7 +1098,8 @@
     project.history.beginTransaction(label);
     try {
       if (kind === 'pocket_outside') {
-        const endmill = project.tools.find((t) => t.kind === 'endmill') ?? project.tools[0];
+        const endmill =
+          project.data.tools.find((t) => t.kind === 'endmill') ?? project.data.tools[0];
         const toolDiameter = endmill?.diameter ?? 3;
         const op = project.addOperation('pocket');
         project.updateOperation(op.id, {
@@ -1165,9 +1176,9 @@
       // Set playhead so the arc-length mapping lands at the end of the
       // picked segment (so the cutter sits there and gcode-panel scrolls
       // to the matching line).
-      const cum = project.toolpathCumLen;
-      const total = project.toolpathTotalLen;
-      const segs = project.generated?.toolpath.length ?? 0;
+      const cum = project.gen.toolpathCumLen;
+      const total = project.gen.toolpathTotalLen;
+      const segs = project.gen.generated?.toolpath.length ?? 0;
       if (cum && total > 0 && owner.segIdx >= 0 && owner.segIdx < cum.length) {
         project.playhead = Math.min(1, cum[owner.segIdx] / total);
       } else if (segs > 0) {
@@ -1203,7 +1214,7 @@
     </div>
   {/if}
   {#if ctxMenu}
-    {@const hasObjsSelected = project.selectedObjects.size > 0}
+    {@const hasObjsSelected = project.sel.selectedObjects.size > 0}
     {#if hasObjsSelected}
       <div
         class="ctx-menu"

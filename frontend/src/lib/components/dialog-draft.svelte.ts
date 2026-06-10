@@ -6,7 +6,7 @@
 /// cloned without a dirty check. One template now:
 ///
 ///   const dd = new DialogDraft<ToolEntry[]>();
-///   $effect(() => { if (open) dd.open($state.snapshot(project.tools)); });
+///   $effect(() => { if (open) dd.open($state.snapshot(project.data.tools)); });
 ///   // bind inputs to dd.draft…; on Save: commit(dd.draft); dd.markClean()
 ///   // on X / Esc / backdrop: if (dd.requestClose()) onClose();
 ///

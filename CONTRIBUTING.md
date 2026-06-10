@@ -203,6 +203,13 @@ HPGL today). Mirror the simplest existing one (GRBL):
   asserts a non-empty linuxcnc program comes out — keep it green.
 - Conventional commit messages preferred (`feat:`, `fix:`, `refactor:`, …)
   and reference the bd issue ID where relevant.
+- Versioning is plain semantic versioning `X.Y.Z` — **no pre-release
+  suffixes** (`-beta.1` etc.). Git tags are `vX.Y.Z` (`v0.0.0`,
+  `v0.1.0`, `v0.1.1`, …). Human-facing build identity (About dialog,
+  `/version` `git_sha`) appends the commit hash via
+  `git describe --always --dirty`, baked at build time by
+  `frontend/vite.config.ts` and `crates/ivac-tauri/build.rs` — the
+  `version` field itself stays the bare semver.
 - Keep bd issue IDs OUT of doc comments on wire types (anything
   `#[derive(JsonSchema)]` or otherwise registered in `schema.rs`): those
   comments become public text in `schema/openapi.yaml` and the generated

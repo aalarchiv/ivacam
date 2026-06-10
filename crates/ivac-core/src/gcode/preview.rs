@@ -487,6 +487,13 @@ fn strip_comment(line: &str) -> String {
     out
 }
 
+/// Register this module's wire types in the OpenAPI components map.
+/// Co-located with the type definitions so adding a wire type is
+/// a same-file edit; `crate::schema::components_schemas` composes these.
+pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
+    crate::schema::insert::<ToolpathSegment>(map, "ToolpathSegment");
+}
+
 #[cfg(test)]
 // Asserts compare gcode coordinates parsed verbatim from string literals
 // (e.g. "G1 X10 Y10" → 10.0) against the same literal — exact float
@@ -790,11 +797,4 @@ mod tests {
         assert_eq!(idx.lines_to_segment[0], super::NO_SEGMENT);
         assert_eq!(idx.lines_to_segment[1], super::NO_SEGMENT);
     }
-}
-
-/// Register this module's wire types in the OpenAPI components map.
-/// Co-located with the type definitions so adding a wire type is
-/// a same-file edit; `crate::schema::components_schemas` composes these.
-pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
-    crate::schema::insert::<ToolpathSegment>(map, "ToolpathSegment");
 }

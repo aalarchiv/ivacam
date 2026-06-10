@@ -415,7 +415,7 @@ mod tests {
 
     /// A straight medial-axis chain whose endpoint sits at R≈0
     /// (`target_z≈0`) must not produce any segment with vertical drop
-    /// > 0.05 mm at zero (or near-zero) horizontal travel. Before the
+    /// over 0.05 mm at zero (or near-zero) horizontal travel. Before the
     /// fix, the first cut move dropped Z by `dpp` while XY barely
     /// moved — V-bit snap territory. The lead-in ramp now spreads the
     /// drop over `dpp / tan(LEAD_IN_ANGLE_DEG)` mm of XY travel.

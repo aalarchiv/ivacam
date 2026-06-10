@@ -3290,7 +3290,7 @@ mod tests {
         let circle = |r: f64| -> Vec<Point2> {
             (0..96)
                 .map(|i| {
-                    let a = std::f64::consts::TAU * (i as f64) / 96.0;
+                    let a = std::f64::consts::TAU * f64::from(i) / 96.0;
                     Point2::new(r * a.cos(), r * a.sin())
                 })
                 .collect()

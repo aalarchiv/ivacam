@@ -2130,6 +2130,17 @@ fn emit_post_change_z<P: PostProcessor>(
 #[cfg(test)]
 mod tests;
 
+/// Register this module's wire types in the OpenAPI components map.
+/// Co-located with the type definitions so adding a wire type is
+/// a same-file edit; `crate::schema::components_schemas` composes these.
+pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
+    crate::schema::insert::<PipelineRequest>(map, "GenerateRequest");
+    crate::schema::insert::<PipelineResponse>(map, "GenerateResponse");
+    crate::schema::insert::<PipelineStats>(map, "GenerateStats");
+    crate::schema::insert::<RegionPreview>(map, "RegionPreview");
+    crate::schema::insert::<PipelineWarning>(map, "PipelineWarning");
+}
+
 #[cfg(test)]
 mod count_tool_changes_tests {
     use super::count_tool_changes;
@@ -2249,15 +2260,4 @@ mod count_tool_changes_tests {
         // One load (tool 1) + one internal swap to tool 2.
         assert_eq!(count_tool_changes(&project), 2);
     }
-}
-
-/// Register this module's wire types in the OpenAPI components map.
-/// Co-located with the type definitions so adding a wire type is
-/// a same-file edit; `crate::schema::components_schemas` composes these.
-pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
-    crate::schema::insert::<PipelineRequest>(map, "GenerateRequest");
-    crate::schema::insert::<PipelineResponse>(map, "GenerateResponse");
-    crate::schema::insert::<PipelineStats>(map, "GenerateStats");
-    crate::schema::insert::<RegionPreview>(map, "RegionPreview");
-    crate::schema::insert::<PipelineWarning>(map, "PipelineWarning");
 }

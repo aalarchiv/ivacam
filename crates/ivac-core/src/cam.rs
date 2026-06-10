@@ -327,6 +327,14 @@ pub fn segments_to_points(segments: &[Segment], interpolate: usize) -> Vec<Point
     out
 }
 
+/// Register this module's wire types in the OpenAPI components map.
+/// Co-located with the type definitions so adding a wire type is
+/// a same-file edit; `crate::schema::components_schemas` composes these.
+pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
+    crate::schema::insert::<VcObject>(map, "VcObject");
+    crate::schema::insert::<offsets::PolylineOffset>(map, "PolylineOffset");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -427,12 +435,4 @@ mod tests {
             assert!((p.x * p.x + p.y * p.y - 1.0).abs() < 1e-3);
         }
     }
-}
-
-/// Register this module's wire types in the OpenAPI components map.
-/// Co-located with the type definitions so adding a wire type is
-/// a same-file edit; `crate::schema::components_schemas` composes these.
-pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
-    crate::schema::insert::<VcObject>(map, "VcObject");
-    crate::schema::insert::<offsets::PolylineOffset>(map, "PolylineOffset");
 }

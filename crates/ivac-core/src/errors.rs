@@ -115,6 +115,16 @@ impl From<std::io::Error> for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Register this module's wire types in the OpenAPI components map.
+/// Co-located with the type definitions so adding a wire type is
+/// a same-file edit; `crate::schema::components_schemas` composes these.
+pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
+    crate::schema::insert::<Error>(map, "WiacError");
+    crate::schema::insert::<ErrorKind>(map, "WiacErrorKind");
+    crate::schema::insert::<AutoFix>(map, "WiacAutoFix");
+    crate::schema::insert::<SourceSpan>(map, "WiacSourceSpan");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,14 +197,4 @@ mod tests {
         let e = Error::bad_input("oops");
         assert_eq!(format!("{e}"), "oops");
     }
-}
-
-/// Register this module's wire types in the OpenAPI components map.
-/// Co-located with the type definitions so adding a wire type is
-/// a same-file edit; `crate::schema::components_schemas` composes these.
-pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
-    crate::schema::insert::<Error>(map, "WiacError");
-    crate::schema::insert::<ErrorKind>(map, "WiacErrorKind");
-    crate::schema::insert::<AutoFix>(map, "WiacAutoFix");
-    crate::schema::insert::<SourceSpan>(map, "WiacSourceSpan");
 }

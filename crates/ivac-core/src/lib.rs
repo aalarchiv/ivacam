@@ -118,6 +118,15 @@ pub fn compute_helix_radius(req: HelixRadiusRequest) -> HelixRadiusResponse {
     }
 }
 
+/// Register the crate-root wire types in the OpenAPI components map.
+/// Co-located with the type definitions so adding a wire type is
+/// a same-file edit; `crate::schema::components_schemas` composes these.
+pub(crate) fn register_schemas(map: &mut schema::SchemaMap) {
+    schema::insert::<ImportOutput>(map, "ImportResponse");
+    schema::insert::<HelixRadiusRequest>(map, "HelixRadiusRequest");
+    schema::insert::<HelixRadiusResponse>(map, "HelixRadiusResponse");
+}
+
 #[cfg(test)]
 mod tests {
     use super::{compute_helix_radius, HelixRadiusRequest};
@@ -178,13 +187,4 @@ mod tests {
         let reason = resp.fallback_reason.expect("expected a fallback reason");
         assert!(!reason.is_empty(), "fallback_reason should be non-empty");
     }
-}
-
-/// Register the crate-root wire types in the OpenAPI components map.
-/// Co-located with the type definitions so adding a wire type is
-/// a same-file edit; `crate::schema::components_schemas` composes these.
-pub(crate) fn register_schemas(map: &mut schema::SchemaMap) {
-    schema::insert::<ImportOutput>(map, "ImportResponse");
-    schema::insert::<HelixRadiusRequest>(map, "HelixRadiusRequest");
-    schema::insert::<HelixRadiusResponse>(map, "HelixRadiusResponse");
 }

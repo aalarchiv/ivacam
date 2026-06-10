@@ -236,6 +236,7 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     } else {
         0.0
     };
+    let plasma_pierce = resolve_plasma_pierce(tool);
     // Whirl helical overlay parameters. Off when the tool isn't
     // tagged, or when extra-width is 0 / unset. Stepover defaults to
     // half the spiral radius (one-revolution overlap → smooth motion).
@@ -341,11 +342,14 @@ pub(in crate::pipeline) fn synthesize_op_setup(
         spindle_direction: tool.spindle_direction,
         // Plasma pierce / cut heights / pierce delay. 0.0
         // sentinels fall through to plasma defaults at cut time.
-        // Resolved unconditionally — the cut emitter gates on
-        // `setup.machine.mode == Plasma` before consulting them.
-        pierce_height_mm: tool.pierce_height_mm.unwrap_or(0.0).max(0.0),
-        cut_height_mm: tool.cut_height_mm.unwrap_or(0.0).max(0.0),
-        pierce_delay_sec: tool.pierce_delay_sec.unwrap_or(0.0).max(0.0),
+        // The fields live on the PlasmaTorch kind — a non-torch tool
+        // on a plasma machine cuts with the defaults (and trips the
+        // mode-compatibility warning). The cut emitter additionally
+        // gates on `setup.machine.mode == Plasma` before consulting
+        // them.
+        pierce_height_mm: plasma_pierce.0,
+        cut_height_mm: plasma_pierce.1,
+        pierce_delay_sec: plasma_pierce.2,
         // V-Carve lead-in ramp angle. 0.0 sentinel = inherit the
         // legacy 10° at emit time inside `ratchet_emit`. Clamp to the
         // physically meaningful open interval (0°, 90°); anything else
@@ -362,7 +366,16 @@ pub(in crate::pipeline) fn synthesize_op_setup(
     // the heightmap at `kerf_mm` for both modes. Only when a kerf is
     // configured; otherwise the nominal diameter stands (back-compat for
     // laser/plasma tools that never set a kerf).
-    if matches!(setup.machine.mode, MachineMode::Plasma | MachineMode::Laser) {
+    // Gated on the tool KIND (not just the machine mode) since the
+    // pierce-params-on-kind move: kerf is a beam/torch attribute, so a
+    // mill tool that somehow carries one (an old save) keeps its
+    // physical diameter.
+    if matches!(setup.machine.mode, MachineMode::Plasma | MachineMode::Laser)
+        && matches!(
+            tool.kind,
+            crate::project::ToolKind::LaserBeam | crate::project::ToolKind::PlasmaTorch
+        )
+    {
         if let Some(kerf) = tool.kerf_mm.filter(|k| *k > 0.0) {
             setup.tool.diameter = kerf;
         }
@@ -778,9 +791,9 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
                 // Header-path plasma fields — same
                 // resolution as the per-op path so any consumer that
                 // inspects the header setup sees consistent values.
-                pierce_height_mm: tool.pierce_height_mm.unwrap_or(0.0).max(0.0),
-                cut_height_mm: tool.cut_height_mm.unwrap_or(0.0).max(0.0),
-                pierce_delay_sec: tool.pierce_delay_sec.unwrap_or(0.0).max(0.0),
+                pierce_height_mm: resolve_plasma_pierce(tool).0,
+                cut_height_mm: resolve_plasma_pierce(tool).1,
+                pierce_delay_sec: resolve_plasma_pierce(tool).2,
                 vcarve_lead_in_angle_deg: resolve_vcarve_lead_in_angle_deg(
                     tool.vcarve_lead_in_angle_deg,
                 ),
@@ -829,15 +842,32 @@ pub(super) fn header_setup_for(project: &Project) -> Setup {
             tip_angle_deg: tool.tip_angle_deg,
             tip_diameter_mm: effective_tip_diameter_mm(tool),
             spindle_direction: tool.spindle_direction,
-            pierce_height_mm: tool.pierce_height_mm.unwrap_or(0.0).max(0.0),
-            cut_height_mm: tool.cut_height_mm.unwrap_or(0.0).max(0.0),
-            pierce_delay_sec: tool.pierce_delay_sec.unwrap_or(0.0).max(0.0),
+            pierce_height_mm: resolve_plasma_pierce(tool).0,
+            cut_height_mm: resolve_plasma_pierce(tool).1,
+            pierce_delay_sec: resolve_plasma_pierce(tool).2,
             vcarve_lead_in_angle_deg: resolve_vcarve_lead_in_angle_deg(
                 tool.vcarve_lead_in_angle_deg,
             ),
         };
     }
     setup
+}
+
+/// Resolve the `(pierce_height_mm, cut_height_mm, pierce_delay_sec)`
+/// triplet threaded into [`ToolConfig`]. The pierce entry sequence is a
+/// `PlasmaTorch` attribute — every other kind collapses to the 0.0
+/// sentinels, which the plasma cut emitter replaces with the stock
+/// defaults (3.8 / 1.5 / 0.5) at cut time.
+fn resolve_plasma_pierce(tool: &crate::project::ToolEntry) -> (f64, f64, f64) {
+    if matches!(tool.kind, crate::project::ToolKind::PlasmaTorch) {
+        (
+            tool.pierce_height_mm.unwrap_or(0.0).max(0.0),
+            tool.cut_height_mm.unwrap_or(0.0).max(0.0),
+            tool.pierce_delay_sec.unwrap_or(0.0).max(0.0),
+        )
+    } else {
+        (0.0, 0.0, 0.0)
+    }
 }
 
 /// Clamp the tool's optional V-Carve lead-in angle into the
@@ -963,47 +993,68 @@ mod tests {
         assert!(effective_step(&op, &tool).is_err());
     }
 
-    /// In Plasma AND Laser mode the effective cutting
-    /// diameter the offset cascade uses is the KERF (cut width), not the
-    /// nominal / dummy tool diameter — so a Profile cut is compensated by
-    /// kerf/2. No kerf configured ⇒ the nominal diameter stands. Mill
-    /// mode is never affected.
+    /// For a torch in Plasma mode / a beam in Laser mode, the effective
+    /// cutting diameter the offset cascade uses is the KERF (cut width),
+    /// not the nominal / dummy tool diameter — so a Profile cut is
+    /// compensated by kerf/2. No kerf configured ⇒ the nominal diameter
+    /// stands. The override is gated on the tool KIND too: a mill tool
+    /// that somehow carries a kerf (old save) keeps its physical
+    /// diameter even on a plasma/laser machine.
     #[test]
     fn plasma_and_laser_kerf_override_effective_cut_diameter() {
-        use crate::project::MachineMode;
-        let mut tool = endmill(1, 10.0); // dummy 10 mm "tool" diameter
-        tool.kerf_mm = Some(2.0);
+        use crate::project::{MachineMode, ToolKind};
         let op = profile_op(1, 1, ToolOffset::Outside);
 
-        // Mill mode: the nominal diameter is used (offset = 5 mm).
-        let mut project = project_with(vec![op.clone()], vec![tool.clone()]);
-        project.machine.mode = MachineMode::Mill;
-        let setup = synthesize_op_setup(&op, &project, &mut Vec::new()).unwrap();
-        assert!((setup.tool.diameter - 10.0).abs() < 1e-9);
+        // Mill tool with a stray kerf: nominal diameter stands in every
+        // mode (offset = 5 mm) — kerf is a beam/torch attribute.
+        let mut mill_tool = endmill(1, 10.0);
+        mill_tool.kerf_mm = Some(2.0);
+        let mut project = project_with(vec![op.clone()], vec![mill_tool]);
+        for mode in [MachineMode::Mill, MachineMode::Plasma, MachineMode::Laser] {
+            project.machine.mode = mode;
+            let setup = synthesize_op_setup(&op, &project, &mut Vec::new()).unwrap();
+            assert!(
+                (setup.tool.diameter - 10.0).abs() < 1e-9,
+                "mill-kind tool keeps nominal diameter in {mode:?}, got {}",
+                setup.tool.diameter
+            );
+        }
 
-        // Plasma mode: the kerf wins (offset = kerf/2 = 1 mm).
-        project.machine.mode = MachineMode::Plasma;
-        let setup_p = synthesize_op_setup(&op, &project, &mut Vec::new()).unwrap();
+        // Plasma mode + torch: the kerf wins (offset = kerf/2 = 1 mm).
+        let mut torch = endmill(1, 10.0);
+        torch.kind = ToolKind::PlasmaTorch;
+        torch.kerf_mm = Some(2.0);
+        let mut project_t = project_with(vec![op.clone()], vec![torch]);
+        project_t.machine.mode = MachineMode::Plasma;
+        let setup_p = synthesize_op_setup(&op, &project_t, &mut Vec::new()).unwrap();
         assert!(
             (setup_p.tool.diameter - 2.0).abs() < 1e-9,
             "plasma kerf should override effective cut diameter, got {}",
             setup_p.tool.diameter
         );
 
-        // Laser mode: same as plasma — the beam kerf drives the offset.
-        project.machine.mode = MachineMode::Laser;
-        let setup_l = synthesize_op_setup(&op, &project, &mut Vec::new()).unwrap();
+        // Laser mode + beam: same as plasma — the kerf drives the offset.
+        let mut beam = endmill(1, 10.0);
+        beam.kind = ToolKind::LaserBeam;
+        beam.kerf_mm = Some(2.0);
+        let mut project_l = project_with(vec![op.clone()], vec![beam]);
+        project_l.machine.mode = MachineMode::Laser;
+        let setup_l = synthesize_op_setup(&op, &project_l, &mut Vec::new()).unwrap();
         assert!(
             (setup_l.tool.diameter - 2.0).abs() < 1e-9,
             "laser kerf should override effective cut diameter, got {}",
             setup_l.tool.diameter
         );
 
-        // No kerf configured: nominal diameter stands in both kerf modes.
-        let mut tool_nk = endmill(1, 10.0);
-        tool_nk.kerf_mm = None;
-        let mut project_nk = project_with(vec![op.clone()], vec![tool_nk]);
-        for mode in [MachineMode::Plasma, MachineMode::Laser] {
+        // No kerf configured: nominal diameter stands for torch + beam.
+        for (kind, mode) in [
+            (ToolKind::PlasmaTorch, MachineMode::Plasma),
+            (ToolKind::LaserBeam, MachineMode::Laser),
+        ] {
+            let mut tool_nk = endmill(1, 10.0);
+            tool_nk.kind = kind;
+            tool_nk.kerf_mm = None;
+            let mut project_nk = project_with(vec![op.clone()], vec![tool_nk]);
             project_nk.machine.mode = mode;
             let setup_nk = synthesize_op_setup(&op, &project_nk, &mut Vec::new()).unwrap();
             assert!(
@@ -1012,6 +1063,40 @@ mod tests {
                 setup_nk.tool.diameter
             );
         }
+    }
+
+    /// The pierce entry triplet lives on the PlasmaTorch kind: a torch
+    /// threads its configured values into ToolConfig; any other kind
+    /// collapses to the 0.0 sentinels (⇒ stock plasma defaults at cut
+    /// time) even when an old save left pierce fields on it.
+    #[test]
+    fn pierce_params_resolve_only_for_plasma_torch_kind() {
+        use crate::project::{MachineMode, ToolKind};
+        let op = profile_op(1, 1, ToolOffset::Outside);
+
+        let mut torch = endmill(1, 1.0);
+        torch.kind = ToolKind::PlasmaTorch;
+        torch.pierce_height_mm = Some(4.2);
+        torch.cut_height_mm = Some(1.8);
+        torch.pierce_delay_sec = Some(0.7);
+        let mut project = project_with(vec![op.clone()], vec![torch]);
+        project.machine.mode = MachineMode::Plasma;
+        let setup = synthesize_op_setup(&op, &project, &mut Vec::new()).unwrap();
+        assert!((setup.tool.pierce_height_mm - 4.2).abs() < 1e-9);
+        assert!((setup.tool.cut_height_mm - 1.8).abs() < 1e-9);
+        assert!((setup.tool.pierce_delay_sec - 0.7).abs() < 1e-9);
+
+        // Same fields on an endmill (mode-blind old save): sentinels.
+        let mut stale = endmill(1, 6.0);
+        stale.pierce_height_mm = Some(4.2);
+        stale.cut_height_mm = Some(1.8);
+        stale.pierce_delay_sec = Some(0.7);
+        let mut project_s = project_with(vec![op.clone()], vec![stale]);
+        project_s.machine.mode = MachineMode::Plasma;
+        let setup_s = synthesize_op_setup(&op, &project_s, &mut Vec::new()).unwrap();
+        assert!((setup_s.tool.pierce_height_mm).abs() < 1e-9);
+        assert!((setup_s.tool.cut_height_mm).abs() < 1e-9);
+        assert!((setup_s.tool.pierce_delay_sec).abs() < 1e-9);
     }
 
     #[test]

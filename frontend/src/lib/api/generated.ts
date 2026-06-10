@@ -2087,7 +2087,7 @@ export interface components {
             corner_radius_mm?: number | null;
             /**
              * Format: double
-             * @description Plasma cut height (mm above stock, generally < pierce height). After the pierce dwell the torch drops to this height for the actual cut. Typical 1.5–2.5 mm for thin steel. None ⇒ 1.5 mm default.
+             * @description Plasma cut height (mm above stock, generally < pierce height). Honored only when `kind == PlasmaTorch`, like `pierce_height_mm`. After the pierce dwell the torch drops to this height for the actual cut. Typical 1.5–2.5 mm for thin steel. None ⇒ 1.5 mm default.
              */
             cut_height_mm?: number | null;
             /**
@@ -2147,7 +2147,7 @@ export interface components {
             id: number;
             /**
              * Format: double
-             * @description Laser kerf width (mm) — the heightmap-side spot radius the sim carves at. Honored only when `kind == LaserBeam`. Lets the preview show actual cut width for fine-engraving (0.05 mm fiber laser) vs. aggressive-cut (0.4 mm CO2) tools instead of a uniform 0.15 mm stand-in. None = the 0.15 mm default. The sim floors the effective radius at 0.05 mm so a zero / missing value still registers some carve.
+             * @description Laser / plasma kerf width (mm) — the heightmap-side spot radius the sim carves at, and (when set) the effective cutting diameter the offset cascade compensates by. Honored only when `kind == LaserBeam` or `kind == PlasmaTorch`. Lets the preview show actual cut width for fine-engraving (0.05 mm fiber laser) vs. aggressive-cut (0.4 mm CO2) tools instead of a uniform 0.15 mm stand-in. None = the 0.15 mm default. The sim floors the effective radius at 0.05 mm so a zero / missing value still registers some carve.
              */
             kerf_mm?: number | null;
             kind: components["schemas"]["ToolKind"];
@@ -2174,12 +2174,12 @@ export interface components {
             pause?: number;
             /**
              * Format: double
-             * @description Plasma pierce delay in seconds. The torch dwells at `pierce_height_mm` for this many seconds before dropping to `cut_height_mm`. Long enough to pierce the stock; too long and the arc starts to undercut the rim of the pierce hole. Typical 0.4 s for 1 mm steel, up to ~1.5 s for 6 mm. None ⇒ 0.5 s default.
+             * @description Plasma pierce delay in seconds. Honored only when `kind == PlasmaTorch`, like `pierce_height_mm`. The torch dwells at `pierce_height_mm` for this many seconds before dropping to `cut_height_mm`. Long enough to pierce the stock; too long and the arc starts to undercut the rim of the pierce hole. Typical 0.4 s for 1 mm steel, up to ~1.5 s for 6 mm. None ⇒ 0.5 s default.
              */
             pierce_delay_sec?: number | null;
             /**
              * Format: double
-             * @description Plasma pierce height (mm above stock). Honored only when the active machine mode is `Plasma`. The pierce arc is established at this height — too close and the torch sticks to the stock as it slags up; too far and the arc misses or drops out. Typical 3–5 mm for 1–3 mm steel. None ⇒ 3.8 mm default.
+             * @description Plasma pierce height (mm above stock). Honored only when `kind == PlasmaTorch` (and the machine mode is `Plasma`, which is the only mode the torch is compatible with). The pierce arc is established at this height — too close and the torch sticks to the stock as it slags up; too far and the arc misses or drops out. Typical 3–5 mm for 1–3 mm steel. None ⇒ 3.8 mm default.
              */
             pierce_height_mm?: number | null;
             /**
@@ -2265,7 +2265,7 @@ export interface components {
              */
             z_shift_mm?: number | null;
         };
-        ToolKind: ("endmill" | "ball_nose" | "v_bit" | "engraver" | "drag_knife" | "drill") | "laser_beam" | "bull_nose" | "compression" | "form_profile" | "kegel" | "thread_mill";
+        ToolKind: ("endmill" | "ball_nose" | "v_bit" | "engraver" | "drag_knife" | "drill") | "laser_beam" | "bull_nose" | "compression" | "form_profile" | "kegel" | "thread_mill" | "plasma_torch";
         /** @enum {string} */
         ToolOffset: "none" | "outside" | "inside" | "on";
         ToolpathSegment: {

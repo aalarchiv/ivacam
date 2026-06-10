@@ -3430,7 +3430,7 @@ components:
           - number
           - 'null'
         cut_height_mm:
-          description: Plasma cut height (mm above stock, generally < pierce height). After the pierce dwell the torch drops to this height for the actual cut. Typical 1.5–2.5 mm for thin steel. None ⇒ 1.5 mm default.
+          description: Plasma cut height (mm above stock, generally < pierce height). Honored only when `kind == PlasmaTorch`, like `pierce_height_mm`. After the pierce dwell the torch drops to this height for the actual cut. Typical 1.5–2.5 mm for thin steel. None ⇒ 1.5 mm default.
           format: double
           type:
           - number
@@ -3512,7 +3512,7 @@ components:
           minimum: 0.0
           type: integer
         kerf_mm:
-          description: Laser kerf width (mm) — the heightmap-side spot radius the sim carves at. Honored only when `kind == LaserBeam`. Lets the preview show actual cut width for fine-engraving (0.05 mm fiber laser) vs. aggressive-cut (0.4 mm CO2) tools instead of a uniform 0.15 mm stand-in. None = the 0.15 mm default. The sim floors the effective radius at 0.05 mm so a zero / missing value still registers some carve.
+          description: Laser / plasma kerf width (mm) — the heightmap-side spot radius the sim carves at, and (when set) the effective cutting diameter the offset cascade compensates by. Honored only when `kind == LaserBeam` or `kind == PlasmaTorch`. Lets the preview show actual cut width for fine-engraving (0.05 mm fiber laser) vs. aggressive-cut (0.4 mm CO2) tools instead of a uniform 0.15 mm stand-in. None = the 0.15 mm default. The sim floors the effective radius at 0.05 mm so a zero / missing value still registers some carve.
           format: double
           type:
           - number
@@ -3545,13 +3545,13 @@ components:
           minimum: 0.0
           type: integer
         pierce_delay_sec:
-          description: Plasma pierce delay in seconds. The torch dwells at `pierce_height_mm` for this many seconds before dropping to `cut_height_mm`. Long enough to pierce the stock; too long and the arc starts to undercut the rim of the pierce hole. Typical 0.4 s for 1 mm steel, up to ~1.5 s for 6 mm. None ⇒ 0.5 s default.
+          description: Plasma pierce delay in seconds. Honored only when `kind == PlasmaTorch`, like `pierce_height_mm`. The torch dwells at `pierce_height_mm` for this many seconds before dropping to `cut_height_mm`. Long enough to pierce the stock; too long and the arc starts to undercut the rim of the pierce hole. Typical 0.4 s for 1 mm steel, up to ~1.5 s for 6 mm. None ⇒ 0.5 s default.
           format: double
           type:
           - number
           - 'null'
         pierce_height_mm:
-          description: Plasma pierce height (mm above stock). Honored only when the active machine mode is `Plasma`. The pierce arc is established at this height — too close and the torch sticks to the stock as it slags up; too far and the arc misses or drops out. Typical 3–5 mm for 1–3 mm steel. None ⇒ 3.8 mm default.
+          description: Plasma pierce height (mm above stock). Honored only when `kind == PlasmaTorch` (and the machine mode is `Plasma`, which is the only mode the torch is compatible with). The pierce arc is established at this height — too close and the torch sticks to the stock as it slags up; too far and the arc misses or drops out. Typical 3–5 mm for 1–3 mm steel. None ⇒ 3.8 mm default.
           format: double
           type:
           - number
@@ -3703,6 +3703,10 @@ components:
       - description: Single-point thread mill (Estlcam Gewinde). A small cutter with a thread-form tooth (the `tip_angle_deg` is the thread flank angle — 60° metric / 55° Whitworth) that cuts internal or external threads by helical interpolation, advancing one `thread_pitch_mm` per orbit. The cut is a side-wall thread, not representable in the 2.5D heightmap, so the sim treats the envelope as a plain cylinder at `diameter`; the thread geometry lives in the Thread op + the per-tool `thread_pitch_mm`.
         enum:
         - thread_mill
+        type: string
+      - description: Plasma torch — non-contact arc cutter for a Plasma-mode machine. Carries the pierce entry sequence ([`ToolEntry::pierce_height_mm`] / [`ToolEntry::cut_height_mm`] / [`ToolEntry::pierce_delay_sec`]) and the cut width as [`ToolEntry::kerf_mm`] — there is no physical tool radius, so `diameter` is only the fallback cut width when no kerf is set.
+        enum:
+        - plasma_torch
         type: string
     ToolOffset:
       enum:

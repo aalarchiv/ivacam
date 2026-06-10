@@ -4,6 +4,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use super::machine::MachineMode;
+
 /// One cross-section sample of a form / profile cutter outline,
 /// measured up from the cutting tip. The cutter is treated as
 /// cylindrically symmetric, so a sorted list of these describes the
@@ -117,8 +119,10 @@ pub struct ToolEntry {
     /// laser-on before each plunge. None = no pierce dwell.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub laser_pierce_sec: Option<f64>,
-    /// Laser kerf width (mm) — the heightmap-side spot radius the
-    /// sim carves at. Honored only when `kind == LaserBeam`. Lets the
+    /// Laser / plasma kerf width (mm) — the heightmap-side spot radius
+    /// the sim carves at, and (when set) the effective cutting diameter
+    /// the offset cascade compensates by. Honored only when `kind ==
+    /// LaserBeam` or `kind == PlasmaTorch`. Lets the
     /// preview show actual cut width for fine-engraving (0.05 mm
     /// fiber laser) vs. aggressive-cut (0.4 mm CO2) tools instead of
     /// a uniform 0.15 mm stand-in. None = the 0.15 mm default. The sim floors the
@@ -242,7 +246,9 @@ pub struct ToolEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub holder: Option<HolderShape>,
     /// Plasma pierce height (mm above stock). Honored only when
-    /// the active machine mode is `Plasma`. The pierce arc is
+    /// `kind == PlasmaTorch` (and the machine mode is `Plasma`,
+    /// which is the only mode the torch is compatible with). The
+    /// pierce arc is
     /// established at this height — too close and the torch sticks
     /// to the stock as it slags up; too far and the arc misses or
     /// drops out. Typical 3–5 mm for 1–3 mm steel. None ⇒ 3.8 mm
@@ -250,12 +256,14 @@ pub struct ToolEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pierce_height_mm: Option<f64>,
     /// Plasma cut height (mm above stock, generally < pierce
-    /// height). After the pierce dwell the torch drops to this
+    /// height). Honored only when `kind == PlasmaTorch`, like
+    /// `pierce_height_mm`. After the pierce dwell the torch drops to this
     /// height for the actual cut. Typical 1.5–2.5 mm for thin steel.
     /// None ⇒ 1.5 mm default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cut_height_mm: Option<f64>,
-    /// Plasma pierce delay in seconds. The torch dwells at
+    /// Plasma pierce delay in seconds. Honored only when
+    /// `kind == PlasmaTorch`, like `pierce_height_mm`. The torch dwells at
     /// `pierce_height_mm` for this many seconds before dropping to
     /// `cut_height_mm`. Long enough to pierce the stock; too long
     /// and the arc starts to undercut the rim of the pierce hole.
@@ -466,6 +474,13 @@ pub enum ToolKind {
     /// at `diameter`; the thread geometry lives in the Thread op + the
     /// per-tool `thread_pitch_mm`.
     ThreadMill,
+    /// Plasma torch — non-contact arc cutter for a Plasma-mode
+    /// machine. Carries the pierce entry sequence
+    /// ([`ToolEntry::pierce_height_mm`] / [`ToolEntry::cut_height_mm`] /
+    /// [`ToolEntry::pierce_delay_sec`]) and the cut width as
+    /// [`ToolEntry::kerf_mm`] — there is no physical tool radius, so
+    /// `diameter` is only the fallback cut width when no kerf is set.
+    PlasmaTorch,
 }
 
 /// Geometry family — the "shared parent" a tool kind groups under. Kinds
@@ -496,6 +511,11 @@ pub enum ToolFamily {
     /// Single-point thread mill (`ThreadMill`) — cuts threads by helical
     /// interpolation; carries a thread pitch + flank angle.
     Thread,
+    /// Non-contact plasma arc (`PlasmaTorch`) — kerf-width cut with a
+    /// pierce entry sequence; no physical radius, like `Laser`, but a
+    /// distinct attribute set (pierce/cut heights + delay vs. laser
+    /// pierce-time/lead-in).
+    Plasma,
 }
 
 impl ToolKind {
@@ -512,7 +532,41 @@ impl ToolKind {
             ToolKind::LaserBeam => ToolFamily::Laser,
             ToolKind::FormProfile => ToolFamily::Profile,
             ToolKind::ThreadMill => ToolFamily::Thread,
+            ToolKind::PlasmaTorch => ToolFamily::Plasma,
         }
+    }
+
+    /// Machine modes this tool kind can physically run on. The Rust
+    /// authority mirrored by `TOOL_COMPATIBLE_MODES` in
+    /// `frontend/src/lib/state/tool_family.ts`; keep the two in sync.
+    /// Mill kinds are rotating cutters that need a spindle; the
+    /// engraver doubles as a drag-engraving point on a Drag machine.
+    /// A mode switch never mutates the library — incompatible tools
+    /// are filtered from pickers and flagged at generate time, not
+    /// deleted.
+    #[must_use]
+    pub fn compatible_modes(self) -> &'static [MachineMode] {
+        match self {
+            ToolKind::Endmill
+            | ToolKind::BallNose
+            | ToolKind::VBit
+            | ToolKind::Drill
+            | ToolKind::BullNose
+            | ToolKind::Compression
+            | ToolKind::FormProfile
+            | ToolKind::Kegel
+            | ToolKind::ThreadMill => &[MachineMode::Mill],
+            ToolKind::Engraver => &[MachineMode::Mill, MachineMode::Drag],
+            ToolKind::DragKnife => &[MachineMode::Drag],
+            ToolKind::LaserBeam => &[MachineMode::Laser],
+            ToolKind::PlasmaTorch => &[MachineMode::Plasma],
+        }
+    }
+
+    /// Whether this tool kind can run on a machine in `mode`.
+    #[must_use]
+    pub fn compatible_with_mode(self, mode: MachineMode) -> bool {
+        self.compatible_modes().contains(&mode)
     }
 }
 
@@ -642,10 +696,47 @@ mod tests {
             (ToolKind::FormProfile, Profile),
             (ToolKind::Kegel, Conical),
             (ToolKind::ThreadMill, Thread),
+            (ToolKind::PlasmaTorch, Plasma),
         ];
         for (kind, fam) in cases {
             assert_eq!(kind.family(), fam, "family mismatch for {kind:?}");
         }
+    }
+
+    #[test]
+    fn tool_kind_compatible_modes_matches_ts_table() {
+        // Mirror of TOOL_COMPATIBLE_MODES in
+        // frontend/src/lib/state/tool_family.ts. If this changes, update
+        // the TS table (and vice versa) — tool pickers, the library
+        // filter, and the generate-time backstop must agree on which
+        // tools a machine mode can run.
+        use MachineMode::{Drag, Laser, Mill, Plasma};
+        let cases: [(ToolKind, &[MachineMode]); 13] = [
+            (ToolKind::Endmill, &[Mill]),
+            (ToolKind::BallNose, &[Mill]),
+            (ToolKind::VBit, &[Mill]),
+            (ToolKind::Engraver, &[Mill, Drag]),
+            (ToolKind::DragKnife, &[Drag]),
+            (ToolKind::Drill, &[Mill]),
+            (ToolKind::LaserBeam, &[Laser]),
+            (ToolKind::BullNose, &[Mill]),
+            (ToolKind::Compression, &[Mill]),
+            (ToolKind::FormProfile, &[Mill]),
+            (ToolKind::Kegel, &[Mill]),
+            (ToolKind::ThreadMill, &[Mill]),
+            (ToolKind::PlasmaTorch, &[Plasma]),
+        ];
+        for (kind, modes) in cases {
+            assert_eq!(
+                kind.compatible_modes(),
+                modes,
+                "compatible-modes mismatch for {kind:?}"
+            );
+        }
+        assert!(ToolKind::Engraver.compatible_with_mode(Drag));
+        assert!(!ToolKind::Endmill.compatible_with_mode(Plasma));
+        assert!(ToolKind::PlasmaTorch.compatible_with_mode(Plasma));
+        assert!(!ToolKind::PlasmaTorch.compatible_with_mode(Mill));
     }
 
     #[test]

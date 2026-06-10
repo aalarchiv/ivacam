@@ -549,6 +549,14 @@ impl ToolProfile {
                 let r = kerf as f32;
                 ToolProfile::LaserBeam { r }
             }
+            // Plasma torch — same non-contact kerf-spot carve as the
+            // laser, just a much wider default: ~1.5 mm is a typical
+            // hobby-plasma kerf vs. the laser's 0.15 mm spot.
+            ToolKind::PlasmaTorch => {
+                let kerf = tool.kerf_mm.unwrap_or(1.5).max(0.05);
+                let r = kerf as f32;
+                ToolProfile::LaserBeam { r }
+            }
             // BullNose uses the per-tool corner_radius_mm for an
             // accurate fillet floor; the sim now models the rounded
             // corner instead of pretending it's a square endmill.

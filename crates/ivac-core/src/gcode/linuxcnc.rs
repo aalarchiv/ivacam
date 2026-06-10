@@ -488,7 +488,16 @@ impl PostProcessor for Post {
         self.state.last_coolant = CoolantState::Off;
     }
     fn spindle_off(&mut self) {
+        // Skip when the spindle / beam is already off (laser & plasma
+        // contours drop it per-contour via `laser_off`) so the
+        // defensive program-end call doesn't emit a duplicate M5.
+        // Custom post profiles can emit raw template lines the tracker
+        // can't see — keep the unconditional M5 for them.
+        if !self.state.spindle_lit && self.state.profile.is_none() {
+            return;
+        }
         self.write("M5");
+        self.state.spindle_lit = false;
         self.state.last_speed = None;
         // Clear the tracked direction so the next spindle_on
         // (M3 / M4) re-asserts it explicitly — matches the cache
@@ -500,6 +509,7 @@ impl PostProcessor for Post {
         // direction differs from what's tracked. Otherwise a prior
         // Ccw op (M4) followed by a same-speed Cw op would silently
         // leave the spindle running backward.
+        self.state.spindle_lit = true;
         let need_emit = self.state.last_speed != Some(speed)
             || self.state.last_spindle_dir != Some(SpindleDirection::Cw);
         if need_emit {
@@ -514,6 +524,7 @@ impl PostProcessor for Post {
     }
     fn spindle_ccw(&mut self, speed: u32, pause: u32) {
         // Same direction-aware dedupe as spindle_cw.
+        self.state.spindle_lit = true;
         let need_emit = self.state.last_speed != Some(speed)
             || self.state.last_spindle_dir != Some(SpindleDirection::Ccw);
         if need_emit {
@@ -535,6 +546,7 @@ impl PostProcessor for Post {
         // the post's last_speed already matches — the cut block re-arms
         // the laser around every rapid traverse, but consecutive arms
         // at the same power are no-ops.
+        self.state.spindle_lit = true;
         if self.state.last_speed != Some(power) {
             let rendered = self.render_speed(power);
             // z9zh: GRBL dynamic-power mode fires with M4 (S ramps with
@@ -552,6 +564,7 @@ impl PostProcessor for Post {
         // and `$32=1` GRBL modes don't fight) while no power means no
         // burn. The pierce-time `laser_on(power)` re-emits S<power>
         // since `last_speed` is now Some(0).
+        self.state.spindle_lit = true;
         if self.state.last_speed != Some(0) {
             let rendered = self.render_speed(0);
             let m = if self.state.laser_dynamic { "M4" } else { "M3" };
@@ -565,6 +578,7 @@ impl PostProcessor for Post {
         // — otherwise the delta-encoded state would suppress the
         // re-arm and the beam would stay off through subsequent cuts.
         self.write("M5");
+        self.state.spindle_lit = false;
         self.state.last_speed = None;
     }
     fn move_to(&mut self, x: Option<f64>, y: Option<f64>, z: Option<f64>) {
@@ -789,6 +803,7 @@ impl PostProcessor for Post {
             // would have made.
             last_coolant: self.state.last_coolant,
             last_spindle_dir: self.state.last_spindle_dir,
+            spindle_lit: self.state.spindle_lit,
         }
     }
     fn restore_state(&mut self, s: &CapturedPostState) {
@@ -799,6 +814,7 @@ impl PostProcessor for Post {
         self.state.last_speed = s.last_speed;
         self.state.last_coolant = s.last_coolant;
         self.state.last_spindle_dir = s.last_spindle_dir;
+        self.state.spindle_lit = s.spindle_lit;
     }
     fn configure(
         &mut self,

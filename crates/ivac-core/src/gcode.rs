@@ -546,6 +546,10 @@ pub struct CapturedPostState {
     /// the wrong direction. None = no spindle direction commanded yet
     /// (post-program-begin, pre-first-tool).
     pub last_spindle_dir: Option<SpindleDirection>,
+    /// Whether the spindle / beam was commanded on and not yet off at
+    /// the op boundary — pairs with `PostState::spindle_lit` so a
+    /// cached-op replay keeps the program-end M5 dedupe accurate.
+    pub spindle_lit: bool,
 }
 
 /// Format a dwell value for `G4 P` — strip trailing zeros so the line
@@ -1043,6 +1047,14 @@ pub struct PostState {
     pub last_z: Option<f64>,
     pub last_rate: Option<u32>,
     pub last_speed: Option<u32>,
+    /// True while the spindle / beam / torch is commanded on (M3/M4,
+    /// laser arm included). Lets `spindle_off` skip the defensive
+    /// program-end M5 when the per-contour `laser_off` already dropped
+    /// it — laser / plasma programs used to end `M5 … M5 M30`. Only
+    /// trusted when no custom post profile is attached: template lines
+    /// are raw text and could switch the spindle on invisibly.
+    #[serde(default)]
+    pub spindle_lit: bool,
     pub absolute: bool,
     /// Decimal separator used by the number formatter — `.` (default)
     /// or `,` for European-locale Siemens / Heidenhain controllers.
@@ -1145,6 +1157,7 @@ impl Default for PostState {
             unit_scale: 1.0,
             last_coolant: CoolantState::Unknown,
             last_spindle_dir: None,
+            spindle_lit: false,
             wcs: crate::project::Wcs::G54,
             laser_dynamic: false,
         }
@@ -2178,19 +2191,28 @@ mod tests {
             full_power < first_lateral_cut,
             "`M3 S<power>` must come BEFORE the first lateral cut; power at {full_power}, cut at {first_lateral_cut}\n{g}",
         );
-        // M5 must appear AFTER the last G1 cut and BEFORE program_end's park.
-        // Find the last G1 cut and verify some M5 sits between it and the
-        // tail of the program — that's the cut_tool_off drop.
+        // M5 must appear AFTER the last G1 cut — that's the
+        // cut_tool_off beam drop. Exactly ONE M5: the program-end
+        // spindle_off is deduped via spindle_lit (the beam is already
+        // off), so laser programs no longer end `M5 … M5 M30`.
         let m5_positions: Vec<usize> = lines
             .iter()
             .enumerate()
             .filter(|(_, l)| l.trim() == "M5")
             .map(|(i, _)| i)
             .collect();
-        assert!(
-            m5_positions.len() >= 2,
-            "expected at least two M5 lines (one between cuts at end-of-block, one at program_end); got {}:\n{g}",
+        assert_eq!(
             m5_positions.len(),
+            1,
+            "expected exactly one M5 (cut_tool_off; program-end dedupe):\n{g}",
+        );
+        let last_cut = lines
+            .iter()
+            .rposition(|l| l.starts_with("G1 ") || l.starts_with("G2 ") || l.starts_with("G3 "))
+            .expect("no cut motion");
+        assert!(
+            m5_positions[0] > last_cut,
+            "beam drop must follow the last cut motion:\n{g}"
         );
     }
 
@@ -2337,9 +2359,13 @@ mod tests {
         let offsets = vec![square_offset()];
         let mut post = linuxcnc::Post::new();
         let g = emit_polylines(&setup, &offsets, &mut post);
-        // No M3 / M4 in the body. (program_end's spindle_off may
-        // still emit M5 unconditionally — that's harmless, but we
-        // want to verify no laser power was ever switched on.)
+        // No M3 / M4 in the body — and since the spindle was never
+        // lit, the program-end spindle_off stays silent too (the
+        // spindle_lit dedupe).
+        assert!(
+            !g.lines().any(|l| l.trim() == "M5"),
+            "drag mode never lit the spindle; no M5 expected:\n{g}"
+        );
         for line in g.lines() {
             let trimmed = line.trim();
             assert!(
@@ -2758,6 +2784,141 @@ mod tests {
         check(MachineMode::Plasma, "plasma");
         check(MachineMode::Laser, "laser");
         check(MachineMode::Mill, "mill");
+    }
+
+    /// Assert `needles` appear in `g` in order, returning their line
+    /// indices. Panics with the full program on a miss.
+    #[cfg(test)]
+    fn assert_ordered(g: &str, needles: &[&str], label: &str) -> Vec<usize> {
+        let lines: Vec<&str> = g.lines().collect();
+        let mut from = 0;
+        let mut out = Vec::new();
+        for needle in needles {
+            let idx = lines[from..]
+                .iter()
+                .position(|l| l.trim() == *needle)
+                .unwrap_or_else(|| panic!("[{label}] expected `{needle}` after line {from}:\n{g}"));
+            out.push(from + idx);
+            from += idx + 1;
+        }
+        out
+    }
+
+    /// Plasma + arc leads: the torch pierces at the OFF-CONTOUR lead
+    /// point (rapid to pierce height, dwell, drop to cut height), then
+    /// the quarter-arc rolls onto the contour start at cut height; the
+    /// roll-OFF arc runs with the torch still lit and the torch drops
+    /// before the retract. Exactly one M5 — the program-end spindle_off
+    /// must not duplicate the per-contour torch-off.
+    #[test]
+    fn arc_lead_plasma_pierces_at_hop_then_rolls_on_at_cut_height() {
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.tool.speed = 1000;
+        setup.tool.rate_v = 100;
+        setup.tool.rate_h = 800;
+        setup.mill.depth = -2.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.leads.r#in = LeadKind::Arc;
+        setup.leads.in_length = 3.0;
+        setup.leads.out = LeadKind::Arc;
+        setup.leads.out_length = 3.0;
+        setup.machine.comments = false;
+        setup.machine.mode = MachineMode::Plasma;
+        setup.mill.offset = ToolOffset::On;
+
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &[lead_square()], &mut post);
+        assert_ordered(
+            &g,
+            &[
+                "M3 S1000",        // torch lit before the rapid (plasma convention)
+                "G0 X-3 Y3",       // rapid to the arc-lead entry point
+                "G0 Z3.8",         // pierce height
+                "G4 P0.5",         // pierce dwell at the lead point
+                "G1 Z1.5",         // drop to cut height
+                "G3 X0 Y0 I3 J0",  // roll-on arc lands on the contour start
+                "G1 X30",          // first segment from its true start
+                "G3 X3 Y-3 I3 J0", // roll-off arc, torch still lit
+                "M5",              // torch off AFTER the lead-out…
+                "G0 Z5",           // …BEFORE the retract
+            ],
+            "plasma-arc",
+        );
+        let m5_count = g.lines().filter(|l| l.trim() == "M5").count();
+        assert_eq!(
+            m5_count, 1,
+            "expected exactly one M5 (no program-end duplicate):\n{g}"
+        );
+    }
+
+    /// Laser + arc leads (plot-mode Z, pierce dwell): the beam arms at
+    /// S0 before the rapid, ramps to power and dwells AT the lead
+    /// point, rolls on, cuts, rolls off at power, and drops via M5
+    /// before the retract — once, with no program-end duplicate.
+    #[test]
+    fn arc_lead_laser_arms_then_pierces_at_hop_and_drops_beam_once() {
+        let mut setup = Setup::default();
+        setup.tool.diameter = 3.0;
+        setup.tool.speed = 1000;
+        setup.tool.rate_v = 100;
+        setup.tool.rate_h = 800;
+        setup.tool.pierce_sec = 0.8;
+        setup.mill.depth = -2.0;
+        setup.mill.fast_move_z = 5.0;
+        setup.leads.r#in = LeadKind::Arc;
+        setup.leads.in_length = 3.0;
+        setup.leads.out = LeadKind::Arc;
+        setup.leads.out_length = 3.0;
+        setup.machine.comments = false;
+        setup.machine.mode = MachineMode::Laser;
+        setup.machine.plot_mode_z = true; // typical laser config
+        setup.mill.offset = ToolOffset::On;
+
+        let mut post = linuxcnc::Post::new();
+        let g = emit_polylines(&setup, &[lead_square()], &mut post);
+        assert_ordered(
+            &g,
+            &[
+                "M3 S0",           // armed at zero power before the rapid
+                "G0 X-3 Y3",       // rapid to the arc-lead entry point
+                "M3 S1000",        // ramp to cut power at the lead point
+                "G4 P0.8",         // pierce dwell at the lead point
+                "G3 X0 Y0 I3 J0",  // roll-on arc lands on the contour start
+                "G1 X30",          // first segment from its true start
+                "G3 X3 Y-3 I3 J0", // roll-off arc at power
+                "M5",              // beam off AFTER the lead-out…
+                "G0 Z5",           // …BEFORE the retract
+            ],
+            "laser-arc",
+        );
+        let m5_count = g.lines().filter(|l| l.trim() == "M5").count();
+        assert_eq!(
+            m5_count, 1,
+            "expected exactly one M5 (no program-end duplicate):\n{g}"
+        );
+    }
+
+    /// Shared closed 30mm square at the origin for the lead × mode
+    /// tests; the 3mm leads put the arc entry point at (-3, 3).
+    #[cfg(test)]
+    fn lead_square() -> crate::cam::offsets::PolylineOffset {
+        crate::cam::offsets::PolylineOffset {
+            segments: vec![
+                Segment::line(p(0.0, 0.0), p(30.0, 0.0), "0", 7),
+                Segment::line(p(30.0, 0.0), p(30.0, 30.0), "0", 7),
+                Segment::line(p(30.0, 30.0), p(0.0, 30.0), "0", 7),
+                Segment::line(p(0.0, 30.0), p(0.0, 0.0), "0", 7),
+            ],
+            closed: true,
+            level: 0,
+            is_pocket: 0,
+            layer: "0".into(),
+            color: 7,
+            source_object_idx: 0,
+            tabs: Vec::new(),
+            is_finish: false,
+        }
     }
 
     /// Final retract after lead-out (to `fast_move_z`) must be a

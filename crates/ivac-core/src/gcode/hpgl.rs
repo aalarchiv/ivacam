@@ -281,6 +281,7 @@ impl PostProcessor for Post {
             // below, which ignores them.
             last_coolant: crate::gcode::CoolantState::Unknown,
             last_spindle_dir: None,
+            spindle_lit: false,
         }
     }
     fn restore_state(&mut self, s: &CapturedPostState) {

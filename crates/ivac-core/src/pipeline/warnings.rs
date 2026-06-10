@@ -768,6 +768,30 @@ pub(super) fn push_tool_fit_kind_warnings(
             }
         }
     }
+    // Tool-kind ✗ machine-mode. The generate-time backstop behind
+    // the frontend's mode-switch notice: the switch never rewrites ops
+    // and the notice is dismissable, so an endmill op CAN reach the
+    // pipeline on a plasma machine — flag it here so nothing exports
+    // silently. Checked against the machine's EFFECTIVE capability set
+    // (like the op×mode check above) so a genuine combo machine doesn't
+    // false-warn on its second head's tools.
+    {
+        let caps: &[crate::project::MachineMode] = if setup.machine.capabilities.is_empty() {
+            std::slice::from_ref(&setup.machine.mode)
+        } else {
+            &setup.machine.capabilities
+        };
+        if !caps.iter().any(|c| tool.kind.compatible_with_mode(*c)) {
+            warnings.push(PipelineWarning {
+                op_id: Some(op.id),
+                kind: "tool_incompatible_with_machine_mode".into(),
+                message: format!(
+                    "tool '{}' is a {:?} and cannot run on a {:?} machine — op '{}' will not cut as previewed. Assign a compatible tool or switch the machine's mode/capabilities.",
+                    tool.name, tool.kind, setup.machine.mode, op.name
+                ),
+            });
+        }
+    }
     // Plasma / laser pierce-on-edge. The pierce happens at the
     // lead-in START point (see gcode.rs `plasma_entry`), so a Profile
     // with NO lead-in — the default, LeadKind::Off — pierces directly on
@@ -1472,6 +1496,83 @@ mod tests {
         assert!(
             !w4.iter().any(|x| x.kind == "op_machine_mode_mismatch"),
             "pocket allowed via Mill capability: {w4:?}"
+        );
+    }
+
+    /// A tool whose kind the machine mode can't run warns
+    /// `tool_incompatible_with_machine_mode` (the generate-time backstop
+    /// behind the dismissable frontend mode-switch notice); a compatible
+    /// tool stays silent, and the capability set — not just the primary
+    /// mode — governs so a combo machine doesn't false-warn.
+    #[test]
+    fn tool_incompatible_with_machine_mode_warns() {
+        use crate::cam::setup::Setup;
+        use crate::project::{MachineMode, ToolKind};
+        let mill_tool = endmill(1, 6.0);
+        let mut torch = endmill(2, 1.5);
+        torch.kind = ToolKind::PlasmaTorch;
+        let profile_mill = profile_op(1, 1, ToolOffset::Outside);
+        let profile_torch = profile_op(2, 2, ToolOffset::Outside);
+        let project = project_with(
+            vec![profile_mill.clone(), profile_torch.clone()],
+            vec![mill_tool, torch],
+        );
+
+        // Plasma machine + endmill op: warn, op_id carried, names both
+        // the tool kind and the mode.
+        let mut setup = Setup::default();
+        setup.machine.mode = MachineMode::Plasma;
+        let mut w = Vec::new();
+        push_tool_fit_kind_warnings(&profile_mill, &project, &setup, &mut w);
+        let hit = w
+            .iter()
+            .find(|x| x.kind == "tool_incompatible_with_machine_mode")
+            .expect("endmill on a plasma machine should warn");
+        assert_eq!(hit.op_id, Some(1));
+        assert!(
+            hit.message.contains("Plasma") && hit.message.contains("Endmill"),
+            "names the mode and the tool kind: {}",
+            hit.message
+        );
+
+        // Same machine, torch op: silent.
+        let mut w2 = Vec::new();
+        push_tool_fit_kind_warnings(&profile_torch, &project, &setup, &mut w2);
+        assert!(
+            !w2.iter()
+                .any(|x| x.kind == "tool_incompatible_with_machine_mode"),
+            "torch on plasma is fine: {w2:?}"
+        );
+
+        // Mill machine + endmill op: silent; torch op warns.
+        let mut setup_mill = Setup::default();
+        setup_mill.machine.mode = MachineMode::Mill;
+        let mut w3 = Vec::new();
+        push_tool_fit_kind_warnings(&profile_mill, &project, &setup_mill, &mut w3);
+        assert!(
+            !w3.iter()
+                .any(|x| x.kind == "tool_incompatible_with_machine_mode"),
+            "endmill on mill is fine: {w3:?}"
+        );
+        let mut w4 = Vec::new();
+        push_tool_fit_kind_warnings(&profile_torch, &project, &setup_mill, &mut w4);
+        assert!(
+            w4.iter()
+                .any(|x| x.kind == "tool_incompatible_with_machine_mode"),
+            "torch on mill should warn: {w4:?}"
+        );
+
+        // Combo machine: primary mode Plasma but capabilities include
+        // Mill → the endmill is allowed by capability → silent.
+        let mut setup_combo = Setup::default();
+        setup_combo.machine.mode = MachineMode::Plasma;
+        setup_combo.machine.capabilities = vec![MachineMode::Plasma, MachineMode::Mill];
+        let mut w5 = Vec::new();
+        push_tool_fit_kind_warnings(&profile_mill, &project, &setup_combo, &mut w5);
+        assert!(
+            !w5.iter()
+                .any(|x| x.kind == "tool_incompatible_with_machine_mode"),
+            "endmill allowed via Mill capability: {w5:?}"
         );
     }
 

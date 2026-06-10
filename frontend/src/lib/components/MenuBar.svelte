@@ -54,6 +54,12 @@
   function toggleMenu(id: MenuId) {
     openMenu = openMenu === id ? null : id;
   }
+  /// Standard menubar hover-slide: while SOME menu is open, hovering a
+  /// sibling label switches dropdowns without a click. A closed
+  /// menubar stays closed on hover — opening still takes a click.
+  function hoverSwitch(id: MenuId) {
+    if (openMenu != null && openMenu !== id) openMenu = id;
+  }
   export function closeAllMenus() {
     openMenu = null;
   }
@@ -157,6 +163,7 @@
       type="button"
       class="menu-btn"
       onclick={() => toggleMenu('file')}
+      onmouseenter={() => hoverSwitch('file')}
       aria-haspopup="menu"
       aria-expanded={openMenu === 'file'}>File</button
     >
@@ -252,6 +259,7 @@
       type="button"
       class="menu-btn"
       onclick={() => toggleMenu('edit')}
+      onmouseenter={() => hoverSwitch('edit')}
       aria-haspopup="menu"
       aria-expanded={openMenu === 'edit'}>Edit</button
     >
@@ -295,6 +303,7 @@
       type="button"
       class="menu-btn"
       onclick={() => toggleMenu('view')}
+      onmouseenter={() => hoverSwitch('view')}
       aria-haspopup="menu"
       aria-expanded={openMenu === 'view'}>View</button
     >
@@ -342,6 +351,7 @@
       type="button"
       class="menu-btn"
       onclick={() => toggleMenu('tools')}
+      onmouseenter={() => hoverSwitch('tools')}
       aria-haspopup="menu"
       aria-expanded={openMenu === 'tools'}>Tools</button
     >
@@ -372,6 +382,7 @@
       type="button"
       class="menu-btn"
       onclick={() => toggleMenu('help')}
+      onmouseenter={() => hoverSwitch('help')}
       aria-haspopup="menu"
       aria-expanded={openMenu === 'help'}>Help</button
     >

@@ -78,23 +78,27 @@ fn cut_tool_on<P: PostProcessor>(post: &mut P, setup: &Setup, power_or_speed: u3
             // Drag knife / pen plotter — no spindle, no beam.
         }
         MachineMode::Plasma => {
-            // Plasma torch — most controllers accept M3 S<power>
-            // for "fire arc at <power>" the same way GRBL / LinuxCNC
-            // accept it for a laser. Unlike laser, the plasma torch
-            // must be LIT during the rapid + Z-drop to pierce height
-            // (the arc needs to strike before the head reaches the
-            // workpiece), so we keep the full-power fire here rather
-            // than routing through `laser_arm` / `cut_tool_pierce`.
-            post.laser_on(power_or_speed);
+            // Plasma torch — fires at the PIERCE POINT via
+            // `cut_tool_pierce`, never here. Standard plasma practice
+            // (LinuxCNC QtPlasmaC, Sheetcam posts, Hypertherm guidance)
+            // keeps the torch off during positioning: M3 starts the
+            // pilot/transferred arc, so a lit rapid burns pilot-arc
+            // duty cycle, scars the sheet, and on a transferred arc
+            // gouges a line across it. The earlier "arc must strike
+            // before the head reaches the workpiece" rationale had it
+            // backwards — the arc transfers AT the pierce height
+            // during the pierce delay.
         }
     }
 }
 
-/// Ramp the laser from armed (S0) to cut power right before the
-/// pierce dwell. No-op for every mode except Laser; the matching arm
-/// happened at `cut_tool_on` so the rapid traverse runs cold.
+/// Fire the beam / torch right before the pierce dwell. Laser ramps
+/// from armed (S0, set at `cut_tool_on`) to cut power; plasma fires
+/// the arc cold-start at the pierce point — M3 S<power>, then the
+/// pierce delay gives the arc time to transfer and burn through.
+/// No-op for Mill / Drag (spindle handled at `cut_tool_on`).
 fn cut_tool_pierce<P: PostProcessor>(post: &mut P, setup: &Setup, power: u32) {
-    if matches!(setup.machine.mode, MachineMode::Laser) {
+    if matches!(setup.machine.mode, MachineMode::Laser | MachineMode::Plasma) {
         post.laser_on(power);
     }
 }
@@ -2815,12 +2819,15 @@ mod tests {
         out
     }
 
-    /// Plasma + arc leads: the torch pierces at the OFF-CONTOUR lead
-    /// point (rapid to pierce height, dwell, drop to cut height), then
-    /// the quarter-arc rolls onto the contour start at cut height; the
-    /// roll-OFF arc runs with the torch still lit and the torch drops
-    /// before the retract. Exactly one M5 — the program-end spindle_off
-    /// must not duplicate the per-contour torch-off.
+    /// Plasma + arc leads: the positioning rapid runs with the torch
+    /// OFF (a lit rapid scars the sheet and burns pilot-arc duty
+    /// cycle); the torch fires AT the off-contour pierce point after
+    /// the rapid to pierce height, the pierce dwell lets the arc
+    /// transfer + burn through, then the head drops to cut height and
+    /// the quarter-arc rolls onto the contour start; the roll-OFF arc
+    /// runs with the torch still lit and the torch drops before the
+    /// retract. Exactly one M5 — the program-end spindle_off must not
+    /// duplicate the per-contour torch-off.
     #[test]
     fn arc_lead_plasma_pierces_at_hop_then_rolls_on_at_cut_height() {
         let mut setup = Setup::default();
@@ -2843,10 +2850,10 @@ mod tests {
         assert_ordered(
             &g,
             &[
-                "M3 S1000",        // torch lit before the rapid (plasma convention)
-                "G0 X-3 Y3",       // rapid to the arc-lead entry point
+                "G0 X-3 Y3",       // rapid to the arc-lead entry point, torch OFF
                 "G0 Z3.8",         // pierce height
-                "G4 P0.5",         // pierce dwell at the lead point
+                "M3 S1000",        // torch fires AT the pierce point
+                "G4 P0.5",         // pierce dwell while the arc transfers
                 "G1 Z1.5",         // drop to cut height
                 "G3 X0 Y0 I3 J0",  // roll-on arc lands on the contour start
                 "G1 X30",          // first segment from its true start
@@ -2855,6 +2862,17 @@ mod tests {
                 "G0 Z5",           // …BEFORE the retract
             ],
             "plasma-arc",
+        );
+        // The lit-rapid regression guard: no M3 may precede the first
+        // rapid to the lead point.
+        let lines: Vec<&str> = g.lines().collect();
+        let first_rapid = lines
+            .iter()
+            .position(|l| l.trim() == "G0 X-3 Y3")
+            .expect("lead rapid present");
+        assert!(
+            !lines[..first_rapid].iter().any(|l| l.trim_start().starts_with("M3")),
+            "torch must be OFF during the positioning rapid:\n{g}"
         );
         let m5_count = g.lines().filter(|l| l.trim() == "M5").count();
         assert_eq!(
@@ -3477,17 +3495,28 @@ mod tests {
         let mut post = linuxcnc::Post::new();
         let g = emit_polylines(&setup, &[offset], &mut post);
         let lines: Vec<&str> = g.lines().collect();
-        // Entry should rapid to Z4 (pierce height), dwell 0.5s, then
-        // G1 to Z1.5 (cut height). Find a G0 line carrying Z4.
+        // Entry should rapid to Z4 (pierce height), FIRE the torch at
+        // the pierce point, dwell 0.5s, then G1 to Z1.5 (cut height).
+        // Find a G0 line carrying Z4.
         let pierce_idx = lines
             .iter()
             .position(|l| l.starts_with("G0 ") && l.contains("Z4"))
             .unwrap_or_else(|| panic!("zpuk: expected G0 to Z4 (pierce_height) in:\n{g}"));
-        // Dwell follows.
-        let dwell = lines.get(pierce_idx + 1).copied().unwrap_or("");
+        // Torch fires at the pierce point (never during the rapid).
+        let fire = lines.get(pierce_idx + 1).copied().unwrap_or("");
+        assert!(
+            fire.starts_with("M3 "),
+            "zpuk: expected torch-on M3 at the pierce point; got '{fire}' in:\n{g}",
+        );
+        assert!(
+            !lines[..pierce_idx].iter().any(|l| l.starts_with("M3")),
+            "zpuk: torch must stay OFF during positioning rapids in:\n{g}",
+        );
+        // Dwell follows the fire.
+        let dwell = lines.get(pierce_idx + 2).copied().unwrap_or("");
         assert!(
             dwell.starts_with("G4 ") && dwell.contains("P0.5"),
-            "zpuk: expected G4 P0.5 dwell after pierce-height rapid; got '{dwell}' in:\n{g}",
+            "zpuk: expected G4 P0.5 dwell after torch-on; got '{dwell}' in:\n{g}",
         );
         // Then G1 to Z1.5.
         let cut_drop = lines

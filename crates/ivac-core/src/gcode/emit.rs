@@ -90,11 +90,15 @@ pub(super) fn emit_offset<P: PostProcessor>(
     let pierce_sec = setup.tool.pierce_sec;
     // Plasma entry — when machine.mode == Plasma the lead-in
     // emits a two-step Z descent instead of a single plunge:
-    //   1. Torch already on (cut_tool_on above) — rapid XY at fast_z.
+    //   1. Rapid XY at fast_z, torch OFF (cut_tool_on is a plasma
+    //      no-op — a lit positioning rapid scars the sheet and burns
+    //      pilot-arc duty cycle).
     //   2. Rapid (G0) to pierce_height_mm above stock.
-    //   3. Dwell pierce_delay_sec while the arc pierces.
-    //   4. G1 down to cut_height_mm at the plunge rate.
-    //   5. Walk the contour (multi_pass collapses to one pass).
+    //   3. Fire the torch (M3 S<power> via cut_tool_pierce) at the
+    //      pierce point — standard plasma convention.
+    //   4. Dwell pierce_delay_sec while the arc transfers + pierces.
+    //   5. G1 down to cut_height_mm at the plunge rate.
+    //   6. Walk the contour (multi_pass collapses to one pass).
     // Falls back to safe defaults (3.8 / 1.5 / 0.5) when the
     // resolved values are 0. We carry the booleans + heights into
     // a small struct so the three lead branches below stay readable.
@@ -147,12 +151,14 @@ pub(super) fn emit_offset<P: PostProcessor>(
         LeadGeometry::Straight { from } => {
             post.move_to(Some(from.x), Some(from.y), Some(setup.mill.fast_move_z));
             if let Some((pierce_h, cut_h, delay)) = plasma_entry {
-                // Plasma two-step Z. Rapid to pierce, dwell, G1
-                // to cut height. cut_height is the cut plane that
-                // multi_pass walks at (it short-circuits to one pass
-                // because mode == Plasma — see the plasma branch in
-                // multi_pass).
+                // Plasma two-step Z. Rapid to pierce height, FIRE
+                // the torch at the pierce point, dwell while the arc
+                // transfers + pierces, G1 to cut height. cut_height is
+                // the cut plane that multi_pass walks at (it
+                // short-circuits to one pass because mode == Plasma —
+                // see the plasma branch in multi_pass).
                 post.move_to(None, None, Some(pierce_h));
+                cut_tool_pierce(post, setup, use_speed);
                 if delay > 0.0 {
                     post.dwell(delay);
                 }
@@ -179,6 +185,7 @@ pub(super) fn emit_offset<P: PostProcessor>(
             post.move_to(Some(from.x), Some(from.y), Some(setup.mill.fast_move_z));
             if let Some((pierce_h, cut_h, delay)) = plasma_entry {
                 post.move_to(None, None, Some(pierce_h));
+                cut_tool_pierce(post, setup, use_speed);
                 if delay > 0.0 {
                     post.dwell(delay);
                 }
@@ -189,7 +196,7 @@ pub(super) fn emit_offset<P: PostProcessor>(
                 post.linear(None, None, Some(entry_z));
                 // Laser-mode ramps from armed (S0) to full power
                 // here, between the plunge and the pierce dwell. Mill /
-                // drag / plasma are no-ops in this helper.
+                // drag are no-ops in this helper.
                 cut_tool_pierce(post, setup, use_speed);
                 if pierce_sec > 0.0 {
                     post.dwell(pierce_sec);
@@ -219,6 +226,7 @@ pub(super) fn emit_offset<P: PostProcessor>(
             post.move_to(Some(start.x), Some(start.y), Some(setup.mill.fast_move_z));
             if let Some((pierce_h, cut_h, delay)) = plasma_entry {
                 post.move_to(None, None, Some(pierce_h));
+                cut_tool_pierce(post, setup, use_speed);
                 if delay > 0.0 {
                     post.dwell(delay);
                 }
@@ -229,7 +237,7 @@ pub(super) fn emit_offset<P: PostProcessor>(
                 post.linear(None, None, Some(entry_z));
                 // Laser-mode ramps from armed (S0) to full power
                 // here, between the plunge and the pierce dwell. Mill /
-                // drag / plasma are no-ops in this helper.
+                // drag are no-ops in this helper.
                 cut_tool_pierce(post, setup, use_speed);
                 if pierce_sec > 0.0 {
                     post.dwell(pierce_sec);

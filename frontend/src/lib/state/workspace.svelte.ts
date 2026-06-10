@@ -20,6 +20,7 @@ export {
   DEFAULT_WORKSPACE,
   WorkspaceStore,
   type CameraState,
+  type MachineProfile,
   type PanelLayout,
   type PerProjectState,
   type RecentProject,

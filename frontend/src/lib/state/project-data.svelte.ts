@@ -298,6 +298,15 @@ export class ProjectDataState {
   /// with `pinOrder` stay put). Default false = declared order.
   groupOpsByTool = $state(false);
 
+  /// Id of the workspace-level machine profile this project targets,
+  /// or null when the machine + tools are project-local. While set,
+  /// machine / tool edits mirror back into the profile (the App-level
+  /// effect owns that), and the MachineDialog picker shows it as the
+  /// active machine. Persisted in the project file alongside the
+  /// embedded machine + tools snapshot — the snapshot is the fallback
+  /// when the profile doesn't exist on this installation.
+  machineProfileId = $state<string | null>(null);
+
   /// True when the in-memory project differs from the gcode currently
   /// shown in `generated`. Set by op edits/reorders/enable toggles;
   /// cleared by setGenerated. The status badge in the ops list reads

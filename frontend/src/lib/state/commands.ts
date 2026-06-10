@@ -56,6 +56,11 @@ export interface CommandTarget {
   reliefSources: ReliefSource[];
   workOffset: WorkOffset;
   groupOpsByTool: boolean;
+  /// Workspace machine-profile reference. Part of the command target
+  /// so applying / undoing a profile switch restores it together with
+  /// machine + tools — otherwise an undo would leave the OLD config
+  /// mirroring into the NEW profile.
+  machineProfileId: string | null;
   dirty: boolean;
 }
 
@@ -586,6 +591,42 @@ export function setMachineCommand(next: MachineSettings): Command {
     // commit() on close, but multi-field edits should collapse into
     // one undo step too).
     coalesce_key: 'setMachine',
+  };
+}
+
+/// Switch the project to a workspace machine profile: machine config,
+/// tool library, and the profile reference change together as ONE
+/// undoable step (undo restores all three — including the reference,
+/// so the mirror write-back can't push the old config into the new
+/// profile). Pass `profileId: null` with the current machine/tools to
+/// DETACH from a profile without changing the working copy.
+export function applyMachineProfileCommand(
+  machine: MachineSettings,
+  tools: ToolEntry[],
+  profileId: string | null,
+): Command {
+  let prevMachine: MachineSettings | null = null;
+  let prevTools: ToolEntry[] = [];
+  let prevProfileId: string | null = null;
+  return {
+    label: profileId == null ? 'Detach machine profile' : 'Switch machine profile',
+    apply: (s) => {
+      const t = s as CommandTarget;
+      prevMachine = clone(t.machine);
+      prevTools = t.tools.map((x) => clone(x));
+      prevProfileId = t.machineProfileId;
+      t.machine = clone(machine);
+      t.tools = tools.map((x) => clone(x));
+      t.machineProfileId = profileId;
+      t.dirty = true;
+    },
+    revert: (s) => {
+      const t = s as CommandTarget;
+      if (prevMachine) t.machine = clone(prevMachine);
+      t.tools = prevTools.map((x) => clone(x));
+      t.machineProfileId = prevProfileId;
+      t.dirty = true;
+    },
   };
 }
 

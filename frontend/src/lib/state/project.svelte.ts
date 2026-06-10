@@ -171,6 +171,7 @@ import { assessModeSwitch } from './mode_switch';
 import { modeNotice } from './mode_notice.svelte';
 import { defaultToolForMode } from './tool_mode_defaults';
 import { effectiveModes } from './tool_family';
+import { profilePayload } from './machine_profiles';
 
 /// Memoised bundled-font fetch — the DejaVu Sans bytes used as the
 /// default font for imported DXF TEXT/MTEXT entities. Resolved once
@@ -204,6 +205,7 @@ import {
   addReliefSourceCommand,
   addTextLayerCommand,
   addToolCommand,
+  applyMachineProfileCommand,
   assignToolToOpsCommand,
   deleteOperationCommand,
   deleteReliefSourceCommand,
@@ -977,6 +979,40 @@ export class ProjectState {
     const nextId = this.data.tools.reduce((m, t) => Math.max(m, t.id), 0) + 1;
     this.history.exec(
       addToolCommand(defaultToolForMode(this.data.machine.mode, nextId)),
+      this.target(),
+    );
+  }
+
+  /// Switch the project to a workspace machine profile: its machine
+  /// config + tool library replace the project's working copies and
+  /// the profile reference moves, all as one undoable step. Runs the
+  /// same staleness + mode-switch assessment as a manual machine edit
+  /// — the right library coming along doesn't guarantee the existing
+  /// ops fit the new machine.
+  applyMachineProfile(profile: import('./workspace').MachineProfile) {
+    const prevModes = effectiveModes(this.data.machine);
+    const { machine, tools } = profilePayload(profile);
+    this.history.exec(applyMachineProfileCommand(machine, tools, profile.id), this.target());
+    this.gen.generated = null;
+    const nextModes = effectiveModes(machine);
+    const modesChanged =
+      nextModes.length !== prevModes.length || nextModes.some((m) => !prevModes.includes(m));
+    if (modesChanged) {
+      modeNotice.current = assessModeSwitch(machine, this.data.operations, this.data.tools);
+    }
+  }
+
+  /// Detach the project from its machine profile: machine + tools stay
+  /// exactly as they are (they become project-local again); only the
+  /// reference clears, so edits stop mirroring back to the profile.
+  detachMachineProfile() {
+    if (this.data.machineProfileId == null) return;
+    this.history.exec(
+      applyMachineProfileCommand(
+        JSON.parse(JSON.stringify(this.data.machine)) as MachineSettings,
+        JSON.parse(JSON.stringify(this.data.tools)) as ToolEntry[],
+        null,
+      ),
       this.target(),
     );
   }

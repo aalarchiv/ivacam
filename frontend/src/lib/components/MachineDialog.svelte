@@ -14,6 +14,8 @@
   import PostProcessorEditor from './PostProcessorEditor.svelte';
   import { DialogDraft } from './dialog-draft.svelte';
   import * as fileOps from '../services/file_ops';
+  import { workspace } from '../state/workspace.svelte';
+  import { duplicateProfile, profileFromCurrent } from '../state/machine_profiles';
 
   interface Props {
     open: boolean;
@@ -67,6 +69,7 @@
       } catch (e) {
         console.error('MachineDialog.open: init failed', e);
       }
+      confirmingProfileDelete = false;
     }
   });
 
@@ -154,32 +157,119 @@
     return parts.join(', ');
   }
 
+  /// Plain MachineSettings from the composite draft — the exact value
+  /// commit() hands to setMachine, also reused by "Save as profile".
+  /// $state.snapshot strips the proxy (Svelte 5 proxies can trip
+  /// `structuredClone` on some WebKit builds, silently aborting the
+  /// commit); jerk folds back in from its enable toggle; a non-empty
+  /// capability set is normalized to contain the primary mode (the
+  /// emitter targets it; Rust's effective-capability logic reads
+  /// capabilities INSTEAD of mode when non-empty — and the disabled
+  /// primary checkbox never fires onchange, so a mode change after
+  /// customizing capabilities can leave the draft set lacking it).
+  function draftSnapshot(): MachineSettings {
+    const snap = $state.snapshot(draft) as MachineSettings;
+    snap.jerk = composite.jerkEnabled ? { ...jerkDraft } : undefined;
+    if (snap.capabilities && snap.capabilities.length > 0) {
+      snap.capabilities = [...new Set([...snap.capabilities, snap.mode])];
+    }
+    return snap;
+  }
+
   function commit() {
-    // $state.snapshot the proxy so `setMachineCommand` receives a
-    // plain object — Svelte 5 proxies can trip `structuredClone` on
-    // some WebKit builds, silently aborting the commit.
-    //
     // Whole body in try/catch so any throw from the snapshot or
     // setMachine still reaches `onClose()` — otherwise OK appears
     // broken. The error is logged and surfaces via the global error
     // banner so the underlying bug stays visible.
     try {
-      const snap = $state.snapshot(draft) as MachineSettings;
-      snap.jerk = composite.jerkEnabled ? { ...jerkDraft } : undefined;
-      // Normalize: a non-empty capability set must contain the primary
-      // mode (the emitter targets it; Rust's effective-capability logic
-      // reads capabilities INSTEAD of mode when non-empty). Covers the
-      // mode being changed after capabilities were customized — the
-      // disabled primary checkbox shows checked but never fires
-      // onchange, so the draft set can lack the new mode.
-      if (snap.capabilities && snap.capabilities.length > 0) {
-        snap.capabilities = [...new Set([...snap.capabilities, snap.mode])];
-      }
-      project.setMachine(snap);
+      project.setMachine(draftSnapshot());
     } catch (e) {
       console.error('MachineDialog.commit: setMachine failed', e);
     }
     onClose();
+  }
+
+  // ── machine profiles ──────────────────────────────────────────────
+  // Workspace-level named (machine + tool library) bundles — one per
+  // physical machine. The picker applies a profile to the PROJECT
+  // (machine + tools + reference, one undoable step); while a profile
+  // is referenced, project edits mirror back into it (App-level
+  // effect). The project file keeps its own embedded snapshot, so a
+  // referenced-but-missing profile still loads exactly as saved.
+  const profiles = $derived.by(() => {
+    void workspace.version;
+    return workspace.get().machine_profiles;
+  });
+  const activeProfileId = $derived(project.data.machineProfileId);
+  const activeProfileMissing = $derived(
+    activeProfileId != null && !profiles.some((p) => p.id === activeProfileId),
+  );
+  /// Two-step delete guard, same inline pattern as the discard bar.
+  let confirmingProfileDelete = $state(false);
+
+  function reseedDraft() {
+    try {
+      dd.open(compositeOf(project.data.machine));
+    } catch (e) {
+      console.error('MachineDialog: draft reseed failed', e);
+    }
+    confirmingProfileDelete = false;
+  }
+
+  function onProfileSelect(value: string) {
+    confirmingProfileDelete = false;
+    if (value === (activeProfileId ?? '')) return;
+    if (value === '') {
+      project.detachMachineProfile();
+      reseedDraft();
+      return;
+    }
+    const p = profiles.find((x) => x.id === value);
+    if (!p) return;
+    project.applyMachineProfile(p);
+    reseedDraft();
+  }
+
+  /// Save the CURRENT draft machine + the project's tool library as a
+  /// new profile and link the project to it. Applying the profile also
+  /// commits the draft machine (same undoable step), so the dialog
+  /// reseeds clean afterwards.
+  function saveAsProfile() {
+    try {
+      const profile = profileFromCurrent(draftSnapshot(), project.data.tools, profiles);
+      workspace.upsertMachineProfile(profile);
+      project.applyMachineProfile(profile);
+    } catch (e) {
+      console.error('MachineDialog: save-as-profile failed', e);
+    }
+    reseedDraft();
+  }
+
+  function duplicateActiveProfile() {
+    const src = profiles.find((p) => p.id === activeProfileId);
+    if (!src) return;
+    try {
+      const copy = duplicateProfile(src, profiles);
+      workspace.upsertMachineProfile(copy);
+      project.applyMachineProfile(copy);
+    } catch (e) {
+      console.error('MachineDialog: duplicate-profile failed', e);
+    }
+    reseedDraft();
+  }
+
+  /// First click arms; second deletes the profile from the workspace
+  /// and detaches the project (machine + tools stay as they are —
+  /// deleting a profile never touches the working copy).
+  function deleteActiveProfile() {
+    if (!confirmingProfileDelete) {
+      confirmingProfileDelete = true;
+      return;
+    }
+    confirmingProfileDelete = false;
+    if (activeProfileId == null) return;
+    workspace.deleteMachineProfile(activeProfileId);
+    project.detachMachineProfile();
   }
 
   /// Close protocol (dd.requestClose): the first attempt on a dirty
@@ -207,6 +297,66 @@
       <h2 id="machine-title">Machine</h2>
       <button class="dlg-close" onclick={close} aria-label="Close">×</button>
     </header>
+
+    <!-- Machine profiles: named (machine + tool library) bundles
+         stored per-user, one per physical machine. Picking one applies
+         its config AND its tool library to the project as a single
+         undoable step. -->
+    <div class="profile-bar">
+      <label
+        class="profile-pick"
+        title="Machine profile — a named machine setup plus its own tool library, saved on this computer (not in the project). Switching profiles swaps both into the project in one undoable step. While a profile is selected, edits to the machine or the tool library are saved back into it."
+      >
+        <span>Profile</span>
+        <select
+          value={activeProfileId ?? ''}
+          disabled={dd.isDirty}
+          title={dd.isDirty
+            ? 'You have unsaved machine edits — OK or Cancel them first, then switch profiles.'
+            : ''}
+          onchange={(e) => onProfileSelect((e.currentTarget as HTMLSelectElement).value)}
+        >
+          <option value="">— project-local (no profile) —</option>
+          {#each profiles as p (p.id)}
+            <option value={p.id}>{p.name}</option>
+          {/each}
+          {#if activeProfileMissing}
+            <option value={activeProfileId}>Referenced profile (not on this computer)</option>
+          {/if}
+        </select>
+      </label>
+      <button
+        type="button"
+        class="profile-btn"
+        onclick={saveAsProfile}
+        title="Save the machine settings shown below together with the project's current tool library as a new profile, and link this project to it."
+        >Save as profile</button
+      >
+      {#if activeProfileId != null && !activeProfileMissing}
+        <button
+          type="button"
+          class="profile-btn"
+          onclick={duplicateActiveProfile}
+          title="Copy this profile (machine + tools) under a new name — for variants of the same machine."
+          >Duplicate</button
+        >
+        <button
+          type="button"
+          class="profile-btn"
+          class:danger={confirmingProfileDelete}
+          onclick={deleteActiveProfile}
+          title="Remove this profile from this computer. The project keeps its current machine settings and tools — nothing in the project is deleted."
+          >{confirmingProfileDelete ? 'Delete profile?' : 'Delete'}</button
+        >
+      {/if}
+      {#if activeProfileMissing}
+        <span
+          class="profile-note"
+          title="This project references a machine profile that doesn't exist on this computer (it was saved elsewhere). The project loaded with its own embedded machine + tools — use 'Save as profile' to recreate the profile here."
+          >not on this computer</span
+        >
+      {/if}
+    </div>
 
     <!--
       ninc: storage is always mm regardless of `draft.unit`. The unit
@@ -923,6 +1073,44 @@
   }
   /* `.dlg-close` lives in Modal.svelte; `.btn-primary|secondary|danger`
      + `.discard-prompt` in app.css (audit hbi7). */
+  /* Machine-profile picker strip under the header. */
+  .profile-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.7rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-elevated);
+    font-size: 0.8rem;
+  }
+  .profile-pick {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+  }
+  .profile-pick select {
+    max-width: 220px;
+  }
+  .profile-btn {
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.74rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .profile-btn.danger {
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+  .profile-note {
+    color: var(--text-muted);
+    font-size: 0.74rem;
+    font-style: italic;
+  }
   .storage-note {
     margin: 0;
     padding: 0.45rem 0.7rem;

@@ -97,6 +97,7 @@
     dismissReopen,
     dismissReopenOnceLoaded,
     persistPerProjectStateOnChange,
+    mirrorMachineProfileOnChange,
     openRecentProject,
     wireSourceWatch,
     wireCloseConfirm,
@@ -268,6 +269,12 @@
   /// layers / selected op / playhead (subscriptions registered inside).
   $effect(() => {
     persistPerProjectStateOnChange();
+  });
+
+  /// Mirror machine + tool edits back into the referenced workspace
+  /// machine profile (subscriptions registered inside).
+  $effect(() => {
+    mirrorMachineProfileOnChange();
   });
 
   $effect(() => {

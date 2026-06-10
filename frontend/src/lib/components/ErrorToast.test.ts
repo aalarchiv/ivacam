@@ -34,6 +34,7 @@ function blankCommandTarget(): CommandTarget {
     imports: [],
     workOffset: { x_mm: 0, y_mm: 0, z_mm: 0, wcs: 'G54' },
     groupOpsByTool: false,
+    machineProfileId: null,
     dirty: false,
   };
 }

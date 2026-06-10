@@ -8,6 +8,7 @@ import {
   addFixtureCommand,
   addOperationCommand,
   addToolCommand,
+  applyMachineProfileCommand,
   assignToolCommand,
   assignToolToOpsCommand,
   autoFixToCommand,
@@ -89,6 +90,7 @@ function blankTarget(): CommandTarget {
     imports: [],
     workOffset: { x_mm: 0, y_mm: 0, z_mm: 0, wcs: 'G54' },
     groupOpsByTool: false,
+    machineProfileId: null,
     dirty: false,
   };
 }
@@ -463,6 +465,43 @@ describe('assignToolCommand', () => {
     expect(t.operations[0].toolId).toBe(42);
     cmd.revert(t);
     expect(t.operations[0].toolId).toBe(1);
+  });
+});
+
+describe('applyMachineProfileCommand', () => {
+  it('swaps machine + tools + profile reference together and round-trips', () => {
+    const t = blankTarget();
+    t.tools = [sampleTool(1)];
+    t.machine.mode = 'mill';
+    t.machineProfileId = null;
+    const profileMachine = { ...t.machine, mode: 'plasma', name: 'Plasma table' };
+    const profileTools = [sampleTool(5)];
+    const cmd = applyMachineProfileCommand(
+      profileMachine as MachineSettings,
+      profileTools,
+      'mp-abc',
+    );
+    cmd.apply(t);
+    expect(t.machine.mode).toBe('plasma');
+    expect(t.tools.map((x) => x.id)).toEqual([5]);
+    expect(t.machineProfileId).toBe('mp-abc');
+    expect(t.dirty).toBe(true);
+    cmd.revert(t);
+    expect(t.machine.mode).toBe('mill');
+    expect(t.tools.map((x) => x.id)).toEqual([1]);
+    expect(t.machineProfileId).toBeNull();
+  });
+
+  it('detach (null profile id) keeps the working copy and clears only the reference', () => {
+    const t = blankTarget();
+    t.tools = [sampleTool(1)];
+    t.machineProfileId = 'mp-old';
+    const cmd = applyMachineProfileCommand({ ...t.machine }, [...t.tools], null);
+    cmd.apply(t);
+    expect(t.machineProfileId).toBeNull();
+    expect(t.tools.map((x) => x.id)).toEqual([1]);
+    cmd.revert(t);
+    expect(t.machineProfileId).toBe('mp-old');
   });
 });
 

@@ -130,6 +130,29 @@ export function persistPerProjectStateOnChange(): void {
   }
 }
 
+/// Mirror the project's machine + tools into the workspace machine
+/// profile it references — the "tools belong to machines" write-back.
+/// Called from an App `$effect`; the deep `$state.snapshot` reads
+/// register subscriptions on every nested machine / tool field, so any
+/// edit (including undo/redo, which bypasses the project methods)
+/// re-runs it. The store no-ops when nothing actually changed or the
+/// profile doesn't exist here. Deferred off the effect flush like
+/// `persistPerProjectState` — `workspace.version` is `$state` and must
+/// not be bumped synchronously inside an effect body.
+export function mirrorMachineProfileOnChange(): void {
+  const id = project.data.machineProfileId;
+  const machine = $state.snapshot(project.data.machine);
+  const tools = $state.snapshot(project.data.tools);
+  if (id == null) return;
+  queueMicrotask(() => {
+    try {
+      workspace.mirrorMachineProfile(id, machine, tools);
+    } catch (e) {
+      console.warn('mirror machine profile:', e);
+    }
+  });
+}
+
 /// Load a Recent-projects entry. Dirty-check once here so we don't
 /// double-prompt when loadFromPath / loadProjectPath also vet it.
 /// `openFile` / `openProject` do their own check; the path variants

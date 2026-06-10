@@ -750,6 +750,12 @@ export interface ProjectFile {
   workOffset?: WorkOffset;
   /// Opt-in tool-change-order optimization. Omitted when false.
   groupOpsByTool?: boolean;
+  /// Workspace machine-profile reference (see
+  /// `workspace.MachineProfile`). The embedded `machine` + `tools`
+  /// above remain the authoritative snapshot — when this id doesn't
+  /// exist on the loading installation, the project opens exactly as
+  /// saved and the reference shows as "not on this computer".
+  machineProfileId?: string;
 }
 
 /// A target surface source for relief / ball-nose surfacing. Mirror

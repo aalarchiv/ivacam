@@ -166,3 +166,64 @@ describe('WorkspaceStore', () => {
     expect(s.get().last_project).toBeNull();
   });
 });
+
+describe('machine profiles', () => {
+  const sampleProfile = (id: string, name = 'Shop CNC') => ({
+    id,
+    name,
+    machine: { unit: 'mm', mode: 'mill', comments: true, arcs: true } as never,
+    tools: [{ id: 1, name: 'em', kind: 'endmill' }] as never[],
+  });
+
+  it('upsert / mirror / delete round-trip through save + load', async () => {
+    const t = new MemoryTransport();
+    const a = await freshLoaded(t);
+    a.upsertMachineProfile(sampleProfile('mp-1') as never);
+    a.upsertMachineProfile(sampleProfile('mp-2', 'Plasma table') as never);
+    await a.save();
+
+    const b = await freshLoaded(t);
+    expect(b.get().machine_profiles.map((p) => p.id)).toEqual(['mp-1', 'mp-2']);
+
+    // Mirror updates in place (and follows machine.name when set).
+    const edited = sampleProfile('mp-1');
+    (edited.machine as Record<string, unknown>).name = 'Renamed CNC';
+    b.mirrorMachineProfile('mp-1', edited.machine as never, edited.tools as never);
+    expect(b.get().machine_profiles[0].name).toBe('Renamed CNC');
+    // Mirror into a missing id is a no-op, not an insert.
+    b.mirrorMachineProfile('mp-ghost', edited.machine as never, edited.tools as never);
+    expect(b.get().machine_profiles).toHaveLength(2);
+
+    b.deleteMachineProfile('mp-2');
+    await b.save();
+    const c = await freshLoaded(t);
+    expect(c.get().machine_profiles.map((p) => p.id)).toEqual(['mp-1']);
+  });
+
+  it('upsert with an existing id replaces in place (stable ordering)', async () => {
+    const t = new MemoryTransport();
+    const s = await freshLoaded(t);
+    s.upsertMachineProfile(sampleProfile('mp-1', 'A') as never);
+    s.upsertMachineProfile(sampleProfile('mp-2', 'B') as never);
+    s.upsertMachineProfile(sampleProfile('mp-1', 'A2') as never);
+    expect(s.get().machine_profiles.map((p) => p.name)).toEqual(['A2', 'B']);
+  });
+
+  it('parse drops malformed and duplicate-id profile entries', async () => {
+    const t = new MemoryTransport();
+    t.blob = JSON.stringify({
+      ...DEFAULT_WORKSPACE,
+      machine_profiles: [
+        sampleProfile('mp-ok'),
+        sampleProfile('mp-ok', 'dup id'),
+        { id: '', name: 'no id', machine: {}, tools: [] },
+        { id: 'mp-no-machine', name: 'x', tools: [] },
+        { id: 'mp-no-tools', name: 'x', machine: {} },
+        'garbage',
+        null,
+      ],
+    });
+    const s = await freshLoaded(t);
+    expect(s.get().machine_profiles.map((p) => p.id)).toEqual(['mp-ok']);
+  });
+});

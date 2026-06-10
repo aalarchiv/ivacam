@@ -5,6 +5,7 @@
 // subscriber callback.
 
 import { isTauri } from '../api/env';
+import type { MachineSettings, ToolEntry } from './project-types';
 
 const STORAGE_KEY = 'ivac-workspace';
 const SCHEMA_VERSION = 1;
@@ -38,6 +39,23 @@ export interface PerProjectState {
   playhead: number;
 }
 
+/// A named machine setup: machine config + the tool library that
+/// belongs to that physical machine (a shop owning a router AND a
+/// plasma table keeps one profile per machine; switching profile
+/// brings the right tools along). Stored per-user at workspace level —
+/// NOT in the project file; the project keeps its own embedded
+/// machine+tools snapshot and references a profile by `id`, so
+/// projects stay portable across installations where the profile
+/// doesn't exist.
+export interface MachineProfile {
+  /// Stable identity (survives renames). Generated at create time.
+  id: string;
+  /// Display name. Mirrors `machine.name` when that's non-empty.
+  name: string;
+  machine: MachineSettings;
+  tools: ToolEntry[];
+}
+
 export interface WorkspaceState {
   workspace_schema_version: number;
   last_project: string | null;
@@ -46,6 +64,7 @@ export interface WorkspaceState {
   panels: PanelLayout;
   per_project: Record<string, PerProjectState>;
   last_post_processor: string;
+  machine_profiles: MachineProfile[];
 }
 
 export const DEFAULT_WORKSPACE: WorkspaceState = {
@@ -56,6 +75,7 @@ export const DEFAULT_WORKSPACE: WorkspaceState = {
   panels: { left_width: 0, right_width: 360, bottom_height: 240 },
   per_project: {},
   last_post_processor: 'linuxcnc',
+  machine_profiles: [],
 };
 
 function defaultsClone(): WorkspaceState {
@@ -64,6 +84,7 @@ function defaultsClone(): WorkspaceState {
     recent_projects: [],
     panels: { ...DEFAULT_WORKSPACE.panels },
     per_project: {},
+    machine_profiles: [],
   };
 }
 
@@ -148,6 +169,30 @@ export function parseWorkspace(raw: string | null | undefined): WorkspaceState {
         playhead: typeof e.playhead === 'number' ? e.playhead : 1.0,
       };
     }
+  }
+  if (Array.isArray(obj.machine_profiles)) {
+    // Structural validation only — the machine / tools payloads are
+    // FE wire shapes that the APPLY path migrates (same
+    // migrateMachineSettings / migrateLegacyToolTerms treatment a
+    // loaded project gets), so old profiles age like old projects.
+    const profiles: MachineProfile[] = [];
+    const seen = new Set<string>();
+    for (const e of obj.machine_profiles) {
+      if (!e || typeof e !== 'object') continue;
+      const p = e as Record<string, unknown>;
+      if (typeof p.id !== 'string' || p.id.length === 0 || seen.has(p.id)) continue;
+      if (typeof p.name !== 'string') continue;
+      if (!p.machine || typeof p.machine !== 'object') continue;
+      if (!Array.isArray(p.tools)) continue;
+      seen.add(p.id);
+      profiles.push({
+        id: p.id,
+        name: p.name,
+        machine: p.machine as MachineSettings,
+        tools: p.tools as ToolEntry[],
+      });
+    }
+    out.machine_profiles = profiles;
   }
   return out;
 }
@@ -293,6 +338,50 @@ export class WorkspaceStore {
 
   clearRecentProjects() {
     this.state = { ...this.state, recent_projects: [], last_project: null };
+    this.notify();
+    this.scheduleSave();
+  }
+
+  // ── machine profiles ─────────────────────────────────────────────
+
+  /// Add a profile, or replace the one with the same id (rename /
+  /// duplicate flows). Payloads are deep-cloned so live $state proxies
+  /// can't leak into the store.
+  upsertMachineProfile(profile: MachineProfile) {
+    const clone = JSON.parse(JSON.stringify(profile)) as MachineProfile;
+    const rest = this.state.machine_profiles.filter((p) => p.id !== profile.id);
+    const idx = this.state.machine_profiles.findIndex((p) => p.id === profile.id);
+    if (idx >= 0) rest.splice(idx, 0, clone);
+    else rest.push(clone);
+    this.state = { ...this.state, machine_profiles: rest };
+    this.notify();
+    this.scheduleSave();
+  }
+
+  /// Mirror the active project's machine + tools into the profile it
+  /// references — the "tools belong to machines" write-back. No-op
+  /// when the profile doesn't exist (deleted, or the project came from
+  /// another installation) or nothing changed (called from a reactive
+  /// effect, so cheap idempotence matters). The display name follows
+  /// `machine.name` when non-empty.
+  mirrorMachineProfile(id: string, machine: MachineSettings, tools: ToolEntry[]) {
+    const cur = this.state.machine_profiles.find((p) => p.id === id);
+    if (!cur) return;
+    const name = machine.name?.trim() ? machine.name.trim() : cur.name;
+    if (
+      cur.name === name &&
+      JSON.stringify(cur.machine) === JSON.stringify(machine) &&
+      JSON.stringify(cur.tools) === JSON.stringify(tools)
+    ) {
+      return;
+    }
+    this.upsertMachineProfile({ id, name, machine, tools });
+  }
+
+  deleteMachineProfile(id: string) {
+    const next = this.state.machine_profiles.filter((p) => p.id !== id);
+    if (next.length === this.state.machine_profiles.length) return;
+    this.state = { ...this.state, machine_profiles: next };
     this.notify();
     this.scheduleSave();
   }

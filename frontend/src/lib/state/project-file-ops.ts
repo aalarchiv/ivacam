@@ -142,6 +142,9 @@ export function snapshotProject(p: ProjectState): ProjectFile {
     ...(isDefaultWorkOffset(p.data.workOffset) ? {} : { workOffset: p.data.workOffset }),
     // Persist the tool-grouping toggle only when on.
     ...(p.data.groupOpsByTool ? { groupOpsByTool: true } : {}),
+    // Workspace machine-profile reference (the embedded machine +
+    // tools above stay the portable snapshot).
+    ...(p.data.machineProfileId != null ? { machineProfileId: p.data.machineProfileId } : {}),
   };
 }
 
@@ -189,6 +192,13 @@ export function restoreProject(p: ProjectState, file: ProjectFile) {
     : defaultWorkOffset();
   // Restore the tool-grouping toggle (legacy files lack it → false).
   p.data.groupOpsByTool = file.groupOpsByTool === true;
+  // Restore the machine-profile reference. Deliberately NOT auto-
+  // applying the live profile here — the embedded machine + tools
+  // above are what the project was saved with; silently swapping in a
+  // since-edited profile could re-target every op. The user switches
+  // profiles explicitly via the MachineDialog picker.
+  p.data.machineProfileId =
+    typeof file.machineProfileId === 'string' ? file.machineProfileId : null;
   p.sel.selectedFixtureId = null;
   p.sel.selectedOpId = null;
   // This content came from a saved .ivac-project file — mark it saved

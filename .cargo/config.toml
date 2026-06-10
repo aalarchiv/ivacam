@@ -1,6 +1,15 @@
 [alias]
 xtask = "run --package xtask --"
 
+# Cache compiled rustc artifacts keyed on input + flags. Big win after
+# `cargo clean`, after rebases that touch only a few crates, and across
+# worktrees. Local-disk cache by default (~/.cache/sccache). Same
+# fail-loud policy as the lld block below: machines without sccache
+# installed fail at build start — `cargo install sccache` or remove
+# this block.
+[build]
+rustc-wrapper = "sccache"
+
 # hzru: prefer lld for linking. GNU ld is single-threaded; lld
 # parallelises and is ~5–10× faster on the link step alone — a
 # meaningful chunk of incremental-build wall time on this workspace.

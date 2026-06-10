@@ -14,6 +14,7 @@ the desktop bundle is produced by Tauri 2.
 | Tauri CLI   | 2.x              | Install via `cargo install tauri-cli --version "^2" --locked` once you're set up for desktop builds. |
 | wasm-pack   | ≥ 0.14           | Install via `cargo install wasm-pack --locked` for the WASM crate. |
 | cargo-deny  | ≥ 0.19           | Optional but recommended; CI runs it. `cargo install cargo-deny --locked`. |
+| sccache     | ≥ 0.15           | Required — `.cargo/config.toml` sets it as `rustc-wrapper` (compile cache; big win after `cargo clean` / across worktrees). `cargo install sccache --locked`, or delete the `[build]` block from `.cargo/config.toml` to opt out. |
 
 ### Linux (Debian/Ubuntu)
 

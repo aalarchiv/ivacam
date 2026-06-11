@@ -13,8 +13,11 @@
   interface Props {
     open: boolean;
     onClose: () => void;
+    /// Render as a tab panel: no Modal wrapper, no header/Done (edits
+    /// apply live, so there's nothing to confirm).
+    embedded?: boolean;
   }
-  let { open, onClose }: Props = $props();
+  let { open, onClose, embedded = false }: Props = $props();
 
   function update<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     project.updateSettings({ [key]: value } as Partial<AppSettings>);
@@ -53,7 +56,495 @@
   }
 </script>
 
-{#if open}
+{#snippet shell()}
+  {#if !embedded}
+    <header>
+      <h2 id="settings-title">Settings</h2>
+      <button class="dlg-close" onclick={onClose} aria-label="Close">×</button>
+    </header>
+  {/if}
+
+  <div class="body">
+    <section>
+      <h3>Appearance</h3>
+      <div class="grid">
+        <label
+          >Theme
+          <div
+            class="seg"
+            role="radiogroup"
+            aria-label="Theme"
+            tabindex="-1"
+            onkeydown={onThemeKey}
+          >
+            <button
+              role="radio"
+              aria-checked={project.data.settings.theme === 'auto'}
+              tabindex={project.data.settings.theme === 'auto' ? 0 : -1}
+              class:active={project.data.settings.theme === 'auto'}
+              onclick={() => update('theme', 'auto')}
+              type="button">Auto</button
+            >
+            <button
+              role="radio"
+              aria-checked={project.data.settings.theme === 'light'}
+              tabindex={project.data.settings.theme === 'light' ? 0 : -1}
+              class:active={project.data.settings.theme === 'light'}
+              onclick={() => update('theme', 'light')}
+              type="button">Light</button
+            >
+            <button
+              role="radio"
+              aria-checked={project.data.settings.theme === 'dark'}
+              tabindex={project.data.settings.theme === 'dark' ? 0 : -1}
+              class:active={project.data.settings.theme === 'dark'}
+              onclick={() => update('theme', 'dark')}
+              type="button">Dark</button
+            >
+          </div>
+        </label>
+      </div>
+    </section>
+
+    <section>
+      <h3>View</h3>
+      <div class="grid">
+        <label class="check">
+          <input
+            type="checkbox"
+            checked={project.data.settings.showStockBox}
+            onchange={(e) => update('showStockBox', (e.currentTarget as HTMLInputElement).checked)}
+          />
+          <span>Show stock outline in 3D</span>
+        </label>
+      </div>
+    </section>
+
+    <section>
+      <h3>Cutting preview</h3>
+      <p class="hint">
+        How the 3D viewport renders the simulated stock once cutting preview lands. These values are
+        stored now so the eventual renderer picks them up automatically.
+      </p>
+      <div class="grid">
+        <label
+          >Default mode
+          <select
+            value={project.data.settings.previewMode}
+            onchange={(e) =>
+              update(
+                'previewMode',
+                (e.currentTarget as HTMLSelectElement).value as AppSettings['previewMode'],
+              )}
+          >
+            <option value="wireframe">Wireframe</option>
+            <option value="solid">Solid</option>
+            <option value="both">Both</option>
+          </select>
+        </label>
+
+        <label
+          >Solid color
+          <div class="color">
+            <input
+              type="color"
+              value={project.data.settings.solidColor}
+              oninput={(e) => update('solidColor', (e.currentTarget as HTMLInputElement).value)}
+            />
+            <input
+              type="text"
+              class="hex"
+              value={project.data.settings.solidColor}
+              oninput={(e) => update('solidColor', (e.currentTarget as HTMLInputElement).value)}
+            />
+          </div>
+        </label>
+
+        <label
+          >Solid opacity
+          <div class="slider-row">
+            <input
+              type="range"
+              min="0.1"
+              max="1"
+              step="0.05"
+              value={project.data.settings.solidOpacity}
+              onchange={(e) =>
+                update(
+                  'solidOpacity',
+                  toNumber(
+                    (e.currentTarget as HTMLInputElement).value,
+                    project.data.settings.solidOpacity,
+                    0.1,
+                    1,
+                  ),
+                )}
+            />
+            <span class="num">{project.data.settings.solidOpacity.toFixed(2)}</span>
+          </div>
+        </label>
+
+        <label
+          >Edge color
+          <div class="color">
+            <input
+              type="color"
+              value={project.data.settings.edgeColor}
+              oninput={(e) => update('edgeColor', (e.currentTarget as HTMLInputElement).value)}
+            />
+            <input
+              type="text"
+              class="hex"
+              value={project.data.settings.edgeColor}
+              oninput={(e) => update('edgeColor', (e.currentTarget as HTMLInputElement).value)}
+            />
+          </div>
+        </label>
+
+        <label
+          >Edge opacity
+          <div class="slider-row">
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={project.data.settings.edgeOpacity}
+              onchange={(e) =>
+                update(
+                  'edgeOpacity',
+                  toNumber(
+                    (e.currentTarget as HTMLInputElement).value,
+                    project.data.settings.edgeOpacity,
+                    0,
+                    1,
+                  ),
+                )}
+            />
+            <span class="num">{project.data.settings.edgeOpacity.toFixed(2)}</span>
+          </div>
+        </label>
+
+        <label
+          >Preview line width
+          <div class="slider-row">
+            <input
+              type="range"
+              min="0.5"
+              max="6"
+              step="0.5"
+              value={project.data.settings.previewLineWidth}
+              onchange={(e) =>
+                update(
+                  'previewLineWidth',
+                  toNumber(
+                    (e.currentTarget as HTMLInputElement).value,
+                    project.data.settings.previewLineWidth,
+                    0.5,
+                    6,
+                  ),
+                )}
+            />
+            <span class="num">{project.data.settings.previewLineWidth.toFixed(1)} px</span>
+          </div>
+        </label>
+
+        <label
+          >Tool-move arrow density
+          <div class="slider-row">
+            <input
+              type="range"
+              min="0"
+              max="3"
+              step="0.25"
+              value={project.data.settings.toolMoveArrowDensity}
+              onchange={(e) =>
+                update(
+                  'toolMoveArrowDensity',
+                  toNumber(
+                    (e.currentTarget as HTMLInputElement).value,
+                    project.data.settings.toolMoveArrowDensity,
+                    0,
+                    3,
+                  ),
+                )}
+            />
+            <span class="num"
+              >{project.data.settings.toolMoveArrowDensity === 0
+                ? 'off'
+                : `${project.data.settings.toolMoveArrowDensity.toFixed(2)}×`}</span
+            >
+          </div>
+        </label>
+
+        <label
+          >Cell resolution
+          <select
+            value={project.data.settings.cellResolutionMode}
+            onchange={(e) =>
+              update(
+                'cellResolutionMode',
+                (e.currentTarget as HTMLSelectElement).value as AppSettings['cellResolutionMode'],
+              )}
+          >
+            <option value="auto">Auto (tool diameter / 15)</option>
+            <option value="manual">Manual</option>
+          </select>
+        </label>
+
+        {#if project.data.settings.cellResolutionMode === 'manual'}
+          <label
+            >Cell size (mm)
+            <input
+              type="number"
+              min="0.01"
+              max="5"
+              step="0.05"
+              title="Voxel resolution for the sim heightmap. Below 0.05 mm explodes RAM; above ~2 mm loses tab + sliver detail. Cap is 5 mm to keep the sim sane."
+              value={project.data.settings.cellResolutionMm}
+              onchange={(e) =>
+                update(
+                  'cellResolutionMm',
+                  toNumber(
+                    (e.currentTarget as HTMLInputElement).value,
+                    project.data.settings.cellResolutionMm,
+                    0.01,
+                    5,
+                  ),
+                )}
+            />
+          </label>
+        {/if}
+      </div>
+    </section>
+
+    <section>
+      <h3>Performance</h3>
+      <div class="grid">
+        <label class="check">
+          <input
+            type="checkbox"
+            checked={project.data.settings.solidPreviewByDefault}
+            onchange={(e) =>
+              update('solidPreviewByDefault', (e.currentTarget as HTMLInputElement).checked)}
+          />
+          <span>Enable solid preview by default</span>
+        </label>
+
+        <label
+          >Max simulation cells
+          <input
+            type="number"
+            min="100000"
+            step="100000"
+            value={project.data.settings.maxSimulationCells}
+            onchange={(e) =>
+              update(
+                'maxSimulationCells',
+                Math.round(
+                  toNumber(
+                    (e.currentTarget as HTMLInputElement).value,
+                    project.data.settings.maxSimulationCells,
+                    100_000,
+                  ),
+                ),
+              )}
+          />
+        </label>
+
+        <label
+          >Max render triangles
+          <input
+            type="number"
+            min="100000"
+            step="100000"
+            value={project.data.settings.maxRenderTriangles}
+            onchange={(e) =>
+              update(
+                'maxRenderTriangles',
+                Math.round(
+                  toNumber(
+                    (e.currentTarget as HTMLInputElement).value,
+                    project.data.settings.maxRenderTriangles,
+                    100_000,
+                  ),
+                ),
+              )}
+          />
+        </label>
+      </div>
+      <p class="hint">
+        <b>Max simulation cells</b> caps the WASM heightmap grid (and so the simulation accuracy).
+        <b>Max render triangles</b> caps the 3D-sim preview's mesh size: the renderer automatically drops
+        to a coarser LOD level when zoomed out or when simulation cells exceed the budget. Simulation
+        accuracy is preserved; only the rendered mesh degrades. Stepped voxel mesh ≈ 6 triangles per cell.
+      </p>
+
+      <!-- Exact 3D rewind toggle. Default ON
+             because the post-Generate `playhead = 1.0` hop means
+             the user lands at the END-OF-PROGRAM state right
+             after Generate — without exact rewind, dragging the
+             scrubber back leaves the terrain stuck at end-state.
+             Users on enormous programs can flip it off for
+             responsive scrubbing at the price of time-accurate
+             terrain. -->
+      <label class="check">
+        <input
+          type="checkbox"
+          checked={project.data.settings.exactSimRewind}
+          onchange={(e) => update('exactSimRewind', (e.currentTarget as HTMLInputElement).checked)}
+        />
+        <span>Exact 3D rewind on backstep</span>
+      </label>
+      <p class="hint">
+        The 3D heightfield is a forward-only carve simulator: cells can only get deeper. <b
+          >When on</b
+        >
+        (default), every backstep resets the sim and replays the carve from t = 0 to the new playhead
+        so the heightfield exactly tracks the playhead's position in time. Replay cost scales with the
+        number of segments replayed; on programs with tens of thousands of segments scrubbing can stutter.
+        <b>When off</b>, backstep is a no-op for the sim — the heightfield retains the deepest cut
+        at each XY from the last time the playhead reached that segment. Useful for fast scrubbing
+        on huge programs when you don't need time-accurate rewind, BUT note: after every Generate
+        the playhead jumps to 1.0 so warnings surface, which means the off setting lands the
+        heightfield at end-of-program until you re-scrub forward.
+      </p>
+    </section>
+
+    <section>
+      <h3>Sim safety</h3>
+      <div class="grid">
+        <label class="check">
+          <input
+            type="checkbox"
+            checked={project.data.settings.blockOnCriticalSimWarnings}
+            onchange={(e) =>
+              update('blockOnCriticalSimWarnings', (e.currentTarget as HTMLInputElement).checked)}
+          />
+          <span>Block G-code generation on critical sim warnings</span>
+        </label>
+        <label
+          class="check"
+          title="When on, exporting/saving G-code is blocked if the last Generate found moves outside the machine work area (a soft-limit fault or gantry crash on the real machine). Off by default because the work-area envelope is often a placeholder — turn it on once you've set your machine's real travel. Generate/preview stay available so you can see and fix the violation."
+        >
+          <input
+            type="checkbox"
+            checked={project.data.settings.blockOnWorkAreaViolation}
+            onchange={(e) =>
+              update('blockOnWorkAreaViolation', (e.currentTarget as HTMLInputElement).checked)}
+          />
+          <span>Block G-code export on out-of-work-area moves</span>
+        </label>
+        <label class="check">
+          <input
+            type="checkbox"
+            checked={project.data.settings.autoRunSimOnSave}
+            onchange={(e) =>
+              update('autoRunSimOnSave', (e.currentTarget as HTMLInputElement).checked)}
+          />
+          <span>Auto-run sim on every project save</span>
+        </label>
+        <label
+          class="check"
+          title="Debounces ~1.5 s after the last edit, then runs Generate G-code. Off by default so power users on big projects keep manual control."
+        >
+          <input
+            type="checkbox"
+            checked={project.data.settings.autoRegenerate}
+            onchange={(e) =>
+              update('autoRegenerate', (e.currentTarget as HTMLInputElement).checked)}
+          />
+          <span>Auto-regenerate G-code after edits</span>
+        </label>
+      </div>
+      <p class="hint">
+        "Critical" warnings are collisions and rapids cutting through material. With the block
+        enabled, fixing them — or disabling the safety check — is required before downloading
+        G-code.
+      </p>
+    </section>
+
+    <section>
+      <h3>Source files</h3>
+      <div class="grid">
+        <label class="check">
+          <input
+            type="checkbox"
+            checked={project.data.settings.autoReloadSources}
+            onchange={(e) =>
+              update('autoReloadSources', (e.currentTarget as HTMLInputElement).checked)}
+          />
+          <span>Auto-reload imported DXF / SVG when changed externally</span>
+        </label>
+      </div>
+      <p class="hint">
+        Desktop only. Watches the source file backing the current import and re-runs it when the CAD
+        app saves a new version (one undoable step). Disable to get a "Reload?" toast instead.
+        Network and OneDrive-synced paths can drop events silently — manually re-import if a save
+        doesn't show up within a few seconds.
+      </p>
+    </section>
+
+    <section>
+      <h3>Snap to</h3>
+      <div class="grid">
+        {#each [{ key: 'endpoint', label: 'Endpoint', help: 'Snap to segment endpoints.' }, { key: 'midpoint', label: 'Midpoint', help: 'Snap to the midpoint of each segment.' }, { key: 'intersection', label: 'Intersection', help: 'Snap to line / arc crossings.' }, { key: 'center', label: 'Center', help: 'Snap to circle / arc centers.' }, { key: 'grid', label: 'Grid', help: 'Snap to integer multiples of the grid step below.' }] as o (o.key)}
+          <label class="check" title={o.help}>
+            <input
+              type="checkbox"
+              checked={!!project.data.settings.osnap?.[
+                o.key as 'endpoint' | 'midpoint' | 'intersection' | 'center' | 'grid'
+              ]}
+              onchange={(e) =>
+                update('osnap', {
+                  ...project.data.settings.osnap,
+                  [o.key]: (e.currentTarget as HTMLInputElement).checked,
+                })}
+            />
+            <span>{o.label}</span>
+          </label>
+        {/each}
+        <label
+          title="Grid step (mm) when 'Grid' snap is on. Cursor latches to integer multiples of this offset from the project origin."
+          >Grid step
+          <input
+            type="number"
+            min="0.1"
+            step="0.1"
+            value={project.data.settings.osnap?.gridStepMm ?? 5}
+            onchange={(e) =>
+              update('osnap', {
+                ...project.data.settings.osnap,
+                gridStepMm: Math.max(
+                  0.1,
+                  toNumber(
+                    (e.currentTarget as HTMLInputElement).value,
+                    project.data.settings.osnap?.gridStepMm ?? 5,
+                    0.1,
+                  ),
+                ),
+              })}
+          />
+        </label>
+      </div>
+      <p class="hint">
+        Object snap on the 2D canvas. Endpoint / midpoint / intersection / center latch the cursor
+        to existing geometry features; Grid latches to abstract grid spots independent of the
+        drawing.
+      </p>
+    </section>
+  </div>
+
+  {#if !embedded}
+    <footer>
+      <button class="btn-primary" onclick={onClose} type="button">Done</button>
+    </footer>
+  {/if}
+{/snippet}
+
+{#if embedded}
+  <section class="embedded-shell">{@render shell()}</section>
+{:else if open}
   <Modal
     {onClose}
     persistKey="settings"
@@ -62,488 +553,7 @@
     resizable
     ariaLabelledBy="settings-title"
   >
-    <header>
-      <h2 id="settings-title">Settings</h2>
-      <button class="dlg-close" onclick={onClose} aria-label="Close">×</button>
-    </header>
-
-    <div class="body">
-      <section>
-        <h3>Appearance</h3>
-        <div class="grid">
-          <label
-            >Theme
-            <div
-              class="seg"
-              role="radiogroup"
-              aria-label="Theme"
-              tabindex="-1"
-              onkeydown={onThemeKey}
-            >
-              <button
-                role="radio"
-                aria-checked={project.data.settings.theme === 'auto'}
-                tabindex={project.data.settings.theme === 'auto' ? 0 : -1}
-                class:active={project.data.settings.theme === 'auto'}
-                onclick={() => update('theme', 'auto')}
-                type="button">Auto</button
-              >
-              <button
-                role="radio"
-                aria-checked={project.data.settings.theme === 'light'}
-                tabindex={project.data.settings.theme === 'light' ? 0 : -1}
-                class:active={project.data.settings.theme === 'light'}
-                onclick={() => update('theme', 'light')}
-                type="button">Light</button
-              >
-              <button
-                role="radio"
-                aria-checked={project.data.settings.theme === 'dark'}
-                tabindex={project.data.settings.theme === 'dark' ? 0 : -1}
-                class:active={project.data.settings.theme === 'dark'}
-                onclick={() => update('theme', 'dark')}
-                type="button">Dark</button
-              >
-            </div>
-          </label>
-        </div>
-      </section>
-
-      <section>
-        <h3>View</h3>
-        <div class="grid">
-          <label class="check">
-            <input
-              type="checkbox"
-              checked={project.data.settings.showStockBox}
-              onchange={(e) =>
-                update('showStockBox', (e.currentTarget as HTMLInputElement).checked)}
-            />
-            <span>Show stock outline in 3D</span>
-          </label>
-        </div>
-      </section>
-
-      <section>
-        <h3>Cutting preview</h3>
-        <p class="hint">
-          How the 3D viewport renders the simulated stock once cutting preview lands. These values
-          are stored now so the eventual renderer picks them up automatically.
-        </p>
-        <div class="grid">
-          <label
-            >Default mode
-            <select
-              value={project.data.settings.previewMode}
-              onchange={(e) =>
-                update(
-                  'previewMode',
-                  (e.currentTarget as HTMLSelectElement).value as AppSettings['previewMode'],
-                )}
-            >
-              <option value="wireframe">Wireframe</option>
-              <option value="solid">Solid</option>
-              <option value="both">Both</option>
-            </select>
-          </label>
-
-          <label
-            >Solid color
-            <div class="color">
-              <input
-                type="color"
-                value={project.data.settings.solidColor}
-                oninput={(e) => update('solidColor', (e.currentTarget as HTMLInputElement).value)}
-              />
-              <input
-                type="text"
-                class="hex"
-                value={project.data.settings.solidColor}
-                oninput={(e) => update('solidColor', (e.currentTarget as HTMLInputElement).value)}
-              />
-            </div>
-          </label>
-
-          <label
-            >Solid opacity
-            <div class="slider-row">
-              <input
-                type="range"
-                min="0.1"
-                max="1"
-                step="0.05"
-                value={project.data.settings.solidOpacity}
-                onchange={(e) =>
-                  update(
-                    'solidOpacity',
-                    toNumber(
-                      (e.currentTarget as HTMLInputElement).value,
-                      project.data.settings.solidOpacity,
-                      0.1,
-                      1,
-                    ),
-                  )}
-              />
-              <span class="num">{project.data.settings.solidOpacity.toFixed(2)}</span>
-            </div>
-          </label>
-
-          <label
-            >Edge color
-            <div class="color">
-              <input
-                type="color"
-                value={project.data.settings.edgeColor}
-                oninput={(e) => update('edgeColor', (e.currentTarget as HTMLInputElement).value)}
-              />
-              <input
-                type="text"
-                class="hex"
-                value={project.data.settings.edgeColor}
-                oninput={(e) => update('edgeColor', (e.currentTarget as HTMLInputElement).value)}
-              />
-            </div>
-          </label>
-
-          <label
-            >Edge opacity
-            <div class="slider-row">
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={project.data.settings.edgeOpacity}
-                onchange={(e) =>
-                  update(
-                    'edgeOpacity',
-                    toNumber(
-                      (e.currentTarget as HTMLInputElement).value,
-                      project.data.settings.edgeOpacity,
-                      0,
-                      1,
-                    ),
-                  )}
-              />
-              <span class="num">{project.data.settings.edgeOpacity.toFixed(2)}</span>
-            </div>
-          </label>
-
-          <label
-            >Preview line width
-            <div class="slider-row">
-              <input
-                type="range"
-                min="0.5"
-                max="6"
-                step="0.5"
-                value={project.data.settings.previewLineWidth}
-                onchange={(e) =>
-                  update(
-                    'previewLineWidth',
-                    toNumber(
-                      (e.currentTarget as HTMLInputElement).value,
-                      project.data.settings.previewLineWidth,
-                      0.5,
-                      6,
-                    ),
-                  )}
-              />
-              <span class="num">{project.data.settings.previewLineWidth.toFixed(1)} px</span>
-            </div>
-          </label>
-
-          <label
-            >Tool-move arrow density
-            <div class="slider-row">
-              <input
-                type="range"
-                min="0"
-                max="3"
-                step="0.25"
-                value={project.data.settings.toolMoveArrowDensity}
-                onchange={(e) =>
-                  update(
-                    'toolMoveArrowDensity',
-                    toNumber(
-                      (e.currentTarget as HTMLInputElement).value,
-                      project.data.settings.toolMoveArrowDensity,
-                      0,
-                      3,
-                    ),
-                  )}
-              />
-              <span class="num"
-                >{project.data.settings.toolMoveArrowDensity === 0
-                  ? 'off'
-                  : `${project.data.settings.toolMoveArrowDensity.toFixed(2)}×`}</span
-              >
-            </div>
-          </label>
-
-          <label
-            >Cell resolution
-            <select
-              value={project.data.settings.cellResolutionMode}
-              onchange={(e) =>
-                update(
-                  'cellResolutionMode',
-                  (e.currentTarget as HTMLSelectElement).value as AppSettings['cellResolutionMode'],
-                )}
-            >
-              <option value="auto">Auto (tool diameter / 15)</option>
-              <option value="manual">Manual</option>
-            </select>
-          </label>
-
-          {#if project.data.settings.cellResolutionMode === 'manual'}
-            <label
-              >Cell size (mm)
-              <input
-                type="number"
-                min="0.01"
-                max="5"
-                step="0.05"
-                title="Voxel resolution for the sim heightmap. Below 0.05 mm explodes RAM; above ~2 mm loses tab + sliver detail. Cap is 5 mm to keep the sim sane."
-                value={project.data.settings.cellResolutionMm}
-                onchange={(e) =>
-                  update(
-                    'cellResolutionMm',
-                    toNumber(
-                      (e.currentTarget as HTMLInputElement).value,
-                      project.data.settings.cellResolutionMm,
-                      0.01,
-                      5,
-                    ),
-                  )}
-              />
-            </label>
-          {/if}
-        </div>
-      </section>
-
-      <section>
-        <h3>Performance</h3>
-        <div class="grid">
-          <label class="check">
-            <input
-              type="checkbox"
-              checked={project.data.settings.solidPreviewByDefault}
-              onchange={(e) =>
-                update('solidPreviewByDefault', (e.currentTarget as HTMLInputElement).checked)}
-            />
-            <span>Enable solid preview by default</span>
-          </label>
-
-          <label
-            >Max simulation cells
-            <input
-              type="number"
-              min="100000"
-              step="100000"
-              value={project.data.settings.maxSimulationCells}
-              onchange={(e) =>
-                update(
-                  'maxSimulationCells',
-                  Math.round(
-                    toNumber(
-                      (e.currentTarget as HTMLInputElement).value,
-                      project.data.settings.maxSimulationCells,
-                      100_000,
-                    ),
-                  ),
-                )}
-            />
-          </label>
-
-          <label
-            >Max render triangles
-            <input
-              type="number"
-              min="100000"
-              step="100000"
-              value={project.data.settings.maxRenderTriangles}
-              onchange={(e) =>
-                update(
-                  'maxRenderTriangles',
-                  Math.round(
-                    toNumber(
-                      (e.currentTarget as HTMLInputElement).value,
-                      project.data.settings.maxRenderTriangles,
-                      100_000,
-                    ),
-                  ),
-                )}
-            />
-          </label>
-        </div>
-        <p class="hint">
-          <b>Max simulation cells</b> caps the WASM heightmap grid (and so the simulation accuracy).
-          <b>Max render triangles</b> caps the 3D-sim preview's mesh size: the renderer automatically
-          drops to a coarser LOD level when zoomed out or when simulation cells exceed the budget. Simulation
-          accuracy is preserved; only the rendered mesh degrades. Stepped voxel mesh ≈ 6 triangles per
-          cell.
-        </p>
-
-        <!-- Exact 3D rewind toggle. Default ON
-             because the post-Generate `playhead = 1.0` hop means
-             the user lands at the END-OF-PROGRAM state right
-             after Generate — without exact rewind, dragging the
-             scrubber back leaves the terrain stuck at end-state.
-             Users on enormous programs can flip it off for
-             responsive scrubbing at the price of time-accurate
-             terrain. -->
-        <label class="check">
-          <input
-            type="checkbox"
-            checked={project.data.settings.exactSimRewind}
-            onchange={(e) =>
-              update('exactSimRewind', (e.currentTarget as HTMLInputElement).checked)}
-          />
-          <span>Exact 3D rewind on backstep</span>
-        </label>
-        <p class="hint">
-          The 3D heightfield is a forward-only carve simulator: cells can only get deeper. <b
-            >When on</b
-          >
-          (default), every backstep resets the sim and replays the carve from t = 0 to the new playhead
-          so the heightfield exactly tracks the playhead's position in time. Replay cost scales with the
-          number of segments replayed; on programs with tens of thousands of segments scrubbing can stutter.
-          <b>When off</b>, backstep is a no-op for the sim — the heightfield retains the deepest cut
-          at each XY from the last time the playhead reached that segment. Useful for fast scrubbing
-          on huge programs when you don't need time-accurate rewind, BUT note: after every Generate
-          the playhead jumps to 1.0 so warnings surface, which means the off setting lands the
-          heightfield at end-of-program until you re-scrub forward.
-        </p>
-      </section>
-
-      <section>
-        <h3>Sim safety</h3>
-        <div class="grid">
-          <label class="check">
-            <input
-              type="checkbox"
-              checked={project.data.settings.blockOnCriticalSimWarnings}
-              onchange={(e) =>
-                update('blockOnCriticalSimWarnings', (e.currentTarget as HTMLInputElement).checked)}
-            />
-            <span>Block G-code generation on critical sim warnings</span>
-          </label>
-          <label
-            class="check"
-            title="When on, exporting/saving G-code is blocked if the last Generate found moves outside the machine work area (a soft-limit fault or gantry crash on the real machine). Off by default because the work-area envelope is often a placeholder — turn it on once you've set your machine's real travel. Generate/preview stay available so you can see and fix the violation."
-          >
-            <input
-              type="checkbox"
-              checked={project.data.settings.blockOnWorkAreaViolation}
-              onchange={(e) =>
-                update('blockOnWorkAreaViolation', (e.currentTarget as HTMLInputElement).checked)}
-            />
-            <span>Block G-code export on out-of-work-area moves</span>
-          </label>
-          <label class="check">
-            <input
-              type="checkbox"
-              checked={project.data.settings.autoRunSimOnSave}
-              onchange={(e) =>
-                update('autoRunSimOnSave', (e.currentTarget as HTMLInputElement).checked)}
-            />
-            <span>Auto-run sim on every project save</span>
-          </label>
-          <label
-            class="check"
-            title="Debounces ~1.5 s after the last edit, then runs Generate G-code. Off by default so power users on big projects keep manual control."
-          >
-            <input
-              type="checkbox"
-              checked={project.data.settings.autoRegenerate}
-              onchange={(e) =>
-                update('autoRegenerate', (e.currentTarget as HTMLInputElement).checked)}
-            />
-            <span>Auto-regenerate G-code after edits</span>
-          </label>
-        </div>
-        <p class="hint">
-          "Critical" warnings are collisions and rapids cutting through material. With the block
-          enabled, fixing them — or disabling the safety check — is required before downloading
-          G-code.
-        </p>
-      </section>
-
-      <section>
-        <h3>Source files</h3>
-        <div class="grid">
-          <label class="check">
-            <input
-              type="checkbox"
-              checked={project.data.settings.autoReloadSources}
-              onchange={(e) =>
-                update('autoReloadSources', (e.currentTarget as HTMLInputElement).checked)}
-            />
-            <span>Auto-reload imported DXF / SVG when changed externally</span>
-          </label>
-        </div>
-        <p class="hint">
-          Desktop only. Watches the source file backing the current import and re-runs it when the
-          CAD app saves a new version (one undoable step). Disable to get a "Reload?" toast instead.
-          Network and OneDrive-synced paths can drop events silently — manually re-import if a save
-          doesn't show up within a few seconds.
-        </p>
-      </section>
-
-      <section>
-        <h3>Snap to</h3>
-        <div class="grid">
-          {#each [{ key: 'endpoint', label: 'Endpoint', help: 'Snap to segment endpoints.' }, { key: 'midpoint', label: 'Midpoint', help: 'Snap to the midpoint of each segment.' }, { key: 'intersection', label: 'Intersection', help: 'Snap to line / arc crossings.' }, { key: 'center', label: 'Center', help: 'Snap to circle / arc centers.' }, { key: 'grid', label: 'Grid', help: 'Snap to integer multiples of the grid step below.' }] as o (o.key)}
-            <label class="check" title={o.help}>
-              <input
-                type="checkbox"
-                checked={!!project.data.settings.osnap?.[
-                  o.key as 'endpoint' | 'midpoint' | 'intersection' | 'center' | 'grid'
-                ]}
-                onchange={(e) =>
-                  update('osnap', {
-                    ...project.data.settings.osnap,
-                    [o.key]: (e.currentTarget as HTMLInputElement).checked,
-                  })}
-              />
-              <span>{o.label}</span>
-            </label>
-          {/each}
-          <label
-            title="Grid step (mm) when 'Grid' snap is on. Cursor latches to integer multiples of this offset from the project origin."
-            >Grid step
-            <input
-              type="number"
-              min="0.1"
-              step="0.1"
-              value={project.data.settings.osnap?.gridStepMm ?? 5}
-              onchange={(e) =>
-                update('osnap', {
-                  ...project.data.settings.osnap,
-                  gridStepMm: Math.max(
-                    0.1,
-                    toNumber(
-                      (e.currentTarget as HTMLInputElement).value,
-                      project.data.settings.osnap?.gridStepMm ?? 5,
-                      0.1,
-                    ),
-                  ),
-                })}
-            />
-          </label>
-        </div>
-        <p class="hint">
-          Object snap on the 2D canvas. Endpoint / midpoint / intersection / center latch the cursor
-          to existing geometry features; Grid latches to abstract grid spots independent of the
-          drawing.
-        </p>
-      </section>
-    </div>
-
-    <footer>
-      <button class="btn-primary" onclick={onClose} type="button">Done</button>
-    </footer>
+    {@render shell()}
   </Modal>
 {/if}
 
@@ -670,6 +680,17 @@
   .seg button.active {
     background: var(--accent);
     color: white;
+  }
+  .embedded-shell {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    background: var(--bg-panel);
+    /* The modal constrains width; the tab shouldn't stretch forms
+       across a 4k monitor. */
+    max-width: 720px;
   }
   footer {
     display: flex;

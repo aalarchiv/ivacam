@@ -12,7 +12,6 @@
   import OperationsList from './lib/components/OperationsList.svelte';
   import StockPanel from './lib/components/StockPanel.svelte';
   import GenerateBar from './lib/components/GenerateBar.svelte';
-  import MenuBar from './lib/components/MenuBar.svelte';
   import PlaybackBar from './lib/components/PlaybackBar.svelte';
   // Heavy / seldom-touched components — dynamic-imported on first
   // open so the main bundle stays light. Each gets a $state slot and
@@ -32,27 +31,22 @@
   type AddTextDialogComp = typeof import('./lib/components/AddTextDialog.svelte').default;
   let AddTextDialog = $state<AddTextDialogComp | null>(null);
   let addTextDialogLoading = false;
-  type ShortcutHelpComp = typeof import('./lib/components/ShortcutHelp.svelte').default;
-  let ShortcutHelp = $state<ShortcutHelpComp | null>(null);
-  let shortcutHelpLoading = false;
+  type HelpAboutComp = typeof import('./lib/components/HelpAbout.svelte').default;
+  let HelpAbout = $state<HelpAboutComp | null>(null);
+  let helpAboutLoading = false;
   type ReportDialogComp = typeof import('./lib/components/ReportDialog.svelte').default;
   let ReportDialog = $state<ReportDialogComp | null>(null);
   let reportDialogLoading = false;
-  type AboutDialogComp = typeof import('./lib/components/AboutDialog.svelte').default;
-  let AboutDialog = $state<AboutDialogComp | null>(null);
-  let aboutDialogLoading = false;
+  import RecentMenu from './lib/components/RecentMenu.svelte';
   import LoadingOverlay from './lib/components/LoadingOverlay.svelte';
   import Splitter from './lib/components/Splitter.svelte';
 
   /// Top-level main-window tab. Machine and Tool library are
   /// first-class tabs (not modals); their panels stay mounted once
   /// loaded so in-progress drafts survive tab switches.
-  let mainTab = $state<'project' | 'machine' | 'tools'>('project');
-  let settingsOpen = $state(false);
+  let mainTab = $state<'project' | 'machine' | 'tools' | 'settings' | 'help'>('project');
   let addTextOpen = $state(false);
-  let shortcutHelpOpen = $state(false);
   let reportOpen = $state(false);
-  let aboutOpen = $state(false);
   /// Build-time version stamp baked by vite.config.ts. Surfaces in
   /// the window title and the Help → About dialog so users can
   /// paste an exact build identifier into bug reports.
@@ -365,7 +359,7 @@
     }
   });
   $effect(() => {
-    if (settingsOpen && !SettingsDialog && !settingsDialogLoading) {
+    if (mainTab === 'settings' && !SettingsDialog && !settingsDialogLoading) {
       settingsDialogLoading = true;
       void import('./lib/components/SettingsDialog.svelte').then((m) => {
         SettingsDialog = m.default;
@@ -383,11 +377,11 @@
     }
   });
   $effect(() => {
-    if (shortcutHelpOpen && !ShortcutHelp && !shortcutHelpLoading) {
-      shortcutHelpLoading = true;
-      void import('./lib/components/ShortcutHelp.svelte').then((m) => {
-        ShortcutHelp = m.default;
-        shortcutHelpLoading = false;
+    if (mainTab === 'help' && !HelpAbout && !helpAboutLoading) {
+      helpAboutLoading = true;
+      void import('./lib/components/HelpAbout.svelte').then((m) => {
+        HelpAbout = m.default;
+        helpAboutLoading = false;
       });
     }
   });
@@ -397,15 +391,6 @@
       void import('./lib/components/ReportDialog.svelte').then((m) => {
         ReportDialog = m.default;
         reportDialogLoading = false;
-      });
-    }
-  });
-  $effect(() => {
-    if (aboutOpen && !AboutDialog && !aboutDialogLoading) {
-      aboutDialogLoading = true;
-      void import('./lib/components/AboutDialog.svelte').then((m) => {
-        AboutDialog = m.default;
-        aboutDialogLoading = false;
       });
     }
   });
@@ -430,10 +415,10 @@
     if (res.preventDefault) e.preventDefault();
     switch (res.action) {
       case 'undo':
-        if (!project.undo()) menuBar?.shake('undo');
+        project.undo();
         break;
       case 'redo':
-        if (!project.redo()) menuBar?.shake('redo');
+        project.redo();
         break;
       case 'open':
         void openFile();
@@ -443,22 +428,15 @@
         break;
       case 'escape':
         if (project.sel.selectedEntities.size > 0) project.sel.selectedEntities = new Set();
-        menuBar?.closeAllMenus();
         break;
       case 'add-text':
         addTextOpen = true;
         break;
       case 'shortcut-help':
-        shortcutHelpOpen = true;
+        mainTab = 'help';
         break;
     }
   }
-
-  // ---- Menu bar ---------------------------------------------------------
-  // Markup + open/close state machine live in MenuBar.svelte; App keeps a
-  // ref so the global keyboard dispatch above can close the menus (Escape)
-  // and trigger the empty-stack undo/redo shake.
-  let menuBar: ReturnType<typeof MenuBar> | undefined;
 
   // ---- Resizable layout ------------------------------------------------
   // Sidebar width in px; clamped against the current viewport in
@@ -633,20 +611,6 @@
 />
 
 <div class="app">
-  <!-- ============== MENU BAR =================================== -->
-  <MenuBar
-    bind:this={menuBar}
-    bind:activePane
-    bind:gcodeOpen
-    onOpenMachine={() => (mainTab = 'machine')}
-    onOpenTools={() => (mainTab = 'tools')}
-    onOpenSettings={() => (settingsOpen = true)}
-    onOpenShortcutHelp={() => (shortcutHelpOpen = true)}
-    onOpenReport={() => (reportOpen = true)}
-    onOpenAbout={() => (aboutOpen = true)}
-    onOpenRecent={(path) => void openRecentProject(path)}
-  />
-
   <!-- ============== MAIN TABS ================================= -->
   <nav class="main-tabs" aria-label="Main areas">
     <button
@@ -669,6 +633,21 @@
       onclick={() => (mainTab = 'tools')}
       title="The shop's tool inventory">Tool library</button
     >
+    <span class="main-tabs-flex"></span>
+    <button
+      type="button"
+      class="main-tab"
+      class:active={mainTab === 'settings'}
+      onclick={() => (mainTab = 'settings')}
+      title="App settings — theme, sim safety, performance">Settings</button
+    >
+    <button
+      type="button"
+      class="main-tab"
+      class:active={mainTab === 'help'}
+      onclick={() => (mainTab = 'help')}
+      title="Keyboard shortcuts, usage help, version and license">Help/About</button
+    >
   </nav>
 
   <!-- ============== TOOLBAR (single row) ====================== -->
@@ -689,6 +668,7 @@
     >
       Open project
     </button>
+    <RecentMenu onOpen={(path) => void openRecentProject(path)} />
     <button
       class="tb-btn"
       onclick={() => saveProject()}
@@ -700,9 +680,9 @@
     <span class="tb-sep"></span>
     <button
       class="tb-btn icon"
-      onclick={() => (addTextOpen = true)}
-      title="Add text geometry (T)"
-      aria-label="Add Text"
+      onclick={() => (reportOpen = true)}
+      title="Report a problem — collects version + project context for a bug report"
+      aria-label="Report a problem"
     >
       <svg
         viewBox="0 0 24 24"
@@ -715,41 +695,57 @@
         stroke-linejoin="round"
         aria-hidden="true"
       >
-        <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
-        <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path>
-        <path d="M2 2l7.586 7.586"></path>
-        <circle cx="11" cy="11" r="2"></circle>
+        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
+        <line x1="4" y1="22" x2="4" y2="15"></line>
       </svg>
-      <span>Text</span>
+      <span>Report</span>
     </button>
     <span class="tb-sep"></span>
-    <!-- Always-visible entries for the three config dialogs that
-         otherwise only live under the Tools menu. Frequent edits, easy
-         to miss behind menu bar. Menu items stay for keyboard / muscle
-         memory. -->
     <button
-      class="tb-btn icon config"
-      onclick={() => (mainTab = 'machine')}
-      title="Machine — active machine, tooling, settings"
-      aria-label="Open Machine tab"
+      class="tb-btn icon"
+      onclick={() => project.undo()}
+      disabled={!project.canUndo()}
+      title={project.canUndo() ? `Undo ${project.undoLabel() ?? ''} (Ctrl+Z)` : 'Nothing to undo'}
+      aria-label="Undo"
     >
-      M
+      <svg
+        viewBox="0 0 24 24"
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <polyline points="9 14 4 9 9 4"></polyline>
+        <path d="M20 20v-7a4 4 0 0 0-4-4H4"></path>
+      </svg>
     </button>
     <button
-      class="tb-btn icon config"
-      onclick={() => (mainTab = 'tools')}
-      title="Tool library — cutters, feeds, speeds"
-      aria-label="Open Tool library tab"
+      class="tb-btn icon"
+      onclick={() => project.redo()}
+      disabled={!project.canRedo()}
+      title={project.canRedo()
+        ? `Redo ${project.redoLabel() ?? ''} (Ctrl+Shift+Z)`
+        : 'Nothing to redo'}
+      aria-label="Redo"
     >
-      T
-    </button>
-    <button
-      class="tb-btn icon config"
-      onclick={() => (settingsOpen = true)}
-      title="App settings — theme, sim safety, cutting preview, auto-regenerate"
-      aria-label="Open Settings dialog"
-    >
-      ⚙
+      <svg
+        viewBox="0 0 24 24"
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <polyline points="15 14 20 9 15 4"></polyline>
+        <path d="M4 20v-7a4 4 0 0 1 4-4h12"></path>
+      </svg>
     </button>
     <span class="tb-sep"></span>
     <GenerateBar />
@@ -810,7 +806,7 @@
       <div class="canvas-area">
         <div class:pane-hidden={activePane !== '2d'} class="pane">
           <EntityCanvas2D
-            onShowHelp={() => (shortcutHelpOpen = true)}
+            onShowHelp={() => (mainTab = 'help')}
             onActivateSidebarPane={revealSidebarPane}
           />
         </div>
@@ -929,26 +925,30 @@
   {:else if mainTab === 'tools'}
     <main class="tab-panel"><p class="tab-loading">Loading tool library…</p></main>
   {/if}
-
   {#if SettingsDialog}
-    {@const C = SettingsDialog}
-    <C open={settingsOpen} onClose={() => (settingsOpen = false)} />
+    {@const SettingsPanel = SettingsDialog}
+    <main class="tab-panel" class:tab-hidden={mainTab !== 'settings'}>
+      <SettingsPanel embedded open={false} onClose={() => (mainTab = 'project')} />
+    </main>
+  {:else if mainTab === 'settings'}
+    <main class="tab-panel"><p class="tab-loading">Loading settings…</p></main>
   {/if}
+  {#if HelpAbout}
+    {@const HelpPanel = HelpAbout}
+    <main class="tab-panel" class:tab-hidden={mainTab !== 'help'}>
+      <HelpPanel />
+    </main>
+  {:else if mainTab === 'help'}
+    <main class="tab-panel"><p class="tab-loading">Loading help…</p></main>
+  {/if}
+
   {#if AddTextDialog}
     {@const C = AddTextDialog}
     <C open={addTextOpen} onClose={() => (addTextOpen = false)} />
   {/if}
-  {#if shortcutHelpOpen && ShortcutHelp}
-    {@const C = ShortcutHelp}
-    <C onClose={() => (shortcutHelpOpen = false)} />
-  {/if}
   {#if reportOpen && ReportDialog}
     {@const C = ReportDialog}
     <C open={reportOpen} onClose={() => (reportOpen = false)} />
-  {/if}
-  {#if aboutOpen && AboutDialog}
-    {@const C = AboutDialog}
-    <C onClose={() => (aboutOpen = false)} />
   {/if}
   <ConfirmPrompt />
 
@@ -1007,6 +1007,9 @@
     padding: 0.2rem 0.7rem 0;
     background: var(--bg-elevated);
     border-bottom: 1px solid var(--border);
+  }
+  .main-tabs-flex {
+    flex: 1;
   }
   .main-tab {
     background: none;
@@ -1102,12 +1105,6 @@
   /* Single-glyph config-dialog buttons (M / T / ⚙). Slightly bigger
      glyph + square button so they read as icons rather than truncated
      text. */
-  .tb-btn.icon.config {
-    min-width: 1.8rem;
-    justify-content: center;
-    font-weight: 600;
-    padding: 0.3rem 0.4rem;
-  }
   .tb-sep {
     width: 1px;
     height: 1.4rem;

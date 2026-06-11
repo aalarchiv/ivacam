@@ -11,7 +11,7 @@
     simWarningSummary,
   } from '../state/project.svelte';
   import { buildProject, type GenerateRequestWithProject } from '../api/build-project';
-  import { exportGeneratedGcode } from '../services/file_ops';
+  import { exportGeneratedGcode, exportSimulatedStockStl } from '../services/file_ops';
   import type { SimWarning, TimeEstimate } from '../api/types';
   import {
     countCriticalPipelineWarnings,
@@ -409,7 +409,6 @@
 </script>
 
 <div class="bar">
-  <span class="title">Generate:</span>
   {#if project.gen.pipelineState === 'running' || project.gen.pipelineState === 'cancelling'}
     <GenerateProgress onCancel={cancelRun} />
   {:else}
@@ -437,6 +436,13 @@
       title="Save the generated toolpath to disk in the selected dialect's file extension."
     >
       {post === 'hpgl' ? 'Download .plt' : 'Download .ngc'}
+    </button>
+    <button
+      onclick={() => void exportSimulatedStockStl()}
+      class="download"
+      title="Export the simulated (carved) stock as a binary STL mesh."
+    >
+      STL
     </button>
     <span class="stats">
       {project.gen.generated.stats.object_count} obj · {project.gen.generated.stats.offset_count} offsets

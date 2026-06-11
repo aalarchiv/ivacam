@@ -8,22 +8,19 @@
 
   interface Props {
     onClose: () => void;
+    /// Render inline (Help tab column) instead of as a modal.
+    embedded?: boolean;
   }
-  let { onClose }: Props = $props();
+  let { onClose, embedded = false }: Props = $props();
 </script>
 
-<Modal
-  {onClose}
-  persistKey="shortcuts"
-  width="min(560px, 95vw)"
-  draggable
-  resizable
-  ariaLabelledBy="shortcut-help-title"
->
+{#snippet shell()}
   <div class="shortcut-grid">
     <header>
       <h2 id="shortcut-help-title">Keyboard &amp; mouse shortcuts</h2>
-      <button class="dlg-close" onclick={onClose} type="button" aria-label="Close">×</button>
+      {#if !embedded}
+        <button class="dlg-close" onclick={onClose} type="button" aria-label="Close">×</button>
+      {/if}
     </header>
 
     <div class="body">
@@ -80,7 +77,22 @@
       <button class="btn-primary" onclick={onClose} type="button">Done</button>
     </footer>
   </div>
-</Modal>
+{/snippet}
+
+{#if embedded}
+  <section class="embedded-col">{@render shell()}</section>
+{:else}
+  <Modal
+    {onClose}
+    persistKey="shortcuts"
+    width="min(560px, 95vw)"
+    draggable
+    resizable
+    ariaLabelledBy="shortcut-help-title"
+  >
+    {@render shell()}
+  </Modal>
+{/if}
 
 <style>
   /* Modal sizing comes from Modal.svelte's width / max-height props.

@@ -11,7 +11,6 @@
 /// rune-store rewrite that buys little.
 
 /// The top menubar menus. Used for the open/close toggle state.
-export type MenuId = 'file' | 'edit' | 'view' | 'tools' | 'help';
 
 /// App-level actions a global keystroke can request. App.svelte switches
 /// on `kind` and performs the (component-coupled) effect — undo/redo on the
@@ -88,21 +87,6 @@ export function resolveShortcut(e: KeyboardEvent): ShortcutResolution | null {
     if (isTypingTarget(e.target)) return null;
     return { action: 'shortcut-help', preventDefault: true };
   }
-  return null;
-}
-
-/// Arrow / Home / End index math for menubar dropdown navigation. Given the
-/// pressed key, the currently-focused item index (`-1` when focus is
-/// outside the list), and the item count, return the next index to focus —
-/// or `null` if the key isn't a navigation key (caller leaves focus alone).
-/// Down/Up wrap around; Home/End jump to the ends. Mirrors the WAI-ARIA
-/// `role="menu"` pattern. The DOM query + `.focus()` stay in App.svelte.
-export function nextMenuItemIndex(key: string, currentIdx: number, count: number): number | null {
-  if (count <= 0) return null;
-  if (key === 'ArrowDown') return currentIdx < 0 ? 0 : (currentIdx + 1) % count;
-  if (key === 'ArrowUp') return currentIdx <= 0 ? count - 1 : currentIdx - 1;
-  if (key === 'Home') return 0;
-  if (key === 'End') return count - 1;
   return null;
 }
 

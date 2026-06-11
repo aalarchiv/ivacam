@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  isTypingTarget,
-  resolveShortcut,
-  nextMenuItemIndex,
-  dragHasFiles,
-  type ShortcutResolution,
-} from './app-menu';
+import { isTypingTarget, resolveShortcut, dragHasFiles, type ShortcutResolution } from './app-menu';
 
 // The vitest env is 'node' (no DOM), but these functions only read a few
 // properties off the event / target, so we duck-type minimal fakes and
@@ -86,27 +80,6 @@ describe('resolveShortcut', () => {
   it('returns null for unmapped keys', () => {
     expect(res('a')).toBeNull();
     expect(res('Enter')).toBeNull();
-  });
-});
-
-describe('nextMenuItemIndex', () => {
-  it('ArrowDown advances and wraps; starts at 0 when focus is outside', () => {
-    expect(nextMenuItemIndex('ArrowDown', -1, 3)).toBe(0);
-    expect(nextMenuItemIndex('ArrowDown', 0, 3)).toBe(1);
-    expect(nextMenuItemIndex('ArrowDown', 2, 3)).toBe(0);
-  });
-  it('ArrowUp retreats and wraps; from outside goes to last', () => {
-    expect(nextMenuItemIndex('ArrowUp', -1, 3)).toBe(2);
-    expect(nextMenuItemIndex('ArrowUp', 0, 3)).toBe(2);
-    expect(nextMenuItemIndex('ArrowUp', 2, 3)).toBe(1);
-  });
-  it('Home / End jump to the ends', () => {
-    expect(nextMenuItemIndex('Home', 2, 3)).toBe(0);
-    expect(nextMenuItemIndex('End', 0, 3)).toBe(2);
-  });
-  it('returns null for non-nav keys and empty lists', () => {
-    expect(nextMenuItemIndex('Enter', 0, 3)).toBeNull();
-    expect(nextMenuItemIndex('ArrowDown', 0, 0)).toBeNull();
   });
 });
 

@@ -13,8 +13,10 @@
 
   interface Props {
     onClose: () => void;
+    /// Render inline (Help tab column) instead of as a modal.
+    embedded?: boolean;
   }
-  let { onClose }: Props = $props();
+  let { onClose, embedded = false }: Props = $props();
 
   /// Prose (tagline, license, acknowledgements) authored in the repo-root
   /// ABOUT.md and substituted + inlined at build time by the
@@ -138,18 +140,12 @@
   ];
 </script>
 
-<Modal
-  {onClose}
-  modalClass="about-modal"
-  persistKey="about"
-  width="min(640px, 95vw)"
-  draggable
-  resizable
-  ariaLabelledBy="about-title"
->
+{#snippet shell()}
   <header>
     <h2 id="about-title">About ivaCAM</h2>
-    <button type="button" class="dlg-close" onclick={onClose} aria-label="Close">×</button>
+    {#if !embedded}
+      <button type="button" class="dlg-close" onclick={onClose} aria-label="Close">×</button>
+    {/if}
   </header>
   <!-- eslint-disable-next-line svelte/no-at-html-tags -- trusted, compiled-in ABOUT.md; markdown-lite escapes raw HTML and whitelists link hrefs -->
   <section class="about-md">{@html aboutHtml}</section>
@@ -214,7 +210,23 @@
       </tbody>
     </table>
   </section>
-</Modal>
+{/snippet}
+
+{#if embedded}
+  <section class="embedded-col">{@render shell()}</section>
+{:else}
+  <Modal
+    {onClose}
+    modalClass="about-modal"
+    persistKey="about"
+    width="min(640px, 95vw)"
+    draggable
+    resizable
+    ariaLabelledBy="about-title"
+  >
+    {@render shell()}
+  </Modal>
+{/if}
 
 <style>
   header {

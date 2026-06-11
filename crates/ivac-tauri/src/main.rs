@@ -142,6 +142,22 @@ fn run() -> tauri::Result<()> {
             // user sees one consistent set of File / Edit / View / Tools /
             // Help dropdowns instead of duplicates above and below.
 
+            // Linux: turn off the webview's HTML media backend — the UI
+            // renders no <audio>/<video>, and leaving it on makes
+            // WebKitGTK probe GStreamer at startup, printing "GStreamer
+            // element appsink not found" on machines without the
+            // plugins. Best-effort: an error here only means the noise
+            // stays.
+            #[cfg(target_os = "linux")]
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.with_webview(|webview| {
+                    use webkit2gtk::{SettingsExt, WebViewExt};
+                    if let Some(settings) = WebViewExt::settings(&webview.inner()) {
+                        settings.set_enable_media(false);
+                    }
+                });
+            }
+
             // OS file-association launches deliver the path as argv. Forward
             // it to the frontend so the same import flow runs as if the user
             // had picked from the dialog.

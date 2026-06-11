@@ -47,6 +47,12 @@ notify = "8"
 # libgallium's atexit destructor double-frees on Arch's libgallium-26;
 # signal-kill skips the broken exit path entirely).
 libc = "0.2"
+# Reach the embedded WebKitGTK's settings to disable its HTML media
+# backend (we render no <audio>/<video>); without this the webview
+# probes GStreamer at startup and prints "GStreamer element appsink
+# not found" on machines without the plugins. Same version wry already
+# links — adds no new native dependency.
+webkit2gtk = { version = "2.0", features = ["v2_38"] }
 
 [dev-dependencies]
 tempfile = "3"

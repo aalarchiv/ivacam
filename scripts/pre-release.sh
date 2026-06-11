@@ -109,6 +109,15 @@ else
   skip "cargo-deny check"        "cargo-deny not on PATH"
 fi
 
+# Runtime UI smoke — boots the built frontend in headless Chromium and
+# clicks through the main tabs + tool table. The only gate that catches
+# render-time-only regressions (e.g. the d41i effect-loop freeze).
+if command -v chromium-browser >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1 || command -v google-chrome >/dev/null 2>&1; then
+  step "ui smoke (headless)"     scripts/ui-smoke.sh
+else
+  skip "ui smoke (headless)"     "no chromium on PATH"
+fi
+
 #───────────── Summary ─────────────
 
 echo

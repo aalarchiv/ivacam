@@ -22,6 +22,15 @@
     void workspace.version;
     return workspace.get().tool_inventory;
   });
+  /// Quick name/kind filter over the inventory column.
+  let filter = $state('');
+  const shownInventory = $derived.by(() => {
+    const q = filter.trim().toLowerCase();
+    if (q === '') return inventory;
+    return inventory.filter((t) =>
+      `${t.name} ${KIND_DISPLAY_LABELS[t.kind]}`.toLowerCase().includes(q),
+    );
+  });
   const stocked = $derived(project.data.tools);
   const machineModes = $derived(effectiveModes(project.data.machine));
   const machineLabel = $derived(machineModesLabel(machineModes));
@@ -58,6 +67,15 @@
     >
       Shop inventory
     </h3>
+    {#if inventory.length > 0}
+      <input
+        type="search"
+        class="inv-filter"
+        placeholder="Filter inventory…"
+        bind:value={filter}
+        title="Filter the inventory by name or kind."
+      />
+    {/if}
     {#if inventory.length === 0}
       <p class="hint">
         The shop inventory is empty — open the <strong>Tool library</strong> tab once to seed it from
@@ -65,7 +83,7 @@
       </p>
     {/if}
     <ul>
-      {#each inventory as t (t.id)}
+      {#each shownInventory as t (t.id)}
         {@const compatible = toolCompatibleWithAnyMode(t.kind, machineModes)}
         {@const stockedAlready = alreadyStocked(t.id)}
         <li class:incompatible={!compatible}>
@@ -206,6 +224,11 @@
   .act:disabled {
     opacity: 0.5;
     cursor: default;
+  }
+  .inv-filter {
+    width: 100%;
+    margin-bottom: 0.4rem;
+    box-sizing: border-box;
   }
   .hint {
     font-size: 0.78rem;

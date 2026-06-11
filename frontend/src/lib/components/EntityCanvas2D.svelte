@@ -75,6 +75,7 @@
   /// selection don't repaint the (often huge) imported geometry layer.
   let canvasOverlay: HTMLCanvasElement;
   let container: HTMLDivElement;
+  import { clampPopup } from '../canvas/clamp-popup';
 
   /// Cached resolved theme colors. `themeVar` was previously calling
   /// `getComputedStyle(container).getPropertyValue(name)` on every
@@ -1800,6 +1801,7 @@
         style:left={`${tabPopover.x}px`}
         style:top={`${tabPopover.y}px`}
         role="dialog"
+        use:clampPopup={tabPopover}
       >
         <div class="tab-popover-header">Tab on op #{op.id}</div>
         <label class="tab-popover-row">
@@ -1859,6 +1861,7 @@
         style:left={`${ctxMenu.x}px`}
         style:top={`${ctxMenu.y}px`}
         role="menu"
+        use:clampPopup={ctxMenu}
       >
         <p class="ctx-hint">
           Select objects to add an operation, or a text layer to reposition it.
@@ -1866,7 +1869,13 @@
         <button type="button" onclick={closeCtxMenu}>Dismiss</button>
       </div>
     {:else}
-      <div class="ctx-menu" style:left={`${ctxMenu.x}px`} style:top={`${ctxMenu.y}px`} role="menu">
+      <div
+        class="ctx-menu"
+        style:left={`${ctxMenu.x}px`}
+        style:top={`${ctxMenu.y}px`}
+        role="menu"
+        use:clampPopup={ctxMenu}
+      >
         {#if hasTextSelected}
           <div class="ctx-header">Text layer</div>
           <button

@@ -198,6 +198,7 @@
   // from an OrbitControls right-drag pan (don't). `ctxMenu` is the menu's
   // host-relative position when open.
   let rightStart: { x: number; y: number } | null = null;
+  import { clampPopup } from '../canvas/clamp-popup';
   let ctxMenu = $state<{ x: number; y: number } | null>(null);
 
   /// Touch long-press → context menu (parity with the 2D pane and
@@ -1225,6 +1226,7 @@
         onkeydown={(e) => {
           if (e.key === 'Escape') ctxMenu = null;
         }}
+        use:clampPopup={ctxMenu}
       >
         <div class="ctx-header">New operation from selection</div>
         <OpKindPicker onPick={pickFromCtx} />

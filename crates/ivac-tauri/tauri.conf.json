@@ -83,11 +83,6 @@
         "description": "ivaCAM saved project (geometry + setup + tabs)",
         "role": "Editor"
       }
-    ],
-    "linux": {
-      "appimage": {
-        "bundleMediaFramework": true
-      }
-    }
+    ]
   }
 }

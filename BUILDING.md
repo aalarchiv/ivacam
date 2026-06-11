@@ -186,17 +186,26 @@ Outputs land under `target/release/bundle/`:
 | macOS    | `bundle/dmg/ivaCAM.dmg`, `bundle/macos/ivaCAM.app`   |
 | Windows  | `bundle/msi/ivaCAM.msi`                            |
 
-The AppImage bundles the GStreamer **media framework**
-(`bundleMediaFramework: true` in `tauri.conf.json`). This is not
-because the app plays media — the webview's media backend is disabled
-at runtime — but because linuxdeploy unavoidably bundles the build
-machine's GStreamer *core libraries* as WebKit transitive deps. Those
-shadow the user's system copies at runtime, and when the user's
-plugins are absent or built against a different core version, WebKit
-prints `GStreamer element appsink not found. Please install it.` on
-every launch. Shipping the matching plugin set keeps the AppImage
-self-contained: the probe always succeeds, and users never get told
-to install something the app doesn't even use.
+After bundling the AppImage, run
+
+```sh
+scripts/strip-appimage-media.sh
+```
+
+It removes the GStreamer *core libraries* that linuxdeploy bundles as
+WebKit transitive deps and re-packs the AppImage. The app uses no
+media (the webview's media backend is disabled at runtime), and the
+bundled copies actively cause harm: they shadow the host's GStreamer,
+so the host's WebKit loads OUR core against the HOST's plugins —
+absent or version-mismatched plugins then print `GStreamer element
+appsink not found. Please install it.` on every launch. With the
+bundled core stripped, the loader falls back to the host's own
+GStreamer (a hard dependency of every webkit2gtk package), keeping
+the stack version-consistent and the AppImage smaller. Hosts that
+genuinely lack the GStreamer plugin packages may still print the
+warning — accepted: it's harmless stderr noise, and the alternative
+(`bundleMediaFramework: true`) costs +14 MB for a media stack the app
+never uses.
 
 ## 4. Verify
 

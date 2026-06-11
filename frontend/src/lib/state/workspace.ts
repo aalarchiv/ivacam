@@ -65,6 +65,11 @@ export interface WorkspaceState {
   per_project: Record<string, PerProjectState>;
   last_post_processor: string;
   machine_profiles: MachineProfile[];
+  /// The shop's tool inventory — every physical tool the user owns,
+  /// independent of any project or machine. Machines stock a subset
+  /// (copied id-preserving into the project's working tool set); the
+  /// Tool library tab edits THIS list.
+  tool_inventory: ToolEntry[];
 }
 
 export const DEFAULT_WORKSPACE: WorkspaceState = {
@@ -76,6 +81,7 @@ export const DEFAULT_WORKSPACE: WorkspaceState = {
   per_project: {},
   last_post_processor: 'linuxcnc',
   machine_profiles: [],
+  tool_inventory: [],
 };
 
 function defaultsClone(): WorkspaceState {
@@ -85,6 +91,7 @@ function defaultsClone(): WorkspaceState {
     panels: { ...DEFAULT_WORKSPACE.panels },
     per_project: {},
     machine_profiles: [],
+    tool_inventory: [],
   };
 }
 
@@ -193,6 +200,22 @@ export function parseWorkspace(raw: string | null | undefined): WorkspaceState {
       });
     }
     out.machine_profiles = profiles;
+  }
+  if (Array.isArray(obj.tool_inventory)) {
+    // Structural validation only — entries are FE ToolEntry shapes;
+    // the consumers run the same legacy-term migrations a loaded
+    // project gets.
+    const tools: ToolEntry[] = [];
+    const seen = new Set<number>();
+    for (const e of obj.tool_inventory) {
+      if (!e || typeof e !== 'object') continue;
+      const t = e as ToolEntry;
+      if (typeof t.id !== 'number' || seen.has(t.id)) continue;
+      if (typeof t.name !== 'string' || typeof t.kind !== 'string') continue;
+      seen.add(t.id);
+      tools.push(t);
+    }
+    out.tool_inventory = tools;
   }
   return out;
 }
@@ -376,6 +399,17 @@ export class WorkspaceStore {
       return;
     }
     this.upsertMachineProfile({ id, name, machine, tools });
+  }
+
+  /// Replace the shop tool inventory (the Tool library tab's commit).
+  /// Deep-cloned so live $state proxies can't leak into the store.
+  setToolInventory(tools: readonly ToolEntry[]) {
+    this.state = {
+      ...this.state,
+      tool_inventory: JSON.parse(JSON.stringify(tools)) as ToolEntry[],
+    };
+    this.notify();
+    this.scheduleSave();
   }
 
   deleteMachineProfile(id: string) {

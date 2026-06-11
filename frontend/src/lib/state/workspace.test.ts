@@ -227,3 +227,31 @@ describe('machine profiles', () => {
     expect(s.get().machine_profiles.map((p) => p.id)).toEqual(['mp-ok']);
   });
 });
+
+describe('tool inventory', () => {
+  it('round-trips through save + load and drops malformed entries', async () => {
+    const t = new MemoryTransport();
+    const a = await freshLoaded(t);
+    a.setToolInventory([
+      { id: 1, name: 'em', kind: 'endmill' } as never,
+      { id: 2, name: 'torch', kind: 'plasma_torch' } as never,
+    ]);
+    await a.save();
+    const b = await freshLoaded(t);
+    expect(b.get().tool_inventory.map((x) => x.id)).toEqual([1, 2]);
+
+    t.blob = JSON.stringify({
+      ...DEFAULT_WORKSPACE,
+      tool_inventory: [
+        { id: 1, name: 'ok', kind: 'endmill' },
+        { id: 1, name: 'dup id', kind: 'endmill' },
+        { id: 'nope', name: 'bad id', kind: 'endmill' },
+        { id: 3, kind: 'endmill' },
+        null,
+        'garbage',
+      ],
+    });
+    const c = await freshLoaded(t);
+    expect(c.get().tool_inventory.map((x) => x.id)).toEqual([1]);
+  });
+});

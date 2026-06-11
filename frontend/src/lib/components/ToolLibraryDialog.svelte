@@ -18,9 +18,13 @@
     attrApplies,
     effectiveModes,
     KIND_DISPLAY_LABELS,
+    MACHINE_MODE_NOUN,
     machineModesLabel,
+    TOOL_COMPATIBLE_MODES,
     toolCompatibleWithAnyMode,
   } from '../state/tool_family';
+  import { workspace } from '../state/workspace.svelte';
+  import { seedInventoryFromProject, syncStockedFromInventory } from '../state/tool_inventory';
   import { defaultToolForMode } from '../state/tool_mode_defaults';
   import ToolCalibrationDialog from './ToolCalibrationDialog.svelte';
   import { effectiveDiameterHint, isCalibrationStale } from '../state/tool_wear';
@@ -43,9 +47,24 @@
     /// switches, so an in-progress draft survives), footer becomes
     /// Apply / Revert.
     embedded?: boolean;
+    /// Backing store: 'project' edits the working tool set of the
+    /// current project/machine (the legacy modal behavior); 'inventory'
+    /// edits the workspace-level SHOP inventory — every tool the user
+    /// owns. Inventory commits propagate into same-id stocked copies in
+    /// the project, so "the 6 mm endmill" stays one tool everywhere.
+    source?: 'project' | 'inventory';
   }
-  let { open, onClose, embedded = false }: Props = $props();
+  let { open, onClose, embedded = false, source = 'project' }: Props = $props();
   const active = $derived(open || embedded);
+  const isInventory = $derived(source === 'inventory');
+  /// The list this editor seeds from / commits to.
+  const backingTools = $derived.by(() => {
+    if (source === 'inventory') {
+      void workspace.version;
+      return workspace.get().tool_inventory;
+    }
+    return project.data.tools;
+  });
 
   /// Draft / pristine / dirty / discard lifecycle lives in DialogDraft
   /// so X / Esc / click-outside can prompt before silently discarding
@@ -82,9 +101,10 @@
   }
   const machineModes = $derived(effectiveModes(project.data.machine));
   const incompatibleCount = $derived(
-    draft.filter((t) => !toolCompatibleWithAnyMode(t.kind, machineModes)).length,
+    isInventory ? 0 : draft.filter((t) => !toolCompatibleWithAnyMode(t.kind, machineModes)).length,
   );
   function rowVisible(tool: ToolEntry): boolean {
+    if (isInventory) return true; // the shop inventory is machine-agnostic
     return showIncompatible || toolCompatibleWithAnyMode(tool.kind, machineModes);
   }
 
@@ -94,15 +114,24 @@
       // stocking from the Machine tab) re-run this — refresh a CLEAN
       // draft to stay in sync, but never clobber in-progress edits.
       if (embedded && dd.isDirty) return;
-      dd.open(project.data.tools);
+      let tools = backingTools;
+      if (isInventory && tools.length === 0 && project.data.tools.length > 0) {
+        // First use of the shop inventory on an installation that
+        // predates it: seed from the current project's tools so the
+        // user starts from what they already configured. Deferred —
+        // workspace.version is $state and must not bump synchronously
+        // inside an effect body.
+        const seeded = seedInventoryFromProject(project.data.tools);
+        queueMicrotask(() => workspace.setToolInventory(seeded));
+        tools = seeded;
+      }
+      dd.open(tools);
       showIncompatible = false;
       calibratingIdx = null;
       // Tools whose kind has a REQUIRED kind-specific field open by
       // default so the user sees `dragoff` / `cornerRadiusMm` / T-slot
       // neck dims without hunting for them. Other kinds start collapsed.
-      expanded = new Set(
-        project.data.tools.filter((t) => kindNeedsExpansion(t.kind)).map((t) => t.id),
-      );
+      expanded = new Set(tools.filter((t) => kindNeedsExpansion(t.kind)).map((t) => t.id));
     }
   });
 
@@ -153,9 +182,21 @@
     if (draft.length > 0) {
       const snap = JSON.parse(JSON.stringify(draft)) as typeof draft;
       try {
-        project.replaceTools(snap);
+        if (isInventory) {
+          workspace.setToolInventory(snap);
+          // Propagate the edits into same-id stocked copies so the
+          // machine's loadout (and its profile, via the mirror)
+          // follows the inventory definition. One undoable step.
+          const synced = syncStockedFromInventory(
+            snap,
+            JSON.parse(JSON.stringify(project.data.tools)) as typeof draft,
+          );
+          if (synced) project.replaceTools(synced);
+        } else {
+          project.replaceTools(snap);
+        }
       } catch (e) {
-        console.error('ToolLibraryDialog.commit: replaceTools failed', e);
+        console.error('ToolLibraryDialog.commit: apply failed', e);
       }
     }
     // Embedded (tab) mode: Apply commits and stays — re-baseline the
@@ -166,7 +207,7 @@
 
   /// Embedded-mode Revert: drop the draft back to the committed tools.
   function revert() {
-    dd.open(project.data.tools);
+    dd.open(backingTools);
   }
 
   function addTool() {
@@ -466,7 +507,7 @@
 
 {#snippet shell()}
   <header>
-    <h2 id="tools-title">Tool library</h2>
+    <h2 id="tools-title">{isInventory ? 'Tool library — shop inventory' : 'Tool library'}</h2>
     {#if !embedded}
       <button class="dlg-close" onclick={close} aria-label="Close">×</button>
     {/if}
@@ -703,6 +744,16 @@
           </div>
           {#if expanded.has(tool.id)}
             <div class="holder-panel">
+              <div class="holder-row">
+                <span
+                  class="holder-label"
+                  title="Machine modes this tool kind can physically run on — a machine stocks only compatible tools."
+                  >Runs on</span
+                >
+                {#each TOOL_COMPATIBLE_MODES[tool.kind] as m (m)}
+                  <span class="cap-chip">{MACHINE_MODE_NOUN[m]}</span>
+                {/each}
+              </div>
               <div class="holder-row">
                 <label>
                   <span>Flute length (mm)</span>
@@ -1786,39 +1837,45 @@
       <button class="btn-secondary" onclick={() => dd.cancelDiscard()}>Keep editing</button>
       <button class="btn-danger" onclick={close}>Discard</button>
     {:else}
-      <button
-        class="btn-secondary"
-        onclick={async () => {
-          await fileOps.saveToolset();
-        }}
-        title="Save the current tool library to a .ivac-toolset.json file."
-      >
-        Save…
-      </button>
-      <button
-        class="btn-secondary"
-        onclick={async () => {
-          await fileOps.loadToolset('replace');
-          // Editor draft must follow the new tools so the dialog
-          // doesn't keep showing stale entries. Assigned directly
-          // (not dd.open) so the pristine snapshot from open is
-          // kept — a load counts as an unsaved change.
-          dd.draft = project.data.tools.map((t) => ({ ...t }));
-        }}
-        title="Replace the current tools with the contents of a .ivac-toolset.json file."
-      >
-        Load (replace)…
-      </button>
-      <button
-        class="btn-secondary"
-        onclick={async () => {
-          await fileOps.loadToolset('add');
-          dd.draft = project.data.tools.map((t) => ({ ...t }));
-        }}
-        title="Add tools from a .ivac-toolset.json file. Tools whose name already exists are skipped."
-      >
-        Load (add)…
-      </button>
+      {#if !isInventory}
+        <button
+          class="btn-secondary"
+          onclick={async () => {
+            await fileOps.saveToolset();
+          }}
+          title="Save the current tool library to a .ivac-toolset.json file."
+        >
+          Save…
+        </button>
+      {/if}
+      {#if !isInventory}
+        <button
+          class="btn-secondary"
+          onclick={async () => {
+            await fileOps.loadToolset('replace');
+            // Editor draft must follow the new tools so the dialog
+            // doesn't keep showing stale entries. Assigned directly
+            // (not dd.open) so the pristine snapshot from open is
+            // kept — a load counts as an unsaved change.
+            dd.draft = project.data.tools.map((t) => ({ ...t }));
+          }}
+          title="Replace the current tools with the contents of a .ivac-toolset.json file."
+        >
+          Load (replace)…
+        </button>
+      {/if}
+      {#if !isInventory}
+        <button
+          class="btn-secondary"
+          onclick={async () => {
+            await fileOps.loadToolset('add');
+            dd.draft = project.data.tools.map((t) => ({ ...t }));
+          }}
+          title="Add tools from a .ivac-toolset.json file. Tools whose name already exists are skipped."
+        >
+          Load (add)…
+        </button>
+      {/if}
       <span class="sep"></span>
       {#if hasInvalidRow}
         <!-- Surface why OK is greyed out so the user knows which inputs need fixing. -->
@@ -2088,6 +2145,17 @@
   .del:disabled {
     opacity: 0.3;
     cursor: not-allowed;
+  }
+  /* Machine-capability chips on each tool row ("Runs on mill"). */
+  .cap-chip {
+    display: inline-block;
+    padding: 0.05rem 0.45rem;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--bg-elevated);
+    color: var(--text);
+    font-size: 0.7rem;
+    align-self: center;
   }
   /* Wear-calibration status line + stale chip. */
   .cal-status {

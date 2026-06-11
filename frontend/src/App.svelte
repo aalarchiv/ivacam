@@ -924,7 +924,7 @@
   {#if ToolLibraryDialog}
     {@const ToolsPanel = ToolLibraryDialog}
     <main class="tab-panel" class:tab-hidden={mainTab !== 'tools'}>
-      <ToolsPanel embedded open={false} onClose={() => (mainTab = 'project')} />
+      <ToolsPanel embedded source="inventory" open={false} onClose={() => (mainTab = 'project')} />
     </main>
   {:else if mainTab === 'tools'}
     <main class="tab-panel"><p class="tab-loading">Loading tool library…</p></main>

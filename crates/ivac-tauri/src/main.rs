@@ -122,6 +122,7 @@ fn run() -> tauri::Result<()> {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(log_plugin)
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(

@@ -82,6 +82,8 @@
   // the user sees the toolpath, the playhead, and the program text
   // simultaneously and can drive each from the others.
   let gcodeOpen = $state(false);
+  import { isTauri } from './lib/api/env';
+  const isTauriEnv = isTauri();
   import { project } from './lib/state/project.svelte';
   import { workspace } from './lib/state/workspace.svelte';
   import ConfirmPrompt from './lib/components/ConfirmPrompt.svelte';
@@ -409,6 +411,20 @@
   // Keyboard shortcut dispatch. The decision ("which action?") is the pure
   // `resolveShortcut` in lib/state/app-menu.ts (unit-tested); App.svelte is
   // the shell that performs the component-coupled effect for each action.
+  /// Tauri only: suppress the webview's built-in right-click menu
+  /// (Back/Reload/Inspect) — a workshop user right-clicking the canvas
+  /// or a panel should see OUR menus or nothing, not browser
+  /// internals. Editable fields keep the native menu (copy/paste);
+  /// canvas components call preventDefault first and open their own
+  /// menus, unaffected. Devtools stay reachable for diagnostics via
+  /// keyboard only.
+  function onContextMenu(e: MouseEvent) {
+    if (!isTauriEnv) return;
+    const t = e.target as HTMLElement | null;
+    if (t && t.closest('input, textarea, [contenteditable="true"]') != null) return;
+    e.preventDefault();
+  }
+
   function onKeyDown(e: KeyboardEvent) {
     const res = resolveShortcut(e);
     if (!res) return;
@@ -607,6 +623,7 @@
   ondragover={onDragOver}
   ondragleave={onDragLeave}
   ondrop={onDrop}
+  oncontextmenu={onContextMenu}
   onresize={onWindowResize}
 />
 

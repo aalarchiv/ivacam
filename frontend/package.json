@@ -38,9 +38,10 @@
     "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-fs": "^2.5.1",
+    "@tauri-apps/plugin-opener": "^2.5.4",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-store": "^2.4.3",
-    "three": "^0.184.0",
-    "ivac-wasm": "link:../crates/ivac-wasm/pkg"
+    "ivac-wasm": "link:../crates/ivac-wasm/pkg",
+    "three": "^0.184.0"
   }
 }

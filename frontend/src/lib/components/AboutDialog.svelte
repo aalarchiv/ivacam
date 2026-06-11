@@ -10,6 +10,7 @@
   import Modal from './Modal.svelte';
   import aboutMd from 'virtual:about';
   import { renderMarkdown } from './markdown-lite';
+  import { onExternalLinkClick } from '../services/external-links';
 
   interface Props {
     onClose: () => void;
@@ -140,6 +141,9 @@
   ];
 </script>
 
+role="presentation" onclick={onExternalLinkClick}
+>
+
 {#snippet shell()}
   <header>
     <h2 id="about-title">About ivaCAM</h2>
@@ -147,8 +151,13 @@
       <button type="button" class="dlg-close" onclick={onClose} aria-label="Close">×</button>
     {/if}
   </header>
-  <!-- eslint-disable-next-line svelte/no-at-html-tags -- trusted, compiled-in ABOUT.md; markdown-lite escapes raw HTML and whitelists link hrefs -->
-  <section class="about-md">{@html aboutHtml}</section>
+  <!-- Click delegate routes https links to the system browser — the
+       embedded webview blocks external navigation, so plain anchors
+       would silently do nothing under Tauri. -->
+  <section class="about-md" role="presentation" onclick={onExternalLinkClick}>
+    <!-- eslint-disable-next-line svelte/no-at-html-tags -- trusted, compiled-in ABOUT.md; markdown-lite escapes raw HTML and whitelists link hrefs -->
+    {@html aboutHtml}
+  </section>
 
   <section>
     <dl class="build">

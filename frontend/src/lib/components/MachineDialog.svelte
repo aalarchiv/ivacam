@@ -312,12 +312,12 @@
 </script>
 
 {#snippet shell()}
-  <header>
-    <h2 id="machine-title">Machine</h2>
-    {#if !embedded}
+  {#if !embedded}
+    <header>
+      <h2 id="machine-title">Machine</h2>
       <button class="dlg-close" onclick={close} aria-label="Close">×</button>
-    {/if}
-  </header>
+    </header>
+  {/if}
 
   <!-- Machine profiles: named (machine + tool library) bundles
          stored per-user, one per physical machine. Picking one applies

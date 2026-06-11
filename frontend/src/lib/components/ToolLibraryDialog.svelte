@@ -580,12 +580,12 @@
 </script>
 
 {#snippet shell()}
-  <header>
-    <h2 id="tools-title">{isInventory ? 'Tool library — shop inventory' : 'Tool library'}</h2>
-    {#if !embedded}
+  {#if !embedded}
+    <header>
+      <h2 id="tools-title">Tool library</h2>
       <button class="dlg-close" onclick={close} aria-label="Close">×</button>
-    {/if}
-  </header>
+    </header>
+  {/if}
   <!-- Header-attached filters: text search + kind + machine
        capability. View-only — filtering never touches the library. -->
   <div class="table-controls">
@@ -1337,6 +1337,8 @@
                   }}
                 />
               </label>
+            </div>
+            <div class="holder-row">
               <label class="comment-row">
                 <span>Comment</span>
                 <textarea
@@ -1350,6 +1352,8 @@
                   }}
                 ></textarea>
               </label>
+            </div>
+            <div class="holder-row">
               <label>
                 <span>Z shift (mm)</span>
                 <input
@@ -2426,6 +2430,17 @@
   .table-pager button:disabled {
     opacity: 0.5;
     cursor: default;
+  }
+  /* Comment gets a full-width row of its own. */
+  .comment-row {
+    flex: 1;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  .comment-row textarea {
+    flex: 1;
+    resize: vertical;
   }
   /* Machine-capability chips on each tool row ("Runs on mill"). */
   .cap-chip {

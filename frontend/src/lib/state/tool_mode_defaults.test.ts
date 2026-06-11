@@ -41,7 +41,7 @@ describe('tool_mode_defaults', () => {
     const t = defaultToolForMode('mill', 3);
     expect(t).toEqual({
       id: 3,
-      name: 'Tool #3',
+      name: '3mm endmill',
       kind: 'endmill',
       diameter: 3,
       flutes: 2,

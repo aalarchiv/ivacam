@@ -26,6 +26,7 @@
   } from '../state/tool_family';
   import { workspace } from '../state/workspace.svelte';
   import { seedInventoryFromProject, syncStockedFromInventory } from '../state/tool_inventory';
+  import { isAutoToolName, suggestToolName } from '../state/tool_naming';
   import {
     applyToolTableView,
     EMPTY_TOOL_VIEW,
@@ -285,7 +286,17 @@
   }
 
   function updateField<K extends keyof ToolEntry>(idx: number, key: K, value: ToolEntry[K]) {
-    dd.draft = draft.map((t, i) => (i === idx ? { ...t, [key]: value } : t));
+    dd.draft = draft.map((t, i) => {
+      if (i !== idx) return t;
+      // Auto-naming, editor-autocomplete style: while a row's name is
+      // empty or still equals its own suggestion, setting edits keep
+      // the name in sync ("3mm endmill" follows the diameter). A name
+      // the user typed is never rewritten.
+      const wasAuto = key !== 'name' && isAutoToolName(t);
+      const next = { ...t, [key]: value };
+      if (wasAuto) next.name = suggestToolName(next);
+      return next;
+    });
   }
 
   // ─────────────────────────── form-profile editor ───────────────────
@@ -379,7 +390,9 @@
     let touchedId: number | null = null;
     dd.draft = draft.map((t, i) => {
       if (i !== idx) return t;
+      const wasAuto = isAutoToolName(t);
       const next: ToolEntry = { ...t, kind };
+      if (wasAuto) next.name = suggestToolName(next);
       if (kind === 'drill') {
         if (next.flutes === 0 || next.flutes === undefined) next.flutes = 2;
         if (next.tipAngleDeg === undefined) next.tipAngleDeg = 118;
@@ -576,6 +589,53 @@
   <!-- Header-attached filters: text search + kind + machine
        capability. View-only — filtering never touches the library. -->
   <div class="table-controls">
+    <!-- File actions left-aligned, matching the Project toolbar. In
+         inventory mode they import/export the SHOP INVENTORY (via the
+         draft — Apply persists); in project mode the working tool set. -->
+    <button
+      type="button"
+      class="tc-file"
+      onclick={async () => {
+        if (isInventory) await fileOps.exportToolset(JSON.parse(JSON.stringify(draft)));
+        else await fileOps.saveToolset();
+      }}
+      title={isInventory
+        ? 'Export the shop inventory (as shown, including unapplied edits) to a .ivac-toolset.json file.'
+        : 'Save the current tool library to a .ivac-toolset.json file.'}>Save…</button
+    >
+    <button
+      type="button"
+      class="tc-file"
+      onclick={async () => {
+        if (isInventory) {
+          const merged = await fileOps.importToolset('replace', draft);
+          if (merged) dd.draft = merged;
+        } else {
+          await fileOps.loadToolset('replace');
+          dd.draft = project.data.tools.map((t) => ({ ...t }));
+        }
+      }}
+      title={isInventory
+        ? 'Replace the shop inventory with the contents of a .ivac-toolset.json file (takes effect on Apply).'
+        : 'Replace the current tools with the contents of a .ivac-toolset.json file.'}
+      >Load (replace)…</button
+    >
+    <button
+      type="button"
+      class="tc-file"
+      onclick={async () => {
+        if (isInventory) {
+          const merged = await fileOps.importToolset('add', draft);
+          if (merged) dd.draft = merged;
+        } else {
+          await fileOps.loadToolset('add');
+          dd.draft = project.data.tools.map((t) => ({ ...t }));
+        }
+      }}
+      title="Add tools from a .ivac-toolset.json file. Tools whose name already exists are skipped."
+      >Load (add)…</button
+    >
+    <span class="tc-sep"></span>
     <input
       type="search"
       class="tc-search"
@@ -704,6 +764,8 @@
           <input
             type="text"
             value={tool.name}
+            placeholder={suggestToolName(tool)}
+            title="Tool name. Leave empty (or keep the proposal) and it follows the settings automatically — type your own to pin it."
             oninput={(e) => updateField(i, 'name', (e.currentTarget as HTMLInputElement).value)}
           />
           <select
@@ -2006,45 +2068,6 @@
       <button class="btn-secondary" onclick={() => dd.cancelDiscard()}>Keep editing</button>
       <button class="btn-danger" onclick={close}>Discard</button>
     {:else}
-      {#if !isInventory}
-        <button
-          class="btn-secondary"
-          onclick={async () => {
-            await fileOps.saveToolset();
-          }}
-          title="Save the current tool library to a .ivac-toolset.json file."
-        >
-          Save…
-        </button>
-      {/if}
-      {#if !isInventory}
-        <button
-          class="btn-secondary"
-          onclick={async () => {
-            await fileOps.loadToolset('replace');
-            // Editor draft must follow the new tools so the dialog
-            // doesn't keep showing stale entries. Assigned directly
-            // (not dd.open) so the pristine snapshot from open is
-            // kept — a load counts as an unsaved change.
-            dd.draft = project.data.tools.map((t) => ({ ...t }));
-          }}
-          title="Replace the current tools with the contents of a .ivac-toolset.json file."
-        >
-          Load (replace)…
-        </button>
-      {/if}
-      {#if !isInventory}
-        <button
-          class="btn-secondary"
-          onclick={async () => {
-            await fileOps.loadToolset('add');
-            dd.draft = project.data.tools.map((t) => ({ ...t }));
-          }}
-          title="Add tools from a .ivac-toolset.json file. Tools whose name already exists are skipped."
-        >
-          Load (add)…
-        </button>
-      {/if}
       <span class="sep"></span>
       {#if hasInvalidRow}
         <!-- Surface why OK is greyed out so the user knows which inputs need fixing. -->
@@ -2325,6 +2348,21 @@
     background: var(--bg-elevated);
     font-size: 0.78rem;
     flex-wrap: wrap;
+  }
+  .tc-file {
+    background: var(--bg-panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.74rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .tc-sep {
+    width: 1px;
+    align-self: stretch;
+    background: var(--border);
   }
   .tc-search {
     width: 14rem;

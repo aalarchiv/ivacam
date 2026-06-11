@@ -15,6 +15,7 @@ import type { MachineProfile } from './workspace';
 import type { MachineSettings, ToolEntry } from './project-types';
 import { migrateMachineSettings } from './project-types';
 import { migrateLegacyToolTerms } from './tool-migration';
+import { suggestMachineName } from './tool_naming';
 
 /// Stable profile identity. Time + randomness is plenty — profiles are
 /// created by a click, not in bulk.
@@ -31,10 +32,14 @@ export function profileNameFor(
 ): string {
   const base = machine.name?.trim();
   if (base) return base;
+  // No user name: propose from the settings ("Mill 200×300"), with a
+  // numeric suffix on collision so two unnamed machines stay distinct.
+  const suggestion = suggestMachineName(machine);
   const names = new Set(existing.map((p) => p.name));
-  let n = existing.length + 1;
-  while (names.has(`Machine ${n}`)) n += 1;
-  return `Machine ${n}`;
+  if (!names.has(suggestion)) return suggestion;
+  let n = 2;
+  while (names.has(`${suggestion} (${n})`)) n += 1;
+  return `${suggestion} (${n})`;
 }
 
 /// Build a profile from the project's current machine + tools. Deep

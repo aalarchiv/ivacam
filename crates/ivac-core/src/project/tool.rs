@@ -353,7 +353,7 @@ impl Default for ToolEntry {
     fn default() -> Self {
         Self {
             id: 1,
-            name: "3 mm endmill".into(),
+            name: "3mm endmill".into(),
             kind: ToolKind::Endmill,
             diameter: 3.0,
             tip_diameter: None,

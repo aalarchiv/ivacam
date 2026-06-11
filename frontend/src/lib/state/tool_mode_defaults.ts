@@ -44,7 +44,7 @@ export function defaultToolForMode(mode: MachineMode, id: number): ToolEntry {
     case 'mill':
       return {
         id,
-        name: `Tool #${id}`,
+        name: '3mm endmill',
         kind: 'endmill',
         diameter: 3,
         flutes: 2,
@@ -56,7 +56,7 @@ export function defaultToolForMode(mode: MachineMode, id: number): ToolEntry {
     case 'laser':
       return {
         id,
-        name: 'Laser beam',
+        name: '0.15mm laser',
         kind: 'laser_beam',
         diameter: 0.15,
         flutes: 0,
@@ -69,7 +69,7 @@ export function defaultToolForMode(mode: MachineMode, id: number): ToolEntry {
     case 'drag':
       return {
         id,
-        name: 'Drag knife',
+        name: 'drag knife',
         kind: 'drag_knife',
         diameter: 0.9,
         flutes: 0,
@@ -82,7 +82,7 @@ export function defaultToolForMode(mode: MachineMode, id: number): ToolEntry {
     case 'plasma':
       return {
         id,
-        name: 'Plasma torch',
+        name: '1.5mm plasma torch',
         kind: 'plasma_torch',
         diameter: 1.5,
         flutes: 0,

@@ -604,27 +604,38 @@ async function writeJson(
   URL.revokeObjectURL(url);
 }
 
-/// Export the current tool library to a `.ivac-toolset.json` file.
-/// The user's set of tools, no machine, no project state. Reusable
-/// across projects.
-export async function saveToolset() {
+/// Export an arbitrary tool list to a `.ivac-toolset.json` file —
+/// shared by the project tool set and the shop inventory.
+export async function exportToolset(tools: readonly ToolEntry[]) {
   const envelope: SnapshotEnvelope<'toolset', ToolEntry[]> = {
     kind: 'toolset',
     format_version: TOOLSET_FORMAT_VERSION,
     updated_at: new Date().toISOString(),
-    payload: project.data.tools.map((t) => ({ ...t })),
+    payload: tools.map((t) => ({ ...t })),
   };
   await writeJson('toolset.ivac-toolset.json', JSON.stringify(envelope, null, 2), [
     { name: 'ivaCAM toolset', extensions: ['ivac-toolset.json', 'json'] },
   ]);
 }
 
-/// Import a `.ivac-toolset.json`. `mode` controls how the file's
-/// tools merge into the current set:
-///   * `'replace'` — drop the current tools, use the file's
-///   * `'add'`     — append; tools whose `name` already exists are
-///                   skipped (the user's existing entries win).
-export async function loadToolset(mode: 'replace' | 'add') {
+/// Export the current tool library to a `.ivac-toolset.json` file.
+/// The user's set of tools, no machine, no project state. Reusable
+/// across projects.
+export async function saveToolset() {
+  await exportToolset(project.data.tools);
+}
+
+/// Pick a `.ivac-toolset.json` and merge it into `current`, returning
+/// the merged list (or null on cancel / parse failure — errors surface
+/// via the toast). Pure of any store: the caller decides whether the
+/// result lands in the project tools or the shop inventory.
+///   * `'replace'` — the file's tools, re-numbered 1..N
+///   * `'add'`     — append; tools whose `name` already exists in
+///                   `current` are skipped (existing entries win)
+export async function importToolset(
+  mode: 'replace' | 'add',
+  current: readonly ToolEntry[],
+): Promise<ToolEntry[] | null> {
   let text: string | null;
   try {
     text = await pickAndReadJson([
@@ -632,15 +643,15 @@ export async function loadToolset(mode: 'replace' | 'add') {
     ]);
   } catch (e) {
     project.setError(`toolset load: ${e instanceof Error ? e.message : String(e)}`);
-    return;
+    return null;
   }
-  if (!text) return;
+  if (!text) return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch (e) {
     project.setError(`toolset parse: ${e instanceof Error ? e.message : String(e)}`);
-    return;
+    return null;
   }
   const env = parsed as SnapshotEnvelope<'toolset', ToolEntry[]>;
   if (
@@ -650,33 +661,40 @@ export async function loadToolset(mode: 'replace' | 'add') {
     !Array.isArray(env.payload)
   ) {
     project.setError('toolset load: not a .ivac-toolset.json file');
-    return;
+    return null;
   }
   const incoming = env.payload.map(migrateLegacyToolTerms);
   if (mode === 'replace') {
-    // Re-number ids 1..N so the new tools have a clean monotonic
-    // sequence the project file can reference.
-    const next = incoming.map((t, idx) => ({ ...t, id: idx + 1 }));
-    // The cache key folds in every ToolEntry field, so swapping
-    // the library mid-session would force a miss-and-recompute on every
-    // op anyway. Clear up front so the old entries stop occupying LRU
-    // slots that will never hit again.
-    await clearPipelineCacheOnReplace();
-    project.replaceTools(next);
-    return;
+    return incoming.map((t, idx) => ({ ...t, id: idx + 1 }));
   }
-  // Add: append everything not already present by name (case-insensitive).
-  const existingNames = new Set(project.data.tools.map((t) => t.name.toLowerCase()));
-  let nextId = project.data.tools.reduce((m, t) => Math.max(m, t.id), 0);
+  const existingNames = new Set(current.map((t) => t.name.toLowerCase()));
+  let nextId = current.reduce((m, t) => Math.max(m, t.id), 0);
   const additions: ToolEntry[] = [];
   for (const t of incoming) {
     if (existingNames.has(t.name.toLowerCase())) continue;
     nextId += 1;
     additions.push({ ...t, id: nextId });
   }
-  if (additions.length > 0) {
-    project.replaceTools([...project.data.tools, ...additions]);
+  return additions.length > 0 ? [...current, ...additions] : [...current];
+}
+
+/// Import a `.ivac-toolset.json`. `mode` controls how the file's
+/// tools merge into the current set:
+///   * `'replace'` — drop the current tools, use the file's
+///   * `'add'`     — append; tools whose `name` already exists are
+///                   skipped (the user's existing entries win).
+export async function loadToolset(mode: 'replace' | 'add') {
+  const merged = await importToolset(mode, project.data.tools);
+  if (merged == null) return;
+  if (mode === 'add' && merged.length === project.data.tools.length) return;
+  if (mode === 'replace') {
+    // The cache key folds in every ToolEntry field, so swapping
+    // the library mid-session would force a miss-and-recompute on every
+    // op anyway. Clear up front so the old entries stop occupying LRU
+    // slots that will never hit again.
+    await clearPipelineCacheOnReplace();
   }
+  project.replaceTools(merged);
 }
 
 /// Export the current machine config to a `.ivac-machine.json` file.

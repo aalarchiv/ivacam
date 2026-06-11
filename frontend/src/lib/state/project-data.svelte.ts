@@ -228,7 +228,7 @@ export class ProjectDataState {
   tools = $state<ToolEntry[]>([
     {
       id: 1,
-      name: '3 mm endmill',
+      name: '3mm endmill',
       kind: 'endmill',
       diameter: 3,
       flutes: 2,

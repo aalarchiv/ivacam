@@ -45,11 +45,12 @@ describe('machine_profiles helpers', () => {
     expect(newProfileId()).not.toBe(newProfileId());
   });
 
-  it('profileNameFor uses machine.name, else a non-colliding fallback', () => {
+  it('profileNameFor uses machine.name, else a settings proposal with collision suffix', () => {
     expect(profileNameFor(machine('Plasma table'), [])).toBe('Plasma table');
-    const existing = [profile('a', 'Machine 1'), profile('b', 'Machine 3')];
-    // length+1 = 3 collides with 'Machine 3' → bumps to 4.
-    expect(profileNameFor(machine(''), existing)).toBe('Machine 4');
+    // machine() fixtures are plasma-mode without a work area → 'Plasma'.
+    expect(profileNameFor(machine(''), [])).toBe('Plasma');
+    const existing = [profile('a', 'Plasma'), profile('b', 'Plasma (2)')];
+    expect(profileNameFor(machine(''), existing)).toBe('Plasma (3)');
   });
 
   it('profileFromCurrent deep-clones (no aliasing of the live project)', () => {

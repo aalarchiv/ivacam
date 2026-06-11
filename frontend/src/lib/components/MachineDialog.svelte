@@ -17,6 +17,7 @@
   import * as fileOps from '../services/file_ops';
   import { workspace } from '../state/workspace.svelte';
   import { duplicateProfile, profileFromCurrent } from '../state/machine_profiles';
+  import { suggestMachineName } from '../state/tool_naming';
 
   interface Props {
     open: boolean;
@@ -399,8 +400,9 @@
       Name
       <input
         type="text"
-        placeholder="e.g. Shop CNC"
+        placeholder={suggestMachineName(draft)}
         value={draft.name ?? ''}
+        title="Machine name. Left empty, the proposal (mode + work area) is used when saving this machine."
         oninput={(e) => (draft.name = (e.currentTarget as HTMLInputElement).value)}
       />
     </label>

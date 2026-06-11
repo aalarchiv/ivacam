@@ -73,6 +73,21 @@
 
 <div class="machine-ws">
   <div class="ws-toolbar">
+    <!-- File actions leftmost, matching the Project toolbar. -->
+    <button
+      type="button"
+      class="ws-btn"
+      onclick={() => void fileOps.loadMachine()}
+      title="Replace the active machine settings with a .ivac-machine.json file.">Load file…</button
+    >
+    <button
+      type="button"
+      class="ws-btn"
+      onclick={() => void fileOps.saveMachine()}
+      title="Save the machine settings to a .ivac-machine.json file (for sharing across computers)."
+      >Save file…</button
+    >
+    <span class="ws-sep"></span>
     <label
       class="pick"
       title="The active machine. Switching applies its settings AND its stocked tools to the project in one undoable step. While a machine is active, edits here are saved back into it."
@@ -121,20 +136,6 @@
         >not on this computer</span
       >
     {/if}
-    <span class="ws-flex"></span>
-    <button
-      type="button"
-      class="ws-btn"
-      onclick={() => void fileOps.loadMachine()}
-      title="Replace the active machine settings with a .ivac-machine.json file.">Load file…</button
-    >
-    <button
-      type="button"
-      class="ws-btn"
-      onclick={() => void fileOps.saveMachine()}
-      title="Save the machine settings to a .ivac-machine.json file (for sharing across computers)."
-      >Save file…</button
-    >
   </div>
   <nav class="sub-tabs" aria-label="Machine sections">
     <button
@@ -205,8 +206,10 @@
     font-size: 0.74rem;
     font-style: italic;
   }
-  .ws-flex {
-    flex: 1;
+  .ws-sep {
+    width: 1px;
+    align-self: stretch;
+    background: var(--border);
   }
   .sub-tabs {
     display: flex;

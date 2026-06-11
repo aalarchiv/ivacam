@@ -20,8 +20,8 @@
   type GcodePanelComp = typeof import('./lib/components/GcodePanel.svelte').default;
   let GcodePanel = $state<GcodePanelComp | null>(null);
   let gcodePanelLoading = false;
-  type MachineDialogComp = typeof import('./lib/components/MachineDialog.svelte').default;
-  let MachineDialog = $state<MachineDialogComp | null>(null);
+  type MachineWorkspaceComp = typeof import('./lib/components/MachineWorkspace.svelte').default;
+  let MachineWorkspace = $state<MachineWorkspaceComp | null>(null);
   let machineDialogLoading = false;
   type ToolLibraryDialogComp = typeof import('./lib/components/ToolLibraryDialog.svelte').default;
   let ToolLibraryDialog = $state<ToolLibraryDialogComp | null>(null);
@@ -347,10 +347,10 @@
   // dynamic import; subsequent opens just toggle the open flag (the
   // component is already in memory).
   $effect(() => {
-    if (mainTab === 'machine' && !MachineDialog && !machineDialogLoading) {
+    if (mainTab === 'machine' && !MachineWorkspace && !machineDialogLoading) {
       machineDialogLoading = true;
-      void import('./lib/components/MachineDialog.svelte').then((m) => {
-        MachineDialog = m.default;
+      void import('./lib/components/MachineWorkspace.svelte').then((m) => {
+        MachineWorkspace = m.default;
         machineDialogLoading = false;
       });
     }
@@ -913,10 +913,10 @@
   </main>
 
   <!-- ============== MACHINE / TOOLS TAB PANELS ================ -->
-  {#if MachineDialog}
-    {@const MachinePanel = MachineDialog}
+  {#if MachineWorkspace}
+    {@const MachinePanel = MachineWorkspace}
     <main class="tab-panel" class:tab-hidden={mainTab !== 'machine'}>
-      <MachinePanel embedded open={false} onClose={() => (mainTab = 'project')} />
+      <MachinePanel />
     </main>
   {:else if mainTab === 'machine'}
     <main class="tab-panel"><p class="tab-loading">Loading machine panel…</p></main>

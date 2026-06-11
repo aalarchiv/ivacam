@@ -314,61 +314,63 @@
          stored per-user, one per physical machine. Picking one applies
          its config AND its tool library to the project as a single
          undoable step. -->
-  <div class="profile-bar">
-    <label
-      class="profile-pick"
-      title="Machine profile — a named machine setup plus its own tool library, saved on this computer (not in the project). Switching profiles swaps both into the project in one undoable step. While a profile is selected, edits to the machine or the tool library are saved back into it."
-    >
-      <span>Profile</span>
-      <select
-        value={activeProfileId ?? ''}
-        disabled={dd.isDirty}
-        title={dd.isDirty
-          ? 'You have unsaved machine edits — OK or Cancel them first, then switch profiles.'
-          : ''}
-        onchange={(e) => onProfileSelect((e.currentTarget as HTMLSelectElement).value)}
+  {#if !embedded}
+    <div class="profile-bar">
+      <label
+        class="profile-pick"
+        title="Machine profile — a named machine setup plus its own tool library, saved on this computer (not in the project). Switching profiles swaps both into the project in one undoable step. While a profile is selected, edits to the machine or the tool library are saved back into it."
       >
-        <option value="">— project-local (no profile) —</option>
-        {#each profiles as p (p.id)}
-          <option value={p.id}>{p.name}</option>
-        {/each}
-        {#if activeProfileMissing}
-          <option value={activeProfileId}>Referenced profile (not on this computer)</option>
-        {/if}
-      </select>
-    </label>
-    <button
-      type="button"
-      class="profile-btn"
-      onclick={saveAsProfile}
-      title="Save the machine settings shown below together with the project's current tool library as a new profile, and link this project to it."
-      >Save as profile</button
-    >
-    {#if activeProfileId != null && !activeProfileMissing}
+        <span>Profile</span>
+        <select
+          value={activeProfileId ?? ''}
+          disabled={dd.isDirty}
+          title={dd.isDirty
+            ? 'You have unsaved machine edits — OK or Cancel them first, then switch profiles.'
+            : ''}
+          onchange={(e) => onProfileSelect((e.currentTarget as HTMLSelectElement).value)}
+        >
+          <option value="">— project-local (no profile) —</option>
+          {#each profiles as p (p.id)}
+            <option value={p.id}>{p.name}</option>
+          {/each}
+          {#if activeProfileMissing}
+            <option value={activeProfileId}>Referenced profile (not on this computer)</option>
+          {/if}
+        </select>
+      </label>
       <button
         type="button"
         class="profile-btn"
-        onclick={duplicateActiveProfile}
-        title="Copy this profile (machine + tools) under a new name — for variants of the same machine."
-        >Duplicate</button
+        onclick={saveAsProfile}
+        title="Save the machine settings shown below together with the project's current tool library as a new profile, and link this project to it."
+        >Save as profile</button
       >
-      <button
-        type="button"
-        class="profile-btn"
-        class:danger={confirmingProfileDelete}
-        onclick={deleteActiveProfile}
-        title="Remove this profile from this computer. The project keeps its current machine settings and tools — nothing in the project is deleted."
-        >{confirmingProfileDelete ? 'Delete profile?' : 'Delete'}</button
-      >
-    {/if}
-    {#if activeProfileMissing}
-      <span
-        class="profile-note"
-        title="This project references a machine profile that doesn't exist on this computer (it was saved elsewhere). The project loaded with its own embedded machine + tools — use 'Save as profile' to recreate the profile here."
-        >not on this computer</span
-      >
-    {/if}
-  </div>
+      {#if activeProfileId != null && !activeProfileMissing}
+        <button
+          type="button"
+          class="profile-btn"
+          onclick={duplicateActiveProfile}
+          title="Copy this profile (machine + tools) under a new name — for variants of the same machine."
+          >Duplicate</button
+        >
+        <button
+          type="button"
+          class="profile-btn"
+          class:danger={confirmingProfileDelete}
+          onclick={deleteActiveProfile}
+          title="Remove this profile from this computer. The project keeps its current machine settings and tools — nothing in the project is deleted."
+          >{confirmingProfileDelete ? 'Delete profile?' : 'Delete'}</button
+        >
+      {/if}
+      {#if activeProfileMissing}
+        <span
+          class="profile-note"
+          title="This project references a machine profile that doesn't exist on this computer (it was saved elsewhere). The project loaded with its own embedded machine + tools — use 'Save as profile' to recreate the profile here."
+          >not on this computer</span
+        >
+      {/if}
+    </div>
+  {/if}
 
   <!--
       ninc: storage is always mm regardless of `draft.unit`. The unit

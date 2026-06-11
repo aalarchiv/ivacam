@@ -10,6 +10,7 @@
     type MachineSettings,
     type PostProfile,
   } from '../state/project.svelte';
+  import { untrack } from 'svelte';
   import Modal from './Modal.svelte';
   import PostProcessorEditor from './PostProcessorEditor.svelte';
   import { DialogDraft } from './dialog-draft.svelte';
@@ -65,7 +66,14 @@
   const jerkDraft = $derived(composite.jerk);
 
   $effect(() => {
-    if (active) {
+    if (!active) return;
+    // Tracked dep: ONLY the committed machine (deep snapshot). The
+    // guard + dd.open below run untracked — reading dd.isDirty
+    // (deep-reads dd.draft) and then writing dd.draft in the same
+    // effect self-invalidates it into an infinite loop (the frozen-
+    // tab bug, see ToolLibraryDialog's twin effect).
+    const machine = $state.snapshot(project.data.machine) as MachineSettings;
+    untrack(() => {
       // Embedded panels stay mounted, so external machine changes
       // (undo, profile switch) re-run this — refresh a CLEAN draft to
       // stay in sync, but never clobber in-progress edits.
@@ -75,12 +83,12 @@
       // manifests as "every button still fires its onclick, but
       // visible state stops updating" (see App.svelte:117).
       try {
-        dd.open(compositeOf(project.data.machine));
+        dd.open(compositeOf(machine));
       } catch (e) {
         console.error('MachineDialog.open: init failed', e);
       }
       confirmingProfileDelete = false;
-    }
+    });
   });
 
   function cloneSettings(m: MachineSettings): MachineSettings {

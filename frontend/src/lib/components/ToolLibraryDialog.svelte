@@ -11,6 +11,7 @@
     type HolderShape,
     type FormProfileSample,
   } from '../state/project.svelte';
+  import { untrack } from 'svelte';
   import Modal from './Modal.svelte';
   import { DialogDraft } from './dialog-draft.svelte';
   import * as fileOps from '../services/file_ops';
@@ -109,19 +110,28 @@
   }
 
   $effect(() => {
-    if (active) {
+    if (!active) return;
+    // Tracked deps: ONLY the backing store (deep snapshot) + the
+    // project tools the inventory seeds from. Everything below runs
+    // untracked — the previous version read dd.isDirty (which
+    // deep-reads dd.draft) and then WROTE dd.draft via dd.open(), so
+    // every clone write re-invalidated the effect: an infinite loop
+    // that froze the whole app the moment the tab mounted.
+    const backing = $state.snapshot(backingTools) as ToolEntry[];
+    const projectTools = $state.snapshot(project.data.tools) as ToolEntry[];
+    untrack(() => {
       // Embedded panels stay mounted, so external tool changes (undo,
       // stocking from the Machine tab) re-run this — refresh a CLEAN
       // draft to stay in sync, but never clobber in-progress edits.
       if (embedded && dd.isDirty) return;
-      let tools = backingTools;
-      if (isInventory && tools.length === 0 && project.data.tools.length > 0) {
+      let tools = backing;
+      if (isInventory && tools.length === 0 && projectTools.length > 0) {
         // First use of the shop inventory on an installation that
         // predates it: seed from the current project's tools so the
         // user starts from what they already configured. Deferred —
         // workspace.version is $state and must not bump synchronously
         // inside an effect body.
-        const seeded = seedInventoryFromProject(project.data.tools);
+        const seeded = seedInventoryFromProject(projectTools);
         queueMicrotask(() => workspace.setToolInventory(seeded));
         tools = seeded;
       }
@@ -132,7 +142,7 @@
       // default so the user sees `dragoff` / `cornerRadiusMm` / T-slot
       // neck dims without hunting for them. Other kinds start collapsed.
       expanded = new Set(tools.filter((t) => kindNeedsExpansion(t.kind)).map((t) => t.id));
-    }
+    });
   });
 
   // Numeric-field validation, fieldApplies, and the per-kind

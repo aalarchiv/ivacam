@@ -73,9 +73,11 @@
       </section>
     </div>
 
-    <footer>
-      <button class="btn-primary" onclick={onClose} type="button">Done</button>
-    </footer>
+    {#if !embedded}
+      <footer>
+        <button class="btn-primary" onclick={onClose} type="button">Done</button>
+      </footer>
+    {/if}
   </div>
 {/snippet}
 

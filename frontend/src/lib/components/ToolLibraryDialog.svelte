@@ -588,7 +588,7 @@
   {/if}
   <!-- Header-attached filters: text search + kind + machine
        capability. View-only — filtering never touches the library. -->
-  <div class="table-controls">
+  <div class="table-actions">
     <!-- File actions left-aligned, matching the Project toolbar. In
          inventory mode they import/export the SHOP INVENTORY (via the
          draft — Apply persists); in project mode the working tool set. -->
@@ -635,7 +635,8 @@
       title="Add tools from a .ivac-toolset.json file. Tools whose name already exists are skipped."
       >Load (add)…</button
     >
-    <span class="tc-sep"></span>
+  </div>
+  <div class="table-filters">
     <input
       type="text"
       class="tc-search"
@@ -2342,14 +2343,26 @@
     opacity: 0.3;
     cursor: not-allowed;
   }
-  /* Header-attached filter bar (search / kind / capability / count). */
-  .table-controls {
+  /* Two header rows: file actions on the activated-tab surface, then
+     the filter row in a lighter tone acting as a divider before the
+     table. */
+  .table-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.7rem;
+    background: var(--bg-panel);
+    font-size: 0.78rem;
+    flex-wrap: wrap;
+  }
+  .table-filters {
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    padding: 0.4rem 0.7rem;
-    border-bottom: 1px solid var(--border);
+    padding: 0.35rem 0.7rem;
     background: var(--bg-elevated);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
     font-size: 0.78rem;
     flex-wrap: wrap;
   }
@@ -2362,11 +2375,6 @@
     font-size: 0.74rem;
     cursor: pointer;
     white-space: nowrap;
-  }
-  .tc-sep {
-    width: 1px;
-    align-self: stretch;
-    background: var(--border);
   }
   .tc-search {
     width: 14rem;

@@ -19,6 +19,25 @@
   }
   let { open, onClose, embedded = false }: Props = $props();
 
+  /// Embedded (Settings tab) layout: the section headers become a
+  /// vertical group nav on the left and only the active group's
+  /// content shows on the right — the full stacked form overwhelms.
+  /// Modal mode (unused since the tab landed) keeps the stacked list.
+  const GROUPS = [
+    { id: 'appearance', label: 'Appearance' },
+    { id: 'view', label: 'View' },
+    { id: 'preview', label: 'Cutting preview' },
+    { id: 'performance', label: 'Performance' },
+    { id: 'safety', label: 'Sim safety' },
+    { id: 'sources', label: 'Source files' },
+    { id: 'snap', label: 'Snap to' },
+  ] as const;
+  type GroupId = (typeof GROUPS)[number]['id'];
+  let activeGroup = $state<GroupId>('appearance');
+  function groupHidden(id: GroupId): boolean {
+    return embedded && activeGroup !== id;
+  }
+
   function update<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     project.updateSettings({ [key]: value } as Partial<AppSettings>);
   }
@@ -65,7 +84,7 @@
   {/if}
 
   <div class="body">
-    <section>
+    <section class:group-hidden={groupHidden('appearance')}>
       <h3>Appearance</h3>
       <div class="grid">
         <label
@@ -106,7 +125,7 @@
       </div>
     </section>
 
-    <section>
+    <section class:group-hidden={groupHidden('view')}>
       <h3>View</h3>
       <div class="grid">
         <label class="check">
@@ -120,7 +139,7 @@
       </div>
     </section>
 
-    <section>
+    <section class:group-hidden={groupHidden('preview')}>
       <h3>Cutting preview</h3>
       <p class="hint">
         How the 3D viewport renders the simulated stock once cutting preview lands. These values are
@@ -318,7 +337,7 @@
       </div>
     </section>
 
-    <section>
+    <section class:group-hidden={groupHidden('performance')}>
       <h3>Performance</h3>
       <div class="grid">
         <label class="check">
@@ -411,7 +430,7 @@
       </p>
     </section>
 
-    <section>
+    <section class:group-hidden={groupHidden('safety')}>
       <h3>Sim safety</h3>
       <div class="grid">
         <label class="check">
@@ -464,7 +483,7 @@
       </p>
     </section>
 
-    <section>
+    <section class:group-hidden={groupHidden('sources')}>
       <h3>Source files</h3>
       <div class="grid">
         <label class="check">
@@ -485,7 +504,7 @@
       </p>
     </section>
 
-    <section>
+    <section class:group-hidden={groupHidden('snap')}>
       <h3>Snap to</h3>
       <div class="grid">
         {#each [{ key: 'endpoint', label: 'Endpoint', help: 'Snap to segment endpoints.' }, { key: 'midpoint', label: 'Midpoint', help: 'Snap to the midpoint of each segment.' }, { key: 'intersection', label: 'Intersection', help: 'Snap to line / arc crossings.' }, { key: 'center', label: 'Center', help: 'Snap to circle / arc centers.' }, { key: 'grid', label: 'Grid', help: 'Snap to integer multiples of the grid step below.' }] as o (o.key)}
@@ -543,7 +562,19 @@
 {/snippet}
 
 {#if embedded}
-  <section class="embedded-shell">{@render shell()}</section>
+  <section class="embedded-shell">
+    <nav class="group-nav" aria-label="Setting groups">
+      {#each GROUPS as g (g.id)}
+        <button
+          type="button"
+          class="group-tab"
+          class:active={activeGroup === g.id}
+          onclick={() => (activeGroup = g.id)}>{g.label}</button
+        >
+      {/each}
+    </nav>
+    <div class="group-content">{@render shell()}</div>
+  </section>
 {:else if open}
   <Modal
     {onClose}
@@ -683,14 +714,48 @@
   }
   .embedded-shell {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     flex: 1;
     min-height: 0;
-    overflow: auto;
     background: var(--bg-panel);
+  }
+  .group-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.6rem 0.4rem;
+    border-right: 1px solid var(--border);
+    min-width: 10rem;
+  }
+  .group-tab {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-align: left;
+    cursor: pointer;
+  }
+  .group-tab:hover {
+    color: var(--text);
+  }
+  .group-tab.active {
+    background: var(--bg-elevated);
+    border-color: var(--border);
+    color: var(--text-strong);
+  }
+  .group-content {
+    flex: 1;
+    min-width: 0;
+    overflow: auto;
     /* The modal constrains width; the tab shouldn't stretch forms
        across a 4k monitor. */
     max-width: 720px;
+  }
+  .group-content :global(section.group-hidden),
+  section.group-hidden {
+    display: none;
   }
   footer {
     display: flex;

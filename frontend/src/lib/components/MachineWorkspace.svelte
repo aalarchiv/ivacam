@@ -174,7 +174,9 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.45rem 0.7rem;
-    background: var(--bg-elevated);
+    /* Same surface as the activated tab so the toolbar reads as part
+       of the panel, not a separate strip. */
+    background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
     font-size: 0.8rem;
     flex-wrap: wrap;

@@ -637,7 +637,7 @@
     >
     <span class="tc-sep"></span>
     <input
-      type="search"
+      type="text"
       class="tc-search"
       placeholder="Search tools…"
       value={view.query}

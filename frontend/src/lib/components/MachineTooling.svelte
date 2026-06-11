@@ -69,7 +69,7 @@
     </h3>
     {#if inventory.length > 0}
       <input
-        type="search"
+        type="text"
         class="inv-filter"
         placeholder="Filter inventory…"
         bind:value={filter}

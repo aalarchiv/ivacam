@@ -186,6 +186,18 @@ Outputs land under `target/release/bundle/`:
 | macOS    | `bundle/dmg/ivaCAM.dmg`, `bundle/macos/ivaCAM.app`   |
 | Windows  | `bundle/msi/ivaCAM.msi`                            |
 
+The AppImage bundles the GStreamer **media framework**
+(`bundleMediaFramework: true` in `tauri.conf.json`). This is not
+because the app plays media — the webview's media backend is disabled
+at runtime — but because linuxdeploy unavoidably bundles the build
+machine's GStreamer *core libraries* as WebKit transitive deps. Those
+shadow the user's system copies at runtime, and when the user's
+plugins are absent or built against a different core version, WebKit
+prints `GStreamer element appsink not found. Please install it.` on
+every launch. Shipping the matching plugin set keeps the AppImage
+self-contained: the probe always succeeds, and users never get told
+to install something the app doesn't even use.
+
 ## 4. Verify
 
 ```sh

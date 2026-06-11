@@ -41,37 +41,53 @@
     "longDescription": "ivaCAM converts DXF and SVG drawings into G-code for CNC mills, lasers, and drag-knife plotters. Rust core, Svelte UI, GPL-3.0-or-later.",
     "fileAssociations": [
       {
-        "ext": ["dxf"],
+        "ext": [
+          "dxf"
+        ],
         "name": "AutoCAD DXF drawing",
         "description": "Drawing Exchange Format",
         "role": "Editor",
         "mimeType": "image/vnd.dxf"
       },
       {
-        "ext": ["svg"],
+        "ext": [
+          "svg"
+        ],
         "name": "Scalable Vector Graphics",
         "description": "SVG drawing",
         "role": "Editor",
         "mimeType": "image/svg+xml"
       },
       {
-        "ext": ["hpgl", "plt"],
+        "ext": [
+          "hpgl",
+          "plt"
+        ],
         "name": "HPGL plotter file",
         "description": "Hewlett-Packard Graphics Language",
         "role": "Editor"
       },
       {
-        "ext": ["ngc"],
+        "ext": [
+          "ngc"
+        ],
         "name": "G-code program",
         "description": "Numerical control / G-code",
         "role": "Editor"
       },
       {
-        "ext": ["vc-project.json"],
+        "ext": [
+          "vc-project.json"
+        ],
         "name": "ivaCAM project",
         "description": "ivaCAM saved project (geometry + setup + tabs)",
         "role": "Editor"
       }
-    ]
+    ],
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    }
   }
 }

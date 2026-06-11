@@ -265,6 +265,10 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
         } else {
             bore_radius + tool_radius
         };
+        // One whirl state per circle so the orbital phase carries
+        // across radial passes (resetting it would stamp a flat spot
+        // at every pass boundary).
+        let mut whirl_state = crate::gcode::face_mill_overlay::WhirlState::default();
         for pass in 0..n_passes {
             let frac = if n_passes == 1 {
                 1.0
@@ -279,7 +283,7 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
             if pass_radius <= 0.05 {
                 continue;
             }
-            let path = crate::cam::thread::helix_waypoints(
+            let mut path = crate::cam::thread::helix_waypoints(
                 center,
                 pass_radius,
                 top_z,
@@ -291,6 +295,46 @@ pub(in crate::pipeline) fn run_thread_op<P: PostProcessor>(
                 start_angle_rad,
                 setup.tool.spindle_direction,
             );
+            // Optional whirling (trochoidal) engagement overlay on the
+            // helix — a whirling-tagged thread mill softens per-tooth
+            // chipload on hard material by orbiting the centerline.
+            // Default off (no whirl tag = today's output). The lead-in
+            // below stays plain: it runs at the zero-engagement kiss
+            // radius where the orbit has nothing to soften.
+            if setup.tool.whirl_radius > 0.0 && setup.tool.whirl_stepover > 0.0 && path.len() >= 2 {
+                // Flank guard: the orbit modulates the effective thread
+                // radius by ±orbit, so an orbit beyond a quarter pitch
+                // would cut into the opposite flank of the groove.
+                // Clamp and tell the user rather than silently gouge.
+                let max_orbit = (pitch_mm * 0.25).max(0.01);
+                let mut orbit = setup.tool.whirl_radius;
+                if orbit > max_orbit {
+                    if pass == 0 {
+                        warnings.push(PipelineWarning {
+                            op_id: Some(op.id),
+                            kind: "thread_whirl_radius_clamped".into(),
+                            message: format!(
+                                "op '{}': whirling orbit radius {:.3} mm would breach the thread flank at {:.3} mm pitch; clamped to {:.3} mm (a quarter pitch).",
+                                op.name, orbit, pitch_mm, max_orbit
+                            ),
+                        });
+                    }
+                    orbit = max_orbit;
+                }
+                let whirled = crate::gcode::face_mill_overlay::apply_whirl_to_polyline(
+                    &path,
+                    crate::gcode::face_mill_overlay::WhirlParams {
+                        radius: orbit,
+                        stepover: setup.tool.whirl_stepover,
+                        osc: 0.0, // Z-wobble would corrupt the thread pitch
+                        climb,
+                    },
+                    &mut whirl_state,
+                );
+                if whirled.len() >= 2 {
+                    path = whirled;
+                }
+            }
             if path.len() >= 2 {
                 // Prepend an axial lead-in arc segment so the
                 // cutter doesn't engage the full thread tooth at the
@@ -549,6 +593,91 @@ mod tests {
                 || resp.gcode.contains("X15\n"),
             "expected helix waypoint at X=15 (bore - tool + thread_depth):\n{}",
             resp.gcode
+        );
+    }
+
+    /// A whirling-tagged thread mill superimposes the trochoidal orbit
+    /// on the helix: more G1 lines than the plain helix, max radial
+    /// excursion grows by ~the orbit radius, and an oversized orbit is
+    /// clamped to a quarter pitch with a warning (flank guard). No tag
+    /// = byte-identical plain output (default off).
+    #[test]
+    fn thread_whirl_overlay_inflates_helix_and_guards_flank() {
+        let center = Point2::new(0.0, 0.0);
+        let mk = |whirl: bool, orbit_w: f64| {
+            let mut tool = endmill(1, 1.0);
+            tool.whirl = whirl;
+            tool.whirl_extra_width_mm = if whirl { Some(orbit_w) } else { None };
+            tool.whirl_stepover_mm = Some(0.5);
+            let mut params = OpParams::mill_default();
+            params.depth = -2.0;
+            params.start_depth = 0.0;
+            let project = Project {
+                segments: closed_circle(center, 5.0),
+                machine: MachineConfig::default(),
+                tools: vec![tool],
+                operations: vec![Op {
+                    id: 1,
+                    name: "Thread".into(),
+                    enabled: true,
+                    kind: OpKind::Thread {
+                        pitch_mm: 1.0,
+                        internal: true,
+                        climb: true,
+                        radial_passes: 1,
+                        start_angle_rad: 0.0,
+                        thread_depth_mm: Some(0.5),
+                    },
+                    tool_id: 1,
+                    finish_tool_id: None,
+                    source: OpSource::All,
+                    params,
+                    group: None,
+                    pin_order: false,
+                }],
+                fixtures: Vec::default(),
+                text_layers: Vec::default(),
+                work_offset: crate::project::WorkOffset::default(),
+                stock: None,
+                relief_sources: Vec::new(),
+                group_ops_by_tool: false,
+            };
+            run_pipeline(
+                PipelineRequest {
+                    project,
+                    post_processor: Some(PostProcessorKind::Linuxcnc),
+                },
+                |_, _, _| {},
+            )
+            .unwrap()
+        };
+        let plain = mk(false, 0.0);
+        // Orbit radius = extra_width / 2 = 0.2 — inside the 0.25 flank cap.
+        let whirled = mk(true, 0.4);
+        let g1 = |g: &str| g.lines().filter(|l| l.starts_with("G1")).count();
+        assert!(
+            g1(&whirled.gcode) > g1(&plain.gcode) * 2,
+            "whirl overlay should densify the helix: plain {} vs whirled {}",
+            g1(&plain.gcode),
+            g1(&whirled.gcode)
+        );
+        assert!(
+            !whirled
+                .warnings
+                .iter()
+                .any(|w| w.kind == "thread_whirl_radius_clamped"),
+            "in-cap orbit must not warn: {:?}",
+            whirled.warnings
+        );
+        // Oversized orbit (radius 1.0 > pitch/4 = 0.25) clamps + warns.
+        let clamped = mk(true, 2.0);
+        assert!(
+            clamped
+                .warnings
+                .iter()
+                .any(|w| w.kind == "thread_whirl_radius_clamped"),
+            "flank guard warning missing: {:?}",
+            clamped.warnings
         );
     }
 

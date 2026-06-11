@@ -243,6 +243,75 @@ fn stamp(x: f64, y: f64, z: f64, angle: f64, dir: f64, radius: f64, osc: f64) ->
     (x + dx, y + dy, z + dz)
 }
 
+/// Superimpose the helical overlay onto an existing 3D waypoint
+/// polyline (the thread-mill helix). Same orbital model as
+/// [`apply_whirl`], but the path arrives as dense `(x, y, z)` points
+/// with VARYING Z, so each chord interpolates Z while the orbit
+/// offsets XY and the `osc` ripple rides on top. Thread one
+/// [`WhirlState`] across the radial passes of a Thread op so the
+/// spiral phase doesn't reset (flat spots) at pass boundaries.
+///
+/// Returns an empty Vec when params are degenerate or the path is
+/// shorter than one chord — caller keeps the plain path.
+#[must_use]
+pub fn apply_whirl_to_polyline(
+    points: &[(f64, f64, f64)],
+    params: WhirlParams,
+    state: &mut WhirlState,
+) -> Vec<(f64, f64, f64)> {
+    if params.radius <= 0.0 || params.stepover <= 0.0 || points.len() < 2 {
+        return Vec::new();
+    }
+    let steps = steps_for_radius(params.radius);
+    let stride = params.stepover / f64::from(steps);
+    if !stride.is_finite() || stride <= 1e-6 {
+        return Vec::new();
+    }
+    let dir = if params.climb { 1.0 } else { -1.0 };
+    let step_rad = std::f64::consts::TAU / f64::from(steps);
+
+    let mut out: Vec<(f64, f64, f64)> = Vec::new();
+    let (sx, sy, sz) = points[0];
+    out.push(stamp(
+        sx,
+        sy,
+        sz,
+        state.angle,
+        dir,
+        params.radius,
+        params.osc,
+    ));
+
+    for w in points.windows(2) {
+        let (x0, y0, z0) = w[0];
+        let (x1, y1, z1) = w[1];
+        let len = ((x1 - x0).powi(2) + (y1 - y0).powi(2)).sqrt();
+        if len <= 1e-9 {
+            continue;
+        }
+        // Consume the chord in whole strides, carrying the residual
+        // into the next chord so orbit speed stays uniform along the
+        // path (mirrors walk_chord's stride residual semantics).
+        let mut travelled = state.consumed_since_last_step;
+        while travelled + stride <= len {
+            travelled += stride;
+            state.angle += step_rad;
+            let t = travelled / len;
+            out.push(stamp(
+                x0 + (x1 - x0) * t,
+                y0 + (y1 - y0) * t,
+                z0 + (z1 - z0) * t,
+                state.angle,
+                dir,
+                params.radius,
+                params.osc,
+            ));
+        }
+        state.consumed_since_last_step = travelled - len;
+    }
+    out
+}
+
 #[allow(clippy::too_many_arguments)]
 fn walk_chord(
     p0: Point2,

@@ -141,9 +141,6 @@
   ];
 </script>
 
-role="presentation" onclick={onExternalLinkClick}
->
-
 {#snippet shell()}
   <header>
     <h2 id="about-title">About ivaCAM</h2>

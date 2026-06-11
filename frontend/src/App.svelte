@@ -44,8 +44,10 @@
   import LoadingOverlay from './lib/components/LoadingOverlay.svelte';
   import Splitter from './lib/components/Splitter.svelte';
 
-  let machineOpen = $state(false);
-  let toolsOpen = $state(false);
+  /// Top-level main-window tab. Machine and Tool library are
+  /// first-class tabs (not modals); their panels stay mounted once
+  /// loaded so in-progress drafts survive tab switches.
+  let mainTab = $state<'project' | 'machine' | 'tools'>('project');
   let settingsOpen = $state(false);
   let addTextOpen = $state(false);
   let shortcutHelpOpen = $state(false);
@@ -77,7 +79,7 @@
   // project.sel.toolsDialogFocusId and handles scroll/highlight.
   $effect(() => {
     if (project.sel.toolsDialogFocusId != null) {
-      toolsOpen = true;
+      mainTab = 'tools';
     }
   });
 
@@ -345,7 +347,7 @@
   // dynamic import; subsequent opens just toggle the open flag (the
   // component is already in memory).
   $effect(() => {
-    if (machineOpen && !MachineDialog && !machineDialogLoading) {
+    if (mainTab === 'machine' && !MachineDialog && !machineDialogLoading) {
       machineDialogLoading = true;
       void import('./lib/components/MachineDialog.svelte').then((m) => {
         MachineDialog = m.default;
@@ -354,7 +356,7 @@
     }
   });
   $effect(() => {
-    if (toolsOpen && !ToolLibraryDialog && !toolLibraryDialogLoading) {
+    if (mainTab === 'tools' && !ToolLibraryDialog && !toolLibraryDialogLoading) {
       toolLibraryDialogLoading = true;
       void import('./lib/components/ToolLibraryDialog.svelte').then((m) => {
         ToolLibraryDialog = m.default;
@@ -636,8 +638,8 @@
     bind:this={menuBar}
     bind:activePane
     bind:gcodeOpen
-    onOpenMachine={() => (machineOpen = true)}
-    onOpenTools={() => (toolsOpen = true)}
+    onOpenMachine={() => (mainTab = 'machine')}
+    onOpenTools={() => (mainTab = 'tools')}
     onOpenSettings={() => (settingsOpen = true)}
     onOpenShortcutHelp={() => (shortcutHelpOpen = true)}
     onOpenReport={() => (reportOpen = true)}
@@ -645,8 +647,32 @@
     onOpenRecent={(path) => void openRecentProject(path)}
   />
 
+  <!-- ============== MAIN TABS ================================= -->
+  <nav class="main-tabs" aria-label="Main areas">
+    <button
+      type="button"
+      class="main-tab"
+      class:active={mainTab === 'project'}
+      onclick={() => (mainTab = 'project')}>Project</button
+    >
+    <button
+      type="button"
+      class="main-tab"
+      class:active={mainTab === 'machine'}
+      onclick={() => (mainTab = 'machine')}
+      title="Active machine, its tooling, and its settings">Machine</button
+    >
+    <button
+      type="button"
+      class="main-tab"
+      class:active={mainTab === 'tools'}
+      onclick={() => (mainTab = 'tools')}
+      title="The shop's tool inventory">Tool library</button
+    >
+  </nav>
+
   <!-- ============== TOOLBAR (single row) ====================== -->
-  <div class="toolbar">
+  <div class="toolbar" class:tab-hidden={mainTab !== 'project'}>
     <button
       class="tb-btn primary"
       onclick={() => openFile()}
@@ -703,17 +729,17 @@
          memory. -->
     <button
       class="tb-btn icon config"
-      onclick={() => (machineOpen = true)}
-      title="Machine settings — work area, units, post-processor"
-      aria-label="Open Machine dialog"
+      onclick={() => (mainTab = 'machine')}
+      title="Machine — active machine, tooling, settings"
+      aria-label="Open Machine tab"
     >
       M
     </button>
     <button
       class="tb-btn icon config"
-      onclick={() => (toolsOpen = true)}
+      onclick={() => (mainTab = 'tools')}
       title="Tool library — cutters, feeds, speeds"
-      aria-label="Open Tools dialog"
+      aria-label="Open Tool library tab"
     >
       T
     </button>
@@ -775,7 +801,11 @@
   <ModeSwitchNotice />
 
   <!-- ============== SPLIT VIEW ================================ -->
-  <main class="split" style:--sidebar-width="{sidebarWidth}px">
+  <main
+    class="split"
+    class:tab-hidden={mainTab !== 'project'}
+    style:--sidebar-width="{sidebarWidth}px"
+  >
     <section class="viewport">
       <div class="canvas-area">
         <div class:pane-hidden={activePane !== '2d'} class="pane">
@@ -882,20 +912,24 @@
     </aside>
   </main>
 
+  <!-- ============== MACHINE / TOOLS TAB PANELS ================ -->
   {#if MachineDialog}
-    {@const C = MachineDialog}
-    <C open={machineOpen} onClose={() => (machineOpen = false)} />
+    {@const MachinePanel = MachineDialog}
+    <main class="tab-panel" class:tab-hidden={mainTab !== 'machine'}>
+      <MachinePanel embedded open={false} onClose={() => (mainTab = 'project')} />
+    </main>
+  {:else if mainTab === 'machine'}
+    <main class="tab-panel"><p class="tab-loading">Loading machine panel…</p></main>
   {/if}
   {#if ToolLibraryDialog}
-    {@const C = ToolLibraryDialog}
-    <C
-      open={toolsOpen}
-      onClose={() => {
-        toolsOpen = false;
-        project.sel.toolsDialogFocusId = null;
-      }}
-    />
+    {@const ToolsPanel = ToolLibraryDialog}
+    <main class="tab-panel" class:tab-hidden={mainTab !== 'tools'}>
+      <ToolsPanel embedded open={false} onClose={() => (mainTab = 'project')} />
+    </main>
+  {:else if mainTab === 'tools'}
+    <main class="tab-panel"><p class="tab-loading">Loading tool library…</p></main>
   {/if}
+
   {#if SettingsDialog}
     {@const C = SettingsDialog}
     <C open={settingsOpen} onClose={() => (settingsOpen = false)} />
@@ -966,6 +1000,53 @@
   }
 
   /* ---------- toolbar ------------------------------------------ */
+  /* Top-level main-window tabs (Project | Machine | Tool library). */
+  .main-tabs {
+    display: flex;
+    gap: 0.15rem;
+    padding: 0.2rem 0.7rem 0;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+  }
+  .main-tab {
+    background: none;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    padding: 0.3rem 0.85rem;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .main-tab:hover {
+    color: var(--text);
+  }
+  .main-tab.active {
+    background: var(--bg-panel);
+    border-color: var(--border);
+    color: var(--text-strong);
+    /* Visually merge with the content below by sitting on the strip's
+       bottom border. */
+    margin-bottom: -1px;
+  }
+  /* Machine / Tool-library tab panels — fill the main area like
+     .split does; the embedded dialog shells scroll internally. */
+  .tab-panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-panel);
+  }
+  .tab-loading {
+    margin: 2rem auto;
+    color: var(--text-muted);
+  }
+  /* Keep inactive top-level areas mounted (canvas + draft state
+     survive tab switches) but fully hidden. */
+  .tab-hidden {
+    display: none !important;
+  }
   .toolbar {
     display: flex;
     align-items: center;

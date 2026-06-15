@@ -56,6 +56,10 @@ install `gon` or use `tauri-cli`'s built-in signing flow.
   — usually preinstalled on Windows 11; install on Windows 10 if missing.
 - For installer signing (optional): the WiX 3.x toolset.
 
+See [`BUILDING_WINDOWS.md`](./BUILDING_WINDOWS.md) for the full
+Windows walkthrough (prerequisites, concrete build steps, artifact
+paths, and the Windows-VM route for Linux developers).
+
 ## 2. Clone
 
 The repo expects a few sibling reference checkouts under `refs/`. Pull

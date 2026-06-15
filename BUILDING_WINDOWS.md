@@ -5,35 +5,45 @@ Windows desktop bundle (`.msi` + `.exe` installer). Read `BUILDING.md`
 first for the cross-platform picture; this doc only covers what's
 Windows-specific.
 
-## Why there's no cross-compile from Linux
+## Native Windows vs. cross-compiling from Linux
 
-You **build the Windows bundle on Windows** — there is no supported
-Linux→Windows cross-compile. Two reasons:
+**Recommended for releases: build natively on Windows** (this doc,
+§1–§5). It's the path Tauri fully supports and signs, and it produces
+both the MSI and the NSIS installer.
 
-1. **The Tauri bundler is Windows-only.** The `.msi` (WiX) and the NSIS
-   `.exe` installer are assembled by Windows-only tooling. Even if you
-   coax `cargo` into linking an `x86_64-pc-windows-msvc` binary from
-   Linux (via `cargo-xwin`), `cargo tauri build` can't package it into an
-   installer off-Windows — you'd get a bare `.exe`, not something you
-   hand a tester.
-2. **The MSVC link path from Linux is fragile** and unsupported by Tauri.
+But Linux→Windows cross-compilation is **not** the dead end earlier
+revisions of this doc claimed — we tested it on this repo and it works
+for a runnable binary *and* an NSIS installer. The honest breakdown,
+empirically verified (see [§7](#7-cross-compiling-from-linux-experimental)
+for the recipe):
 
-The good news: the codebase is already portable. The only Linux-specific
+| Output | Native on Windows | Cross-compiled from Linux (`cargo-xwin`) |
+|--------|:-:|:-:|
+| `ivac-desktop.exe` (with icon + manifest) | ✅ | ✅ verified |
+| NSIS `…-setup.exe` installer | ✅ | ✅ verified (needs `makensis`) |
+| MSI installer | ✅ | ❌ hard-gated off (`Wrong package type msi for platform Linux`) |
+| Code signing | ✅ | ❌ Windows-host only (or a custom `sign_command`) |
+| Runtime-verified | ✅ | ⚠️ build only — Tauri marks cross-builds **experimental**; we have not launched the artifact |
+
+So cross-compiling is great for a **fast CI smoke build or a throwaway
+test installer** from a Linux box, but the artifact is unsigned and
+hasn't been run on real Windows — don't ship it to users without a
+native (or VM, [§6](#6-building-from-a-windows-vm)) build that you've
+actually launched.
+
+Either way the codebase is already portable: the only Linux-specific
 Rust (`crates/ivac-tauri/src/main.rs` — the WebKit-child SIGKILL and the
 GStreamer media-backend disable) is gated behind
-`#[cfg(target_os = "linux")]`, so it compiles out on Windows with **zero
+`#[cfg(target_os = "linux")]`, so it compiles out for Windows with **zero
 code changes**. Windows uses the OS's built-in **WebView2** instead of
 WebKitGTK — no GTK, no GStreamer, none of the AppImage media-stripping
 dance.
-
-If your dev machine is Linux, the lowest-friction route is a throwaway
-**Windows 11 VM** (see [§6](#6-building-from-a-windows-vm)).
 
 ## 1. Prerequisites
 
 | Tool | Version | Install (PowerShell) | Notes |
 |------|---------|----------------------|-------|
-| Git | any | `winget install Git.Git` | Enable long paths — see [§5](#5-troubleshooting). |
+| Git | any | `winget install Git.Git` | Enable long paths — see [§8](#8-troubleshooting). |
 | Visual Studio 2022 **Build Tools** | 2022 | see below | Must include the **Desktop development with C++** workload (gives `link.exe`, MSVC, the Windows SDK). |
 | WebView2 Runtime | current | `winget install Microsoft.EdgeWebView2Runtime` | Preinstalled on Windows 11; required on Windows 10. |
 | Rust (rustup) | pinned by [`rust-toolchain.toml`](./rust-toolchain.toml) (1.88.0) | `winget install Rustlang.Rustup` | Installs the **MSVC** host toolchain by default. The repo's toolchain file is picked up automatically on first `cargo` run. |
@@ -149,7 +159,65 @@ that mirrors what a `windows-latest` CI runner would do — the local
 stand-in for the (dormant, remote-less) `.github/workflows/release-desktop.yml`
 Windows lane.
 
-## 7. Troubleshooting
+## 7. Cross-compiling from Linux (experimental)
+
+Verified working on this repo from an Ubuntu host (clang/LLD 20.1.8,
+rustc 1.88.0, `cargo-xwin` 0.19.2, NSIS 3.10) — it produced a valid
+`ivac-desktop.exe` and a `ivaCAM_0.0.0_x64-setup.exe` NSIS installer
+without touching a Windows machine. See the caveats in
+[§Native vs. cross](#native-windows-vs-cross-compiling-from-linux)
+before you rely on it — chiefly: **no MSI, no signing, and the artifact
+is build-verified only, not runtime-verified.**
+
+### Toolchain
+
+```sh
+# LLVM provides the cross linker + resource compiler (Debian/Ubuntu):
+sudo apt-get install -y clang lld llvm   # clang-cl, lld-link, llvm-rc, llvm-lib
+# NSIS, only if you want the installer (not just the bare .exe):
+sudo apt-get install -y nsis             # provides makensis
+
+rustup target add x86_64-pc-windows-msvc
+
+# cargo-xwin downloads the MSVC CRT + Windows SDK on first build
+# (~1.1 GB, cached under ~/.cache/cargo-xwin).
+# NOTE: cargo-xwin ≥ 0.20 needs rustc ≥ 1.89; this repo pins 1.88
+# (rust-toolchain.toml), so install the last 1.88-compatible release:
+cargo install cargo-xwin --version 0.19.2 --locked
+export XWIN_ACCEPT_LICENSE=1   # accept the Microsoft SDK license non-interactively
+```
+
+### Just the binary
+
+```sh
+cd frontend && pnpm install && pnpm build && cd ..   # static dist/ (platform-agnostic)
+cargo xwin build --release -p ivac-tauri --target x86_64-pc-windows-msvc
+# → target/x86_64-pc-windows-msvc/release/ivac-desktop.exe
+#   (PE32+ x64 GUI, with the icon + app manifest embedded via llvm-rc)
+```
+
+First build ≈ 15 min cold (it compiles the whole Windows dep tree:
+tauri, wry, windows-*, …); re-links are a few minutes.
+
+### The NSIS installer too
+
+`cargo tauri build` drives the bundler; point its `--runner` at
+`cargo-xwin` and restrict bundles to NSIS (MSI can't be built here):
+
+```sh
+export XWIN_ACCEPT_LICENSE=1
+cargo tauri build --runner cargo-xwin \
+      --target x86_64-pc-windows-msvc --bundles nsis
+# → target/x86_64-pc-windows-msvc/release/bundle/nsis/ivaCAM_0.0.0_x64-setup.exe
+```
+
+If you omit `--bundles nsis`, Tauri will *try* MSI first, log
+`Wrong package type msi for platform Linux … ignoring msi`, and carry on
+to NSIS — harmless, but `--bundles nsis` keeps the output clean. Tauri
+prints a `Cross-platform compilation is experimental` warning on every
+run; that's expected.
+
+## 8. Troubleshooting
 
 - **`sccache` not found / build fails immediately** — the repo pins
   `rustc-wrapper = "sccache"` in `.cargo/config.toml` for *all* platforms.

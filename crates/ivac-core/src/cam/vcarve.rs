@@ -27,7 +27,12 @@ use voronator::delaunator::{triangulate, Point as VPointXy, INVALID_INDEX};
 
 use crate::cancel::CancelToken;
 
-use crate::cam::{is_inside_polygon, segments_to_points, VcObject};
+#[cfg(test)]
+use crate::cam::is_inside_polygon;
+#[cfg(test)]
+use crate::cam::spatial::point_segment_dist_sq;
+use crate::cam::spatial::{RegionInsideIndex, SegmentNearestGrid};
+use crate::cam::{segments_to_points, VcObject};
 use crate::geometry::Point2;
 
 /// One medial-axis vertex: (x, y, `R_inscribed`). The inscribed-circle
@@ -112,7 +117,7 @@ fn densify_ring(ring: &[Point2], step: f64) -> Vec<Point2> {
 /// chord rarely exceeds a few mm — but for long axis segments through a
 /// big region it catches small holes / notches the fixed-count version
 /// missed.
-fn chord_stays_in_region(region: &VcRegion, p0: Point2, p1: Point2) -> bool {
+fn chord_stays_in_region(region: &RegionInsideIndex, p0: Point2, p1: Point2) -> bool {
     /// Target spacing between chord-interior samples in mm.
     /// 0.5 mm matches the densification used elsewhere in the medial-axis
     /// pipeline (`BOUNDARY_SAMPLE_MM` is the same order) so a hole that
@@ -130,7 +135,7 @@ fn chord_stays_in_region(region: &VcRegion, p0: Point2, p1: Point2) -> bool {
     for i in 1..samples {
         let t = (i as f64) / (samples as f64);
         let s = Point2::new(p0.x + (p1.x - p0.x) * t, p0.y + (p1.y - p0.y) * t);
-        if !point_in_region(region, s) {
+        if !region.contains(s) {
             return false;
         }
     }
@@ -138,7 +143,10 @@ fn chord_stays_in_region(region: &VcRegion, p0: Point2, p1: Point2) -> bool {
 }
 
 /// Even-odd region test honoring holes — point is inside iff it's
-/// inside the outer ring AND outside every hole.
+/// inside the outer ring AND outside every hole. Brute-force oracle:
+/// production now goes through [`RegionInsideIndex`], which reproduces
+/// this result edge-for-edge; retained for the equivalence tests.
+#[cfg(test)]
 fn point_in_region(region: &VcRegion, p: Point2) -> bool {
     if !is_inside_polygon(&region.outer, p) {
         return false;
@@ -228,6 +236,15 @@ pub fn medial_axis_cancellable(
     // radius at each medial-axis vertex (perpendicular distance to the
     // nearest input edge, not to the discrete sample points).
     let boundary_segments = collect_boundary_segments(region);
+    // Build spatial indexes ONCE per region so the per-circumcenter
+    // probes below are ~O(1) instead of O(B). Without these the loop is
+    // O(n_tri · B) ≈ O(B²): both `point_in_region` (ray cast over every
+    // ring edge) and the nearest-segment distance are linear in B, run
+    // once per circumcenter (n_tri ≈ 2B). Both indexes reproduce the
+    // brute-force result exactly (see `cam::spatial`), so output is
+    // unchanged.
+    let region_index = RegionInsideIndex::new(&region.outer, &region.holes);
+    let boundary_grid = SegmentNearestGrid::new(&boundary_segments);
 
     // A medial-axis vertex is a circumcenter that lies inside the
     // region. Build parallel arrays aligned to `centers`: `inside` is
@@ -240,8 +257,8 @@ pub fn medial_axis_cancellable(
     let mut vpts: Vec<VPoint> = vec![VPoint::default(); n_tri];
     for (i, c) in centers.iter().enumerate() {
         if let Some(p) = c {
-            if point_in_region(region, *p) {
-                let r = nearest_boundary_distance(*p, &boundary_segments);
+            if region_index.contains(*p) {
+                let r = boundary_grid.nearest_distance(*p);
                 inside[i] = true;
                 vpts[i] = VPoint { x: p.x, y: p.y, r };
             }
@@ -270,7 +287,7 @@ pub fn medial_axis_cancellable(
             // accepted iff every sample lies inside the region.
             let p0 = Point2::new(vpts[t0].x, vpts[t0].y);
             let p1 = Point2::new(vpts[t1].x, vpts[t1].y);
-            if !chord_stays_in_region(region, p0, p1) {
+            if !chord_stays_in_region(&region_index, p0, p1) {
                 continue;
             }
             adj[t0].push(t1);
@@ -587,25 +604,17 @@ fn collect_boundary_segments(region: &VcRegion) -> Vec<(Point2, Point2)> {
     out
 }
 
-/// Minimum perpendicular distance from `p` to any of `segments`. Each
-/// segment is `(a, b)`; projection is clamped to `t ∈ [0, 1]` so the
-/// distance is to the segment (not the infinite line). Used as the
-/// inscribed-circle radius at a medial-axis vertex.
+/// Minimum perpendicular distance from `p` to any of `segments` (the
+/// inscribed-circle radius at a medial-axis vertex). Brute-force
+/// reference: the hot path uses [`SegmentNearestGrid`] (built once per
+/// region) instead, but both go through `point_segment_dist_sq`, so the
+/// grid is a provable acceleration of this exact computation. Retained
+/// as the equivalence oracle in tests.
+#[cfg(test)]
 fn nearest_boundary_distance(p: Point2, segments: &[(Point2, Point2)]) -> f64 {
     let mut best_sq = f64::INFINITY;
     for &(a, b) in segments {
-        let dx = b.x - a.x;
-        let dy = b.y - a.y;
-        let len_sq = dx * dx + dy * dy;
-        let (qx, qy) = if len_sq < 1e-18 {
-            (a.x, a.y)
-        } else {
-            let t = (((p.x - a.x) * dx + (p.y - a.y) * dy) / len_sq).clamp(0.0, 1.0);
-            (a.x + t * dx, a.y + t * dy)
-        };
-        let ex = p.x - qx;
-        let ey = p.y - qy;
-        let d_sq = ex * ex + ey * ey;
+        let d_sq = point_segment_dist_sq(p, a, b);
         if d_sq < best_sq {
             best_sq = d_sq;
         }
@@ -722,6 +731,52 @@ mod tests {
         // Endpoint sample dist would be ≈ √(50²+3²) ≈ 50.09 — confirm
         // we did NOT pick the endpoint distance.
         assert!(d < 5.0);
+    }
+
+    /// The spatial indexes that replaced the brute-force probes in the
+    /// medial-axis loop must return bit-identical answers on the actual
+    /// boundary data of a real region (square with a square hole). This
+    /// is the integration guard for the H5 acceleration: dense probe
+    /// sweep, `SegmentNearestGrid` vs `nearest_boundary_distance` and
+    /// `RegionInsideIndex` vs `point_in_region`, exact equality.
+    #[test]
+    fn spatial_indexes_match_brute_force_on_real_region() {
+        let region = VcRegion {
+            outer: vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(30.0, 0.0),
+                Point2::new(30.0, 30.0),
+                Point2::new(0.0, 30.0),
+            ],
+            holes: vec![vec![
+                Point2::new(10.0, 10.0),
+                Point2::new(20.0, 10.0),
+                Point2::new(20.0, 20.0),
+                Point2::new(10.0, 20.0),
+            ]],
+        };
+        let boundary = collect_boundary_segments(&region);
+        let grid = SegmentNearestGrid::new(&boundary);
+        let region_index = RegionInsideIndex::new(&region.outer, &region.holes);
+        let steps = 90;
+        for i in 0..=steps {
+            for j in 0..=steps {
+                let p = Point2::new(
+                    -3.0 + 36.0 * f64::from(i) / f64::from(steps),
+                    -3.0 + 36.0 * f64::from(j) / f64::from(steps),
+                );
+                assert_eq!(
+                    region_index.contains(p),
+                    point_in_region(&region, p),
+                    "region inside mismatch at {p:?}"
+                );
+                assert_eq!(
+                    grid.nearest_distance(p),
+                    nearest_boundary_distance(p, &boundary),
+                    "nearest distance mismatch at {p:?}"
+                );
+            }
+        }
     }
 
     /// Regression: at a re-entrant corner the inscribed-circle
@@ -946,8 +1001,9 @@ mod tests {
         // 1 sample per 0.5 mm (~200 samples spaced ~0.5 mm), at least
         // one sample falls inside the hole and the function returns
         // false.
+        let region_index = RegionInsideIndex::new(&region.outer, &region.holes);
         assert!(
-            !chord_stays_in_region(&region, p0, p1),
+            !chord_stays_in_region(&region_index, p0, p1),
             "chord ploughing through a 0.5 mm hole at x=44 must be rejected — no0u regression"
         );
         // Sanity: a chord that AVOIDS the hole (offset in y) IS safe.
@@ -958,7 +1014,7 @@ mod tests {
         assert!(point_in_region(&region, p0_safe));
         assert!(point_in_region(&region, p1_safe));
         assert!(
-            chord_stays_in_region(&region, p0_safe, p1_safe),
+            chord_stays_in_region(&region_index, p0_safe, p1_safe),
             "chord that avoids the hole must be accepted"
         );
     }

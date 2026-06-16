@@ -86,9 +86,7 @@ use crate::gcode::{
     emit_program_begin, emit_program_end, grbl, hpgl, linuxcnc, preview, PostProcessor,
 };
 use crate::geometry::Point2;
-use crate::pipeline_cache::{
-    op_cache_key_with_blobs, GlobalKeyBlobs, OpCacheValue, PipelineCache,
-};
+use crate::pipeline_cache::{op_cache_key_with_blobs, GlobalKeyBlobs, OpCacheValue, PipelineCache};
 use crate::project::ToolChangeStrategy;
 use crate::project::{Op, OpKind, PocketStrategy, Project, ToolEntry};
 
@@ -1454,8 +1452,14 @@ where
         // per-op effects live in compute_op_cache_key / apply_cached_op /
         // store_op_cache; this loop keeps only the control flow (hit ⇒
         // bookkeep + continue; miss ⇒ emit + store + fall through).
-        let cache_key =
-            compute_op_cache_key(op, project, objects, &tool_index, post_tag, key_blobs.as_ref());
+        let cache_key = compute_op_cache_key(
+            op,
+            project,
+            objects,
+            &tool_index,
+            post_tag,
+            key_blobs.as_ref(),
+        );
 
         if let (Some(c), Some(key)) = (cache, cache_key) {
             if let Some(cached) = c.get(key) {

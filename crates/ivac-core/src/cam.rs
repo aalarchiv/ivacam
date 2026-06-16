@@ -26,6 +26,7 @@ pub mod offsets;
 pub mod raster;
 pub mod setup;
 pub mod source_combine;
+pub mod spatial;
 pub mod surface;
 pub mod surface_mill;
 pub mod tabs;

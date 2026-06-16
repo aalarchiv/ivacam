@@ -90,13 +90,21 @@ export function planAdvance(
   targetSeg: number,
   targetT: number,
   total: number,
+  replayFrom = 0,
 ): AdvancePlan | null {
   if (total === 0) return null;
   if (targetSeg === appliedSeg && targetT === partialT) return null;
 
   const backward = targetSeg < appliedSeg || (targetSeg === appliedSeg && targetT < partialT);
 
-  let curSeg = backward ? 0 : appliedSeg;
+  // On a backward scrub the caller may supply a heightmap checkpoint at
+  // `replayFrom` (clamped to `[0, targetSeg]`) so the replay starts there
+  // instead of from segment 0 — the driver restores that snapshot before
+  // applying this plan. `replayFrom = 0` (the default) reproduces the old
+  // replay-from-scratch behavior and keeps `reset` semantics: the driver
+  // still rebuilds the visible heightfield base before the forward ops.
+  const base = backward ? Math.max(0, Math.min(replayFrom, targetSeg)) : appliedSeg;
+  let curSeg = base;
   let curT = backward ? 0 : partialT;
 
   const plan: AdvancePlan = { ...PLAN_NOOP, reset: backward };

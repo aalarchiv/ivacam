@@ -160,6 +160,38 @@ describe('planAdvance', () => {
     expect(p!.bulkAdvance).toBeNull();
     expect(p!.startPartial).toEqual({ segIdx: 5, startT: 0, endT: 0.3 });
   });
+
+  it('backward scrub replays only the tail from a heightmap checkpoint', () => {
+    // From (8, 0.5) back to (6, 0.4) with a checkpoint at segment 4: the
+    // replay starts at 4, not 0 — bulk-advance [4..6) then partial in 6.
+    const p = planAdvance(8, 0.5, 6, 0.4, 10, 4);
+    expect(p!.reset).toBe(true);
+    expect(p!.finalizePartial).toBeNull();
+    expect(p!.bulkAdvance).toEqual({ from: 4, to: 6 });
+    expect(p!.startPartial).toEqual({ segIdx: 6, startT: 0, endT: 0.4 });
+    expect(p!.newAppliedSeg).toBe(6);
+    expect(p!.newPartialT).toBe(0.4);
+  });
+
+  it('clamps a checkpoint past the target back to the target segment', () => {
+    // A checkpoint at 9 but scrubbing back to 3: the replay base can't
+    // exceed the target, so it falls to 3 (pure restore, no forward ops).
+    const p = planAdvance(8, 0, 3, 0, 10, 9);
+    expect(p!.reset).toBe(true);
+    expect(p!.bulkAdvance).toBeNull();
+    expect(p!.startPartial).toBeNull();
+    expect(p!.newAppliedSeg).toBe(3);
+    expect(p!.newPartialT).toBe(0);
+  });
+
+  it('replayFrom is ignored on a forward scrub', () => {
+    // Forward moves never restore a checkpoint; the base stays at the
+    // current appliedSeg regardless of the replayFrom hint.
+    const p = planAdvance(2, 0, 5, 0.6, 10, 4);
+    expect(p!.reset).toBe(false);
+    expect(p!.bulkAdvance).toEqual({ from: 2, to: 5 });
+    expect(p!.startPartial).toEqual({ segIdx: 5, startT: 0, endT: 0.6 });
+  });
 });
 
 // Regression: the sim driver also

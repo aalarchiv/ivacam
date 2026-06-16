@@ -193,6 +193,14 @@ impl Heightmap {
         self.dirty = None;
     }
 
+    /// Mark the entire grid dirty. Used after a wholesale `data` rewrite
+    /// (e.g. restoring a checkpoint snapshot) so the renderer re-uploads
+    /// every cell — a checkpoint restore can change heights anywhere, not
+    /// just inside a swept sub-rectangle.
+    pub fn mark_all_dirty(&mut self) {
+        self.dirty = Some((0, 0, self.cols, self.rows));
+    }
+
     #[must_use]
     pub fn data_ptr(&self) -> *const f32 {
         self.data.as_ptr()

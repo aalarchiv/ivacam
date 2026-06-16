@@ -62,6 +62,17 @@ interface SimulatorWasm {
   set_toolpath(segments: unknown): number;
   clear_toolpath(): void;
   toolpath_len(): number;
+  /// Snapshot the current heightfield under `seg_idx` (a clean segment
+  /// boundary) for fast backward scrubbing.
+  checkpoint(seg_idx: number): void;
+  /// Restore the heightfield from the snapshot at exactly `seg_idx`
+  /// (marks the whole grid dirty). Returns true on a hit.
+  restore_checkpoint(seg_idx: number): boolean;
+  /// Largest checkpoint `seg_idx` ≤ `target`, or -1 if none.
+  nearest_checkpoint(target: number): number;
+  /// Drop all heightmap checkpoints (call when the toolpath changes).
+  clear_checkpoints(): void;
+  checkpoint_count(): number;
   take_diagnostics(): SimDiagnostics;
   cols(): number;
   rows(): number;
@@ -103,6 +114,15 @@ interface WasmHandle {
   Simulator: WasmModule['Simulator'];
   memory: WebAssembly.Memory;
 }
+
+/// Upper bound on heightmap checkpoints kept for fast backward
+/// scrubbing. Each snapshot is cols·rows·4 bytes, so this caps the
+/// checkpoint memory (e.g. a 1M-cell heightfield → ≤ ~48 MB across all
+/// snapshots). Backward scrubs replay at most `ceil(total/MAX)` segments.
+const MAX_CHECKPOINTS = 12;
+/// Below this many toolpath segments a full replay is cheap enough that
+/// checkpointing isn't worth the memory.
+const MIN_SEGMENTS_FOR_CHECKPOINTS = 2 * MAX_CHECKPOINTS;
 
 let wasmPromise: Promise<WasmHandle> | null = null;
 
@@ -254,6 +274,22 @@ export class HeightfieldDriver {
   /// can mark the offending segments as the user scrubs.
   private diagnostics: SimDiagnostics = { warnings: [] };
   private onDiagnosticsChange: ((d: SimDiagnostics) => void) | null = null;
+  /// Target spacing, in segments, between heightmap checkpoints. Computed
+  /// at build() from the program length and `MAX_CHECKPOINTS` so total
+  /// checkpoint memory stays bounded regardless of program size. 0
+  /// disables checkpointing (tiny programs where a full replay is cheap).
+  private checkpointInterval = 0;
+  /// Highest segment boundary a checkpoint has been taken at. Forward
+  /// play snapshots again once `appliedSeg` advances `checkpointInterval`
+  /// past this. Never lowered on rewind — snapshots above the playhead
+  /// stay valid for a later forward scrub.
+  private lastCheckpointSeg = 0;
+  /// Per-checkpoint diagnostics snapshots, keyed by the same segment
+  /// boundary as the Rust heightmap checkpoint. On a backward scrub the
+  /// driver seeds `diagnostics` from here so the rewound prefix's
+  /// warnings survive without re-running the (expensive) holder/fixture
+  /// pass for `[0, replayFrom)`.
+  private diagCheckpoints = new Map<number, SimDiagnostics>();
   /// Edges rebuild walks every triangle in the active heightfield
   /// (THREE.EdgesGeometry has no incremental API), so it must NOT run
   /// during continuous activity. Pure trailing debounce — every call
@@ -387,11 +423,42 @@ export class HeightfieldDriver {
     // by `cachedToolpath` below.
     this.sim.set_toolpath(input.generated.toolpath);
     this.cachedToolpath = input.generated.toolpath;
+    this.resetCheckpoints(input.generated.toolpath.length);
     this.appliedSeg = 0;
     this.partialT = 0;
     this.diagnostics = { warnings: [] };
     this.notifyDiagnostics();
     this.refreshHeightView();
+  }
+
+  /// Drop any heightmap/diagnostics checkpoints and size the checkpoint
+  /// interval for a `total`-segment program. Spacing is chosen so at most
+  /// `MAX_CHECKPOINTS` snapshots exist, bounding memory (each heightmap
+  /// snapshot is cols·rows·4 bytes) regardless of program length. Small
+  /// programs (≤ MIN_SEGMENTS_FOR_CHECKPOINTS) disable it — a full replay
+  /// is already cheap there.
+  private resetCheckpoints(total: number) {
+    this.sim?.clear_checkpoints();
+    this.diagCheckpoints.clear();
+    this.lastCheckpointSeg = 0;
+    this.checkpointInterval =
+      total > MIN_SEGMENTS_FOR_CHECKPOINTS ? Math.ceil(total / MAX_CHECKPOINTS) : 0;
+  }
+
+  /// Snapshot the heightfield + diagnostics at the current clean segment
+  /// boundary, if checkpointing is on and we've advanced far enough past
+  /// the last snapshot. Called after a forward advance settles. Only
+  /// snapshots at `partialT === 0` so the heightfield is exactly
+  /// `[0, appliedSeg)` carved — a valid replay base.
+  private maybeCheckpoint() {
+    if (!this.sim || this.checkpointInterval <= 0) return;
+    if (this.partialT !== 0 || this.appliedSeg <= 0) return;
+    if (this.appliedSeg < this.lastCheckpointSeg + this.checkpointInterval) return;
+    this.sim.checkpoint(this.appliedSeg);
+    // Clone the warning list so later mutations of `this.diagnostics`
+    // don't leak into the snapshot.
+    this.diagCheckpoints.set(this.appliedSeg, { warnings: [...this.diagnostics.warnings] });
+    this.lastCheckpointSeg = this.appliedSeg;
   }
 
   /// Replace the simulator's fixture set without rebuilding the mesh.
@@ -401,6 +468,13 @@ export class HeightfieldDriver {
     if (!this.sim) return;
     this.sim.set_fixtures(fixtures);
     this.sim.reset();
+    // Checkpoint diagnostics snapshots captured fixture-collision
+    // warnings against the OLD fixture set — drop them (the heightmap
+    // snapshots are geometrically fine, but a stale diagnostics seed
+    // would resurrect wrong collisions). Interval is unchanged.
+    this.sim.clear_checkpoints();
+    this.diagCheckpoints.clear();
+    this.lastCheckpointSeg = 0;
     this.appliedSeg = 0;
     this.partialT = 0;
     this.diagnostics = { warnings: [] };
@@ -482,7 +556,19 @@ export class HeightfieldDriver {
       segT = c - segIdx;
     }
 
-    const plan = planAdvance(this.appliedSeg, this.partialT, segIdx, segT, total);
+    // On a backward scrub with exact rewind, find the nearest heightmap
+    // checkpoint ≤ the target so the replay restores it and re-simulates
+    // only the tail instead of the whole `[0, target]` prefix. `-1` (no
+    // usable checkpoint) falls back to replay-from-0.
+    const backward =
+      segIdx < this.appliedSeg || (segIdx === this.appliedSeg && segT < this.partialT);
+    let replayFrom = 0;
+    if (backward && exactRewind && this.checkpointInterval > 0) {
+      const nearest = this.sim.nearest_checkpoint(segIdx);
+      if (nearest > 0) replayFrom = nearest;
+    }
+
+    const plan = planAdvance(this.appliedSeg, this.partialT, segIdx, segT, total, replayFrom);
     if (!plan) return false;
 
     // A backward scrub asks the planner to emit `reset: true`
@@ -502,17 +588,27 @@ export class HeightfieldDriver {
       return false;
     }
 
-    // Backward scrub WITH exactRewind: reset the simulator and let
-    // the planner's forward ops replay. The mesh has to be
-    // refreshed from the clean sim heights BEFORE the forward
-    // replay; otherwise cells outside the replay's dirty AABB keep
-    // the stale (deeper) heights from the previous playhead.
+    // Backward scrub WITH exactRewind: rewind the simulator and let the
+    // planner's forward ops replay. When a checkpoint at `replayFrom` is
+    // available we restore that heightfield (and seed diagnostics from
+    // the matching snapshot) so only `[replayFrom, target]` is
+    // re-simulated; otherwise we fall back to a full reset + replay from
+    // 0. Either way the visible heightfield base is rebuilt BEFORE the
+    // forward ops, else cells outside the replay's dirty AABB keep the
+    // stale (deeper) heights from the previous playhead.
     if (plan.reset) {
-      this.sim.reset();
-      this.diagnostics = { warnings: [] };
+      if (replayFrom > 0 && this.sim.restore_checkpoint(replayFrom)) {
+        // Seed diagnostics from the checkpoint so the rewound prefix's
+        // warnings survive; the replayed tail adds the rest (deduped).
+        const seeded = this.diagCheckpoints.get(replayFrom);
+        this.diagnostics = seeded ? { warnings: [...seeded.warnings] } : { warnings: [] };
+      } else {
+        this.sim.reset();
+        this.diagnostics = { warnings: [] };
+      }
       this.notifyDiagnostics();
-      // Clear coarse pool data before the forward replay so
-      // the active LOD level draws an uncut block to start.
+      // Clear coarse pool data before the forward replay so the active
+      // LOD level redraws from the restored (or uncut) base.
       this.mesh?.reset();
       this.refreshHeightView();
       if (this.heightView && this.mesh) this.mesh.updateHeights(this.heightView);
@@ -537,6 +633,9 @@ export class HeightfieldDriver {
     if (segments !== this.cachedToolpath) {
       this.sim.set_toolpath(segments);
       this.cachedToolpath = segments;
+      // The toolpath changed under us — prior checkpoints snapshot a
+      // different program and must not be restored.
+      this.resetCheckpoints(segments.length);
     }
 
     let unionAabb: [number, number, number, number] | null = null;
@@ -580,6 +679,11 @@ export class HeightfieldDriver {
 
     this.appliedSeg = plan.newAppliedSeg;
     this.partialT = plan.newPartialT;
+
+    // Drop a heightmap + diagnostics checkpoint if forward progress has
+    // crossed the interval at a clean segment boundary — this is what
+    // makes a later backward scrub cheap.
+    this.maybeCheckpoint();
 
     // Re-take the buffer view: any advance / partial_advance call may
     // have grown WASM linear memory and detached the prior view.
@@ -711,6 +815,9 @@ export class HeightfieldDriver {
     this.appliedSeg = 0;
     this.partialT = 0;
     this.cachedToolpath = null;
+    this.diagCheckpoints.clear();
+    this.lastCheckpointSeg = 0;
+    this.checkpointInterval = 0;
     if (this.diagnostics.warnings.length > 0) {
       this.diagnostics = { warnings: [] };
       this.notifyDiagnostics();

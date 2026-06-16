@@ -62,6 +62,22 @@ pub struct Simulator {
     /// Merged into `last_diagnostics` on every advance so the JS
     /// driver's `take_diagnostics()` keeps seeing them.
     sticky_warnings: Vec<ivac_core::sim::diagnostics::SimWarning>,
+    /// Heightmap snapshots for fast backward scrubbing, keyed by the
+    /// segment boundary they represent (state = segments `[0, seg_idx)`
+    /// carved). Kept sorted by `seg_idx`. The JS driver snapshots at
+    /// clean segment boundaries during forward play and, on a backward
+    /// scrub, restores the nearest snapshot ≤ the target so it only
+    /// replays the tail instead of re-simulating the whole prefix. See
+    /// [`Simulator::checkpoint`] / [`Simulator::restore_checkpoint`].
+    checkpoints: Vec<HeightmapCheckpoint>,
+}
+
+/// One backward-scrub heightmap snapshot. `data` mirrors
+/// `Heightmap::data` at the moment `[0, seg_idx)` had been carved.
+#[derive(Debug)]
+struct HeightmapCheckpoint {
+    seg_idx: u32,
+    data: Vec<f32>,
 }
 
 #[wasm_bindgen]
@@ -78,6 +94,7 @@ impl Simulator {
             fixtures: Vec::new(),
             toolpath: Vec::new(),
             sticky_warnings: Vec::new(),
+            checkpoints: Vec::new(),
         }
     }
 
@@ -87,6 +104,72 @@ impl Simulator {
     pub fn reset(&mut self) {
         self.heightmap.reset();
         self.last_diagnostics = SimDiagnostics::new();
+    }
+
+    /// Snapshot the current heightfield under `seg_idx` for fast backward
+    /// scrubbing. The caller must invoke this only at a clean segment
+    /// boundary — i.e. when segments `[0, seg_idx)` are exactly carved
+    /// (no partial segment in progress) — so the snapshot is a valid
+    /// replay base. A snapshot already stored at `seg_idx` is overwritten
+    /// (idempotent re-snapshot of the same state). Snapshots stay sorted
+    /// by `seg_idx`.
+    pub fn checkpoint(&mut self, seg_idx: u32) {
+        let data = self.heightmap.data.clone();
+        match self
+            .checkpoints
+            .binary_search_by_key(&seg_idx, |c| c.seg_idx)
+        {
+            Ok(i) => self.checkpoints[i].data = data,
+            Err(i) => self
+                .checkpoints
+                .insert(i, HeightmapCheckpoint { seg_idx, data }),
+        }
+    }
+
+    /// Restore the heightfield from the snapshot stored at exactly
+    /// `seg_idx` (as returned by [`Simulator::nearest_checkpoint`]),
+    /// marking the whole grid dirty so the renderer re-uploads. Returns
+    /// `true` on a hit. The caller then forward-replays `[seg_idx, target]`
+    /// to reach the scrub target. Diagnostics are NOT restored here — the
+    /// JS driver keeps its own per-checkpoint diagnostics snapshot.
+    pub fn restore_checkpoint(&mut self, seg_idx: u32) -> bool {
+        let Ok(i) = self
+            .checkpoints
+            .binary_search_by_key(&seg_idx, |c| c.seg_idx)
+        else {
+            return false;
+        };
+        self.heightmap
+            .data
+            .copy_from_slice(&self.checkpoints[i].data);
+        self.heightmap.mark_all_dirty();
+        self.last_diagnostics = SimDiagnostics::new();
+        true
+    }
+
+    /// The largest checkpoint `seg_idx` that is `≤ target`, or `-1` when
+    /// none exists. The driver uses this to decide a backward scrub's
+    /// replay start: restore there, then replay only `[result, target]`.
+    #[must_use]
+    pub fn nearest_checkpoint(&self, target: u32) -> i64 {
+        self.checkpoints
+            .iter()
+            .rev()
+            .find(|c| c.seg_idx <= target)
+            .map_or(-1, |c| i64::from(c.seg_idx))
+    }
+
+    /// Drop every heightmap checkpoint. Call when the toolpath is
+    /// replaced (a new Generate) so stale snapshots can't be restored
+    /// against a different program.
+    pub fn clear_checkpoints(&mut self) {
+        self.checkpoints.clear();
+    }
+
+    /// Number of stored checkpoints (telemetry / tests).
+    #[must_use]
+    pub fn checkpoint_count(&self) -> u32 {
+        self.checkpoints.len() as u32
     }
 
     /// Cache the full toolpath on the WASM side. Called once per
@@ -652,6 +735,120 @@ mod tests {
         assert!(
             far_after < sim.heightmap().top_z,
             "right half should be carved after full partial sweep, got {far_after}"
+        );
+    }
+
+    /// Many distinct plunges so carving order is observable in the
+    /// heightfield — used by the checkpoint equivalence tests below.
+    fn staircase(n: usize) -> Vec<ToolpathSegment> {
+        (0..n)
+            .map(|i| {
+                // Spread plunges across the grid; deepen with index so two
+                // prefixes of different length produce different fields.
+                let x = 2.0 + (i % 18) as f64 * 2.0;
+                let y = 2.0 + (i / 18) as f64 * 2.0;
+                plunge(x, y, 0.0, -(1.0 + i as f64 * 0.05))
+            })
+            .collect()
+    }
+
+    /// Restoring a checkpoint then replaying the tail must yield a
+    /// heightfield byte-identical to a full replay from segment 0 — the
+    /// whole point of H2 (cheap backward scrub without re-simulating the
+    /// prefix).
+    #[test]
+    fn checkpoint_restore_then_replay_matches_full_replay() {
+        let segs = staircase(40);
+        let tool = endmill(3.0);
+        let k = 17u32; // checkpoint boundary
+        let n = segs.len() as u32;
+
+        // Reference: carve the whole program in one go.
+        let mut full = Simulator::new(0.0, 0.0, 40.0, 40.0, 1.0, 0.0);
+        let _ = full.advance_inner(&segs, &tool, 0, n);
+
+        // Carve [0, k), snapshot, carve [k, n): a normal forward play
+        // that drops a checkpoint partway. Sanity: same field as `full`.
+        let mut sim = Simulator::new(0.0, 0.0, 40.0, 40.0, 1.0, 0.0);
+        let _ = sim.advance_inner(&segs, &tool, 0, k);
+        sim.checkpoint(k);
+        let _ = sim.advance_inner(&segs, &tool, k, n);
+        assert_eq!(
+            sim.heightmap().data,
+            full.heightmap().data,
+            "forward carve with a checkpoint must match a plain full carve"
+        );
+
+        // The checkpoint must hold exactly the [0, k) state.
+        let mut prefix = Simulator::new(0.0, 0.0, 40.0, 40.0, 1.0, 0.0);
+        let _ = prefix.advance_inner(&segs, &tool, 0, k);
+        assert!(sim.restore_checkpoint(k), "checkpoint k must exist");
+        assert_eq!(
+            sim.heightmap().data,
+            prefix.heightmap().data,
+            "restore must reproduce the [0, k) heightfield exactly"
+        );
+
+        // Replay the tail from the restored base → back to the full field.
+        let _ = sim.advance_inner(&segs, &tool, k, n);
+        assert_eq!(
+            sim.heightmap().data,
+            full.heightmap().data,
+            "restore + tail replay must equal a full replay"
+        );
+    }
+
+    #[test]
+    fn restore_checkpoint_marks_whole_grid_dirty() {
+        let segs = staircase(10);
+        let tool = endmill(3.0);
+        let mut sim = Simulator::new(0.0, 0.0, 40.0, 40.0, 1.0, 0.0);
+        let _ = sim.advance_inner(&segs, &tool, 0, 5);
+        sim.checkpoint(5);
+        let _ = sim.advance_inner(&segs, &tool, 5, 10);
+        sim.heightmap.clear_dirty();
+        assert!(sim.restore_checkpoint(5));
+        let aabb = sim.heightmap().dirty_aabb().expect("full grid dirty");
+        assert_eq!(aabb, (0, 0, sim.cols(), sim.rows()));
+    }
+
+    #[test]
+    fn nearest_checkpoint_picks_largest_at_or_below_target() {
+        let mut sim = Simulator::new(0.0, 0.0, 10.0, 10.0, 1.0, 0.0);
+        assert_eq!(sim.nearest_checkpoint(100), -1, "no checkpoints yet");
+        sim.checkpoint(10);
+        sim.checkpoint(20);
+        sim.checkpoint(30);
+        assert_eq!(sim.checkpoint_count(), 3);
+        assert_eq!(sim.nearest_checkpoint(25), 20);
+        assert_eq!(sim.nearest_checkpoint(30), 30);
+        assert_eq!(sim.nearest_checkpoint(31), 30);
+        assert_eq!(sim.nearest_checkpoint(9), -1, "before the first checkpoint");
+        assert!(!sim.restore_checkpoint(25), "no exact checkpoint at 25");
+        sim.clear_checkpoints();
+        assert_eq!(sim.checkpoint_count(), 0);
+        assert_eq!(sim.nearest_checkpoint(100), -1);
+    }
+
+    /// Re-snapshotting the same boundary overwrites rather than
+    /// duplicating, and snapshots stay sorted.
+    #[test]
+    fn checkpoint_same_index_overwrites() {
+        let mut sim = Simulator::new(0.0, 0.0, 40.0, 40.0, 1.0, 0.0);
+        let tool = endmill(3.0);
+        let segs = staircase(20);
+        let _ = sim.advance_inner(&segs, &tool, 0, 10);
+        sim.checkpoint(10);
+        // Carve more, then re-checkpoint the SAME index with the deeper
+        // field (a degenerate but defensible call).
+        let _ = sim.advance_inner(&segs, &tool, 10, 20);
+        sim.checkpoint(10);
+        assert_eq!(sim.checkpoint_count(), 1, "no duplicate index");
+        assert!(sim.restore_checkpoint(10));
+        assert_eq!(
+            sim.heightmap().data,
+            sim.checkpoints[0].data,
+            "restore reflects the overwritten snapshot"
         );
     }
 

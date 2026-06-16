@@ -237,7 +237,7 @@
           ? `${Math.round(project.playhead * 100)} percent · ${chapterTicks[activeTickIdx].chapter.name}`
           : `${Math.round(project.playhead * 100)} percent`}
         title={project.data.settings.exactSimRewind
-          ? 'Scrub: the 3D heightfield exactly tracks the playhead — backstep reruns the carve from t=0. On very long programs this may stutter; toggle "Exact 3D rewind" off in Settings → Performance for fast scrubbing at the price of time-accurate rewind.'
+          ? 'Scrub: the 3D heightfield exactly tracks the playhead — backstep restores the nearest checkpoint and replays only the remainder. Toggle "Exact 3D rewind" off in Settings → Performance for the fastest scrubbing at the price of time-accurate rewind.'
           : 'Scrub: the 3D heightfield is forward-only — backstep is a no-op for the sim. Cells retain their deepest-ever cuts. After Generate the playhead sits at 1.0 so the terrain may read as end-of-program until you re-scrub forward. Toggle "Exact 3D rewind" ON in Settings → Performance for time-accurate backstep.'}
       />
       {#if chapterTicks.length > 0}

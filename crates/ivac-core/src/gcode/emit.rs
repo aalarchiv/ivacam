@@ -506,6 +506,28 @@ fn multi_pass<P: PostProcessor>(
     if z_schedule.is_empty() {
         return;
     }
+    // Arc-fit the contour ONCE up front and reuse across every Z pass —
+    // the fit depends only on the (Z-independent) XY geometry, so re-running
+    // it per pass multiplied O(N) arc-fit work by the pass count P (deep
+    // pockets reach 20–80 passes). Open-path cascades alternate walk
+    // direction, so the reversed orientation is fit once too (closed paths
+    // never reverse). The reversed fit is computed from `reverse_chain(
+    // segments)` exactly as the per-pass code used to, so output is
+    // byte-identical — this is a pure speedup.
+    let fitted_forward = fit_line_runs(segments, setup);
+    let fitted_reversed: Option<Vec<Segment>> = if closed_path {
+        None
+    } else {
+        Some(fit_line_runs(&reverse_chain(segments), setup))
+    };
+    // The fit matching this pass's walk direction (forward / reversed).
+    let fitted_for = |reversed: bool| -> &[Segment] {
+        if reversed {
+            fitted_reversed.as_deref().unwrap_or(&fitted_forward)
+        } else {
+            &fitted_forward
+        }
+    };
     for (pass_idx, &z) in z_schedule.iter().enumerate() {
         let pass_uses_tabs = setup.tabs.active && !tabs.is_empty() && z < tabs_z;
         // For an OPEN polyline, the cascade alternates walk
@@ -564,9 +586,9 @@ fn multi_pass<P: PostProcessor>(
             post.linear(None, None, Some(z));
             post.feedrate(rate_h);
             let dragoff = setup.tool.dragoff.unwrap_or(0.0);
-            let fitted = fit_line_runs(segments, setup);
+            // Helix branches are closed-path only, so always the forward fit.
             emit_cut_path(
-                &fitted,
+                fitted_for(false),
                 setup,
                 z,
                 dragoff,
@@ -619,9 +641,8 @@ fn multi_pass<P: PostProcessor>(
                     }
                 }
                 let dragoff = setup.tool.dragoff.unwrap_or(0.0);
-                let fitted = fit_line_runs(pass_segments, setup);
                 emit_cut_path(
-                    &fitted,
+                    fitted_for(reverse_this_pass),
                     setup,
                     z,
                     dragoff,
@@ -663,9 +684,8 @@ fn multi_pass<P: PostProcessor>(
                 );
             } else {
                 let dragoff = setup.tool.dragoff.unwrap_or(0.0);
-                let fitted = fit_line_runs(pass_segments, setup);
                 emit_cut_path(
-                    &fitted,
+                    fitted_for(reverse_this_pass),
                     setup,
                     z,
                     dragoff,
@@ -702,16 +722,12 @@ fn multi_pass<P: PostProcessor>(
         // walks forward. When N is odd the last pass was forward — tool
         // at end, cleanup walks reversed. Closed paths land at their
         // start every pass and the cleanup direction is irrelevant.
-        let cleanup_segments_owned: Vec<Segment>;
-        let cleanup_segments: &[Segment] = if !closed_path && z_schedule.len() % 2 == 1 {
-            cleanup_segments_owned = reverse_chain(segments);
-            &cleanup_segments_owned
-        } else {
-            segments
-        };
-        let fitted = fit_line_runs(cleanup_segments, setup);
+        // Cleanup walks reversed when the last pass ended away from the
+        // contour start (open path, odd pass count) — reuse the matching
+        // precomputed fit instead of re-fitting.
+        let cleanup_reversed = !closed_path && z_schedule.len() % 2 == 1;
         emit_cut_path(
-            &fitted,
+            fitted_for(cleanup_reversed),
             setup,
             total_depth,
             dragoff,

@@ -22,7 +22,7 @@
 // canonical clipper2-rust subject/clip vocabulary.
 #![allow(clippy::similar_names)]
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use clipper2_rust::{
     boolean_op_tree_d, intersect_d, xor_d, ClipType, FillRule, PathD, PathsD,
@@ -231,12 +231,31 @@ fn combine_auto(
     // the selected set decides whether it's a region outer (even depth)
     // or a region hole (odd depth). `outer_objects` is the flat list of
     // every selected ancestor, so the depth is its count.
-    let selected_depth = |idx: usize| -> usize {
+    //
+    // Memoize per idx: the raw closure was O(ancestors) and was invoked
+    // once per selected object PLUS once per inner object per selected
+    // object, so a deeply nested selection recomputed the same depths
+    // O(N) times. Precompute every idx the loop will query (each selected
+    // object and its inner objects) once.
+    let depth_raw = |idx: usize| -> usize {
         objects[idx]
             .outer_objects
             .iter()
             .filter(|o| selected_set.contains(o))
             .count()
+    };
+    let mut depth_memo: HashMap<usize, usize> = HashMap::new();
+    for &idx in selected {
+        depth_memo.entry(idx).or_insert_with(|| depth_raw(idx));
+        for &i in &objects[idx].inner_objects {
+            depth_memo.entry(i).or_insert_with(|| depth_raw(i));
+        }
+    }
+    let selected_depth = |idx: usize| -> usize {
+        depth_memo
+            .get(&idx)
+            .copied()
+            .unwrap_or_else(|| depth_raw(idx))
     };
     for &idx in selected {
         let obj = &objects[idx];

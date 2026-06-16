@@ -68,9 +68,12 @@ pub struct OpCacheKey(pub u64);
 /// are NOT cached — only this op's body.
 #[derive(Debug, Clone)]
 pub struct OpCacheValue {
-    /// Per-op gcode body (the raw lines this op contributed to the
-    /// program), without program header / footer.
-    pub gcode_body: String,
+    /// Per-op gcode body as the raw lines this op contributed to the
+    /// program (without program header / footer). Stored pre-split so a
+    /// cache hit replays them via `out_extend_lines` with a slice copy —
+    /// no `join` on store, no per-line re-`split`/alloc on the hot hit
+    /// path.
+    pub gcode_lines: Vec<String>,
     /// Closed-object count this op contributed to `PipelineStats`.
     pub closed_count: usize,
     /// Offset count this op contributed to `PipelineStats`.
@@ -763,7 +766,7 @@ mod tests {
             cache.put(
                 OpCacheKey(i),
                 OpCacheValue {
-                    gcode_body: format!("op{i}"),
+                    gcode_lines: vec![format!("op{i}")],
                     closed_count: 0,
                     offset_count: 0,
                     exit_state: CapturedPostState::default(),
@@ -791,7 +794,7 @@ mod tests {
     fn put_then_get_round_trips() {
         let cache = PipelineCache::new(10);
         let v = OpCacheValue {
-            gcode_body: "G1 X1 Y2".into(),
+            gcode_lines: vec!["G1 X1 Y2".into()],
             closed_count: 3,
             offset_count: 4,
             exit_state: CapturedPostState::default(),
@@ -801,7 +804,7 @@ mod tests {
         };
         cache.put(OpCacheKey(42), v.clone());
         let got = cache.get(OpCacheKey(42)).expect("hit");
-        assert_eq!(got.gcode_body, v.gcode_body);
+        assert_eq!(got.gcode_lines, v.gcode_lines);
         assert_eq!(got.closed_count, v.closed_count);
         assert_eq!(got.offset_count, v.offset_count);
     }

@@ -1046,12 +1046,7 @@ fn apply_cached_op<P: PostProcessor>(
     last_pos: &mut Point2,
     stats: &std::cell::RefCell<(usize, usize, usize)>,
 ) -> bool {
-    let lines: Vec<String> = cached
-        .gcode_body
-        .lines()
-        .map(std::string::ToString::to_string)
-        .collect();
-    post.out_extend_lines(&lines);
+    post.out_extend_lines(&cached.gcode_lines);
     post.restore_state(&cached.exit_state);
     warnings.extend(cached.warnings.iter().cloned());
     *last_pos = Point2::new(cached.exit_xy.0, cached.exit_xy.1);
@@ -1081,11 +1076,10 @@ fn store_op_cache<P: PostProcessor>(
     warn_start: usize,
 ) {
     let lines = post.out_lines_clone_from(body_marker);
-    let body = lines.join("\n");
     cache.put(
         key,
         OpCacheValue {
-            gcode_body: body,
+            gcode_lines: lines,
             closed_count,
             offset_count,
             exit_state: post.capture_state(),

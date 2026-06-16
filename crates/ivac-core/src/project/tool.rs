@@ -168,8 +168,7 @@ pub struct ToolEntry {
     /// this is the **stride along the toolpath per full revolution of
     /// the spiral overlay** — Estlcam's `T_Wirbel_Stepover`. mm,
     /// positive only. None = use the half-radius default. (This is
-    /// now the spiral stride; it was previously the cascade-step
-    /// clamp, which was the "fake Whirl" v1 implementation.)
+    /// the spiral stride.)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub whirl_stepover_mm: Option<f64>,
     /// Whirl extra-width (Estlcam `T_Wirbelzusatzbreite`).
@@ -289,9 +288,8 @@ pub struct ToolEntry {
     /// horizontal. Controls how steeply the cutter walks into the
     /// material at the start of each cut to avoid a vertical plunge
     /// at the R≈0 medial-axis endpoint (V-bits have effectively zero
-    /// safe plunge depth). This was originally hardcoded to 10°
-    /// (Vectric / Estlcam default) inside
-    /// [`crate::cam::vcarve_emit::ratchet_emit`]; this field lets
+    /// safe plunge depth). [`crate::cam::vcarve_emit::ratchet_emit`]
+    /// defaults to 10° (Vectric / Estlcam default); this field lets
     /// shops dial it per-tool — harder materials want shallower
     /// (5–8°), softer materials tolerate steeper (15°+). Values
     /// outside (0°, 90°) are clamped at synth time. `None` ⇒ inherit

@@ -72,15 +72,14 @@ pub fn fit_arc_run(points: &[Point2], tolerance_mm: f64) -> FitOutput {
     if arcs.is_empty() {
         return FitOutput::Lines(points.to_vec());
     }
-    // Last arc must end on the run's final point. The snap
-    // threshold here used to be `tolerance_mm` itself — i.e. each arc
-    // chain could drift by up to one `tol` per emitted arc, and N
-    // chained chains drift up to N·tol cumulatively. Use a quarter of
-    // `tol` so the per-chain clamp is tight enough that several
-    // chains in a row stay within the operator's expected envelope.
-    // Still loose enough that a perfectly-fitted chain off by 1e-8
-    // doesn't fall back to all-Lines (the historical regression that
-    // motivated raising the threshold above 1e-9 in the first place).
+    // Last arc must end on the run's final point. The snap threshold
+    // here is a quarter of `tolerance_mm`, not `tol` itself: at `tol`
+    // each arc chain could drift by up to one `tol` per emitted arc,
+    // and N chained chains drift up to N·tol cumulatively. A quarter of
+    // `tol` keeps the per-chain clamp tight enough that several chains
+    // in a row stay within the operator's expected envelope, yet still
+    // loose enough that a perfectly-fitted chain off by 1e-8 doesn't
+    // fall back to all-Lines — hence the floor at 1e-9 rather than tighter.
     let snap_tol = (tolerance_mm * 0.25).max(1e-9);
     let last_arc_end = arcs.last().map(|a| a.end);
     let last_pt = points.last().copied();

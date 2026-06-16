@@ -284,10 +284,10 @@ pub fn pocket_zigzag(
         // Only flip parity if the current row actually emitted a
         // stroke. Empty rows (single-vertex polygon point, scanline
         // tangent to a corner, every interval swallowed by an island)
-        // used to flip anyway — when the next non-empty row arrived it
-        // ran in the "wrong" direction, doubling cutter travel between
-        // rows and breaking the serpent topology in places where the
-        // user could see it.
+        // must not flip parity — otherwise when the next non-empty row
+        // arrives it runs in the "wrong" direction, doubling cutter
+        // travel between rows and breaking the serpent topology in
+        // places where the user could see it.
         let row_emitted = !strokes.is_empty();
         if row_emitted {
             flip = !flip;
@@ -531,8 +531,8 @@ pub fn pocket_for_object(
     }
 
     // Always go inward regardless of the source polygon's winding —
-    // CW DXF boundaries used to take the cutter OUTSIDE the shape
-    // because positive delta = LEFT of tangent for cavc, which is
+    // CW DXF boundaries would otherwise take the cutter OUTSIDE the
+    // shape because positive delta = LEFT of tangent for cavc, which is
     // outward on CW polygons. parallel_offset_inward picks the sign.
     //
     // Schlichtzugabe / xy_allowance: when > 0, the rough

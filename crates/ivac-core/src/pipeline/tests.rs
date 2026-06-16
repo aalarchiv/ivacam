@@ -270,8 +270,8 @@ fn run_pipeline_picks_grbl_when_requested() {
 }
 
 /// End-to-end HPGL coverage. `run_per_op` dispatches
-/// `PostProcessorKind::Hpgl`, but no `run_pipeline` test previously
-/// requested it — only the emitter's own unit tests. Run a real profile
+/// `PostProcessorKind::Hpgl`, but no other `run_pipeline` test
+/// requests it — only the emitter's own unit tests. Run a real profile
 /// op through the pipeline as HPGL and assert the plotter program shape:
 /// the `IN;SP1;` init, at least one pen-down (`PD;`) and pen-up (`PU;`)
 /// with `PA<x>,<y>;` plotter-absolute moves between them.

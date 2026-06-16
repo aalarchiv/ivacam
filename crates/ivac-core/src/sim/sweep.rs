@@ -132,18 +132,17 @@ pub fn sweep_segment_partial(
     if matches!(segment.kind, MoveKind::Rapid) {
         return 0;
     }
-    // Previously this built a synthetic chord via
-    // `lerp_pose3(from, to, t)` and routed it through
-    // `sweep_chord_carve`. Even for flat-bottom profiles that proved
-    // wrong: a cell at radial offset r < r_tool whose closest-point on
-    // the full chord lies AT (e.g.) t=0.45 (interior of the original
-    // segment, halfway into the partial [0..0.5]) but lies OUTSIDE
-    // the synthetic chord (e.g. projects to synth_t < 0 on the
+    // Do NOT build a synthetic chord via `lerp_pose3(from, to, t)` and
+    // route it through `sweep_chord_carve`. Even for flat-bottom
+    // profiles that is wrong: a cell at radial offset r < r_tool whose
+    // closest-point on the full chord lies AT (e.g.) t=0.45 (interior of
+    // the original segment, halfway into the partial [0..0.5]) but lies
+    // OUTSIDE the synthetic chord (e.g. projects to synth_t < 0 on the
     // [0.5..1] partial) gets carved by the synth-endpoint clamp at
     // synth.from.z — which is the SEGMENT MIDPOINT depth, deeper than
     // the chord's actual depth at that cell. Visible as 0.1+ mm
     // overcut bands at synth-chord junctions in mid-segment frame
-    // snapshots. The fix: route every partial through
+    // snapshots. Instead, route every partial through
     // `sweep_chord_carve_partial`, which uses the full segment's
     // geometry for the (r, t) projection and the endpoint-clamp
     // ownership flags (`owns_t_lo`/`owns_t_hi`) to split the carve
@@ -1301,10 +1300,9 @@ mod tests {
         let mut map = fresh_map(40, 40);
         let mut d = diag();
         sweep_segment(&mut map, &s, &profile, 0, &[], None, &mut d);
-        // Compare to the same move WITHOUT dragoff — that's the
-        // "old" behavior the user used to see. Their carve footprints
-        // should differ: dragoff shifts the carved chord by -2 along
-        // +X so cells at x=7..=8 (only reachable from the shifted
+        // Compare to the same move WITHOUT dragoff. The carve
+        // footprints should differ: dragoff shifts the carved chord by
+        // -2 along +X so cells at x=7..=8 (only reachable from the shifted
         // chord) come up carved, while cells at x=20..=21 (only
         // reachable from the un-shifted spindle chord) stay un-carved.
         let mut control = fresh_map(40, 40);

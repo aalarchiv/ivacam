@@ -201,8 +201,8 @@ export function buildToolMesh(
     // angle (tipAngleDeg). The cone rises from the tip (radius tipR, 0
     // for a true V-bit) to the full radius over a height of
     // (radius − tipR) / tan(apex / 2) — so a 60° bit looks like a 60°
-    // bit. Previously the height was a fixed diameter×4, which drew the
-    // wrong angle for every V-bit. Honors the same convention as the
+    // bit. A fixed diameter×4 height would draw the wrong angle for
+    // every V-bit. Honors the same convention as the
     // V-Carve depth math (z = −R / tan(tipAngle / 2)).
     const tipR = Math.max((tipDiameter ?? 0) * 0.5, 0);
     const apexDeg = tipAngleDeg ?? 60;

@@ -1164,7 +1164,7 @@ mod tests {
             resp.warnings.iter().map(|w| &w.kind).collect::<Vec<_>>(),
         );
         // The only T<n> M6 line should be T1 — for the Profile op.
-        // T2 M6 used to fire just before the empty Thread block.
+        // T2 M6 must not fire just before the empty Thread block.
         let t2_m6_count = resp
             .gcode
             .lines()

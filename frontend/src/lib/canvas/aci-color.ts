@@ -1,8 +1,8 @@
 /// AutoCAD ACI (AutoCAD Color Index) → display color. Single source of
 /// truth shared by the 2D canvas (`EntityCanvas2D`) and the 3D scene
-/// (`Scene3D`), which previously kept divergent copies — the 3D copy was
-/// missing ACI 9, so grey entities rendered as the faint fallback there
-/// but grey in 2D.
+/// (`Scene3D`). A single table keeps both renderers in sync — e.g. ACI 9
+/// maps to grey in both, rather than falling back to the faint default
+/// in one of them.
 ///
 /// The classification (which codes map to a fixed RGB vs a theme token) is
 /// shared here; each renderer resolves the theme token its own way (the 2D

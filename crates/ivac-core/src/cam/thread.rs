@@ -33,10 +33,9 @@
 //! | false    | true  | CW      |
 //! | false    | false | CCW     |
 //!
-//! i.e. `ccw = climb XOR !internal`. The original `helix_waypoints`
-//! signature hard-wired `internal=true`; passing
-//! `internal=false` with `climb=true` used to silently emit conventional
-//! cuts on a stud.
+//! i.e. `ccw = climb XOR !internal`. The `internal` flag matters: on a
+//! stud, `internal=false` with `climb=true` must not silently wind out
+//! conventional cuts.
 //!
 //! For a LEFT-hand spindle (M4 / left-hand thread cutter), the
 //! cutting edge rotates the other way, so the GEOMETRIC winding that
@@ -112,10 +111,10 @@ const EXTERNAL_RETRACT_SAFETY_MM: f64 = 0.5;
 /// so "climb"/"conventional" intent matches physical chipload on either
 /// spindle.
 ///
-/// Short helices (`|dz| < pitch_mm`) used to emit a single G1
-/// diagonal across the bore because `revolutions` rounded down to a
-/// fraction; now floored at 1.0 so the cutter always completes at
-/// least one full turn at `pitch_mm` per rev. Callers that need to
+/// For short helices (`|dz| < pitch_mm`), `revolutions` would round
+/// down to a fraction and emit a single G1 diagonal across the bore,
+/// so it is floored at 1.0 — the cutter always completes at least one
+/// full turn at `pitch_mm` per rev. Callers that need to
 /// detect the shallow case should compare `|dz|` against `pitch_mm`
 /// themselves and surface a `thread_dz_less_than_pitch` warning.
 #[allow(clippy::too_many_arguments)]
@@ -564,12 +563,12 @@ mod tests {
         );
     }
 
-    /// Short helices (|dz| < pitch) used to emit a single G1
-    /// diagonal across the bore because revolutions rounded to a
-    /// fraction. The function now clamps to at least one full
-    /// revolution. dz=0.005, pitch=1.0 used to give 2 waypoints (a
-    /// straight diagonal); now it emits a full helix's worth of
-    /// waypoints on the helix circle.
+    /// Short helices (|dz| < pitch) must not emit a single G1
+    /// diagonal across the bore: revolutions would round to a fraction,
+    /// so the function clamps to at least one full revolution. With
+    /// dz=0.005, pitch=1.0 a naive fraction gives 2 waypoints (a
+    /// straight diagonal); the clamp instead emits a full helix's worth
+    /// of waypoints on the helix circle.
     #[test]
     fn shallow_dz_emits_at_least_one_full_turn() {
         let wps = helix_waypoints(

@@ -268,13 +268,13 @@ mod tests {
         }
     }
 
-    /// A short (< 3 pts) ring inside the cascade was previously
-    /// silently dropped, leaving the bridge from the previous ring's
+    /// A short (< 3 pts) ring inside the cascade must not be silently
+    /// dropped: that would leave the bridge from the previous ring's
     /// `last_end` to the next ring's first vertex unverified — it could
-    /// span the gap of the dropped ring and exit the pocket. The fix
-    /// is to bail (return None) and let the caller fall back to
-    /// non-bridged cascade emission. Verify by passing in a 3-ring
-    /// cascade whose middle ring has only 2 points.
+    /// span the gap of the dropped ring and exit the pocket. Instead we
+    /// bail (return None) and let the caller fall back to non-bridged
+    /// cascade emission. Verify by passing in a 3-ring cascade whose
+    /// middle ring has only 2 points.
     #[test]
     fn short_ring_mid_cascade_returns_none() {
         let ring0 = vec![p(0.0, 0.0), p(20.0, 0.0), p(20.0, 20.0), p(0.0, 20.0)];
@@ -424,7 +424,7 @@ mod tests {
     /// polygon every point of which is ≥ `tool_radius` from the original
     /// island wall. The pocket emitters (`pocket_zigzag`, the cascade
     /// inflater, the spiral stitcher) consume the inflated outline as
-    /// the centerline safe boundary; passing the raw polygon used to
+    /// the centerline safe boundary; passing the raw polygon would
     /// allow the cutter EDGE to bite `tool_r` into the original island.
     #[test]
     fn inflate_islands_by_tool_radius_expands_outward() {
@@ -850,7 +850,7 @@ mod tests {
         // — horizontal_crossings returns interior intervals either way.
         let island = vec![p(20.0, 20.0), p(30.0, 20.0), p(30.0, 30.0), p(20.0, 30.0)];
         let chains = pocket_zigzag(&outer, &[island.clone()], 2.0, 2.0);
-        // With an island in the middle the zigzag is no longer a single
+        // With an island in the middle the zigzag is not a single
         // continuous chain. The cutter must lift between sub-chains;
         // that's encoded as ≥2 chains being returned.
         assert!(
@@ -1548,8 +1548,9 @@ mod tests {
         // the raw island wall.
         let rings = pocket_cascade_with_islands(&outer, &over_inflated, step);
         assert!(!rings.is_empty(), "cascade produced no rings");
-        // Check the FIRST ring around the island (the one that
-        // previously intruded). The cascade returns multiple rings;
+        // Check the FIRST ring around the island (the one that can
+        // intrude without the clearance guard). The cascade returns
+        // multiple rings;
         // every ring vertex near the island must keep ≥ tool_r
         // clearance from the raw island wall.
         let dist_to_raw = |pt: Point2| -> f64 {

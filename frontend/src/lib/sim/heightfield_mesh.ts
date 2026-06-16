@@ -146,8 +146,8 @@ export class HeightfieldMesh {
     const normals = new Float32Array(this.TOTAL_VERTS * 3);
     // Per cell: top(2) + right(2) + up(2) + floor(2) = 8 triangles ×
     // 3 indices = 24 indices. Per fringe wall: 2 triangles = 6
-    // indices. The floor used to be a single big quad (6 indices);
-    // Per-cell quads let cut-through cells collapse their underside
+    // indices. Per-cell floor quads (rather than a single big quad)
+    // let cut-through cells collapse their underside
     // so the user sees through the stock from below.
     const indices = new Uint32Array(24 * n + 6 * this.rows + 6 * this.cols);
 

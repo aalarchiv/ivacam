@@ -2,8 +2,7 @@
 //! `pub(in crate::pipeline)` so submodules of `pipeline` can import
 //! and the helpers stay invisible to the rest of the crate.
 //!
-//! Helpers were previously inlined in `pipeline.rs`'s 6 000-line
-//! test mod; extracting them lets per-module test blocks
+//! Keeping the helpers here lets per-module test blocks
 //! (`pipeline/op_drivers/*.rs`) share the same fixtures without
 //! duplicating them.
 

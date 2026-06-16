@@ -244,9 +244,9 @@ impl Wcs {
 
     /// The `P<n>` operand for `G10 L20 P<n>` that targets this WCS.
     /// `G54 = P1`, `G55 = P2`, …, `G59 = P6` per RS-274 / Mach3 / GRBL
-    /// >= 1.1 / LinuxCNC convention. GRBL's `tool_z_shift`
-    /// > previously hardcoded `P1`, so a user-active G55 had its
-    /// > z-shift written into the wrong WCS.
+    /// 1.1+ / LinuxCNC convention. GRBL's `tool_z_shift` must use this
+    /// mapping so a user-active G55 writes its z-shift into the correct
+    /// WCS rather than `P1`.
     #[must_use]
     pub fn p_number(self) -> u32 {
         match self {

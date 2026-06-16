@@ -521,8 +521,8 @@ fn run_pipeline_impl<F: Fn(&str, f64, &str)>(
     warnings::push_work_area_warning(&toolpath, &project.machine, &mut warnings);
     // Stock envelope scan. Runs on the same assembled toolpath; emits a
     // critical `out_of_stock` warning so CLI / server / wasm consumers
-    // get the same guard the frontend used to synthesize. No-op when
-    // `project.stock` is unset.
+    // get the guard centrally rather than synthesizing it per-frontend.
+    // No-op when `project.stock` is unset.
     warnings::push_stock_warning(&toolpath, project.stock.as_ref(), &mut warnings);
     let regions = build_region_previews(&project, &objects);
     let tool_changes = count_tool_changes(&project);
@@ -578,7 +578,7 @@ pub(super) fn cancelled(cancel: Option<&CancelToken>) -> bool {
 /// Per-pipeline tool-id index built once at pipeline entry. The
 /// hot-path lookups (every op's primary tool, every op's finish tool
 /// for the cache key, per-op feed rate seeding for the time estimator)
-/// previously did `project.tools.iter().find(...)` — O(tools) per
+/// would otherwise do `project.tools.iter().find(...)` — O(tools) per
 /// hit, called O(ops) times. For projects with dozens of tools and
 /// dozens of ops that's a measurable cost. A `HashMap` collapses each
 /// lookup to O(1) at the cost of one allocation per Generate.
@@ -918,8 +918,8 @@ fn count_tool_changes(project: &Project) -> u32 {
             if finish_id != op.tool_id && op_can_emit_internal_swap(op) {
                 // Only count an internal dual-tool swap when the
                 // op kind actually exercises the dual-tool / chamfer
-                // path. Previously the +1 fired for ANY op carrying a
-                // distinct finish_tool_id, but `synthesize_finish_setup`
+                // path. The +1 must not fire for ANY op carrying a
+                // distinct finish_tool_id, because `synthesize_finish_setup`
                 // only returns Some for Pocket kinds OR drill ops with
                 // chamfer_after_width_mm > 0 (see synthesize_finish_setup
                 // at L1037 — non-Pocket / non-chamfer ops fall through
@@ -1433,8 +1433,8 @@ where
         // cache.
         validate_op_source_objects(op, objects, warnings);
         // Same treatment for OpSource::Layers — a typoed layer
-        // name (or one whose import was removed) used to silently
-        // produce zero segments. Now we surface op_source_missing_layer
+        // name (or one whose import was removed) would otherwise
+        // silently produce zero segments. We surface op_source_missing_layer
         // (+ op_source_empty when every requested layer is missing).
         validate_op_source_layers(op, &project.segments, warnings);
 

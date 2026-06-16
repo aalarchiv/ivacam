@@ -1,5 +1,5 @@
 // `WiacClient` that runs the wasm CAM pipeline in a Web Worker, so
-// a heavy generate no longer blocks the UI thread, and a long run can be
+// a heavy generate does not block the UI thread, and a long run can be
 // cancelled for real. It speaks the same JSON contract as the HTTP /
 // Tauri / direct-wasm transports; `http.ts` prefers it for `?api=wasm`
 // and falls back to the main-thread `WasmWiacClient` where module

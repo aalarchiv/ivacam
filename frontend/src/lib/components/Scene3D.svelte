@@ -466,18 +466,18 @@
   // Mirror imported geometry into the 3D scene as flat polylines on Z=0.
   // When a /generate response is also available, draw the 3D toolpath on
   // top with depth + color coded by move kind (rapid/cut/plunge/retract).
-  // Per-concern effects. The previous mega-effect read
-  // seven project.* fields and rebuilt geometry+tabs+stock+fixtures
-  // on every change — toggling a fixture's color used to rebuild the
-  // toolpath wireframe. Split so each builder only refires when its
-  // own inputs change.
+  // Per-concern effects. A single mega-effect over all seven project.*
+  // fields would rebuild geometry+tabs+stock+fixtures on every change —
+  // e.g. toggling a fixture's color would rebuild the toolpath
+  // wireframe. Split so each builder only refires when its own inputs
+  // change.
 
   // Geometry wireframe: imported drawing, layer toggles, generated
   // toolpath, and the op set (color stamps follow op_id).
   // Two effects, two buffers (see LineSegments declaration above for
-  // rationale). Each rebuild is independent — editing an op no longer
-  // tears down the imported-geometry buffer, and toggling a layer no
-  // longer teardowns the toolpath buffer.
+  // rationale). Each rebuild is independent — editing an op does not
+  // tear down the imported-geometry buffer, and toggling a layer does
+  // not tear down the toolpath buffer.
 
   // Only the SET of text layers (add / remove) changes what this rebuild
   // draws — glyph segments are origin-baked + cached and read by id, so a

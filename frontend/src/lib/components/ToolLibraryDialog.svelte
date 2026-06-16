@@ -2203,8 +2203,8 @@
     padding-bottom: 0.2rem;
     border-bottom: 1px solid var(--border);
     /* Sticky so unit headers (mm / ° / RPM / mm/min) stay visible while
-       scrolling through a long tool library; was previously scrolling
-       off and leaving rows context-free. `.body` is the scroll container. */
+       scrolling through a long tool library; without it they scroll
+       off and leave rows context-free. `.body` is the scroll container. */
     position: sticky;
     top: 0;
     background: var(--bg-panel);

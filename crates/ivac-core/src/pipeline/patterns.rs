@@ -21,7 +21,7 @@ pub(super) struct PatternInstance {
     /// Precomputed `cos(angle_rad)`. Cached on the instance so
     /// `apply_pattern_to_segments` doesn't redo trig per (instance × object)
     /// pair — for a Polar pattern with N instances and K selected objects,
-    /// that previously meant 2·N·K trig calls.
+    /// that would otherwise mean 2·N·K trig calls.
     pub(super) cos_a: f64,
     pub(super) sin_a: f64,
     /// True when the rotation is identity. Lets the transform shortcut
@@ -454,7 +454,7 @@ mod tests {
             vec![profile_op(1, 1, ToolOffset::Outside)],
             vec![endmill(1, 3.0)],
         );
-        // Profile ops no longer carry a pattern (only OpKind::Drill
+        // Profile ops do not carry a pattern (only OpKind::Drill
         // does), so this `op_b` lands without a pattern by construction.
         let op_b = profile_op(1, 1, ToolOffset::Outside);
         let project_b = project_with(vec![op_b], vec![endmill(1, 3.0)]);

@@ -57,9 +57,9 @@ impl HolderProfile {
         // HolderCollision warnings on form cutters).
         let cutting_r =
             form_profile_max_radius(tool).unwrap_or_else(|| (tool.diameter * 0.5).max(0.0));
-        // Drills with no `flute_length_mm` set previously left the
+        // Drills with no `flute_length_mm` set would otherwise leave the
         // shank starting at z=0 above the tip — so any wall above the
-        // tip plane within the shank radius alarmed as a collision.
+        // tip plane within the shank radius would alarm as a collision.
         // Real twist drills have a flute (helix) running the full body
         // length, typically 5–8× diameter. Default to 6× diameter so
         // the shank-radius envelope only kicks in above the realistic
@@ -475,12 +475,12 @@ mod tests {
 
     /// A form cutter whose `tool.diameter` advertises the *tip*
     /// diameter but whose actual envelope grows past the tip along the
-    /// flute (large-base form bit) was previously reporting
+    /// flute (large-base form bit) must not report
     /// `cutting_radius() = tip_diameter * 0.5`. The carve sweep, on the
-    /// other hand, uses `ToolProfile::radius()` = max of segments. The
-    /// mismatch flagged carved cells `tip_r < r ≤ max_r` as wall
-    /// collisions in the holder check. After the fix the holder's cutting
-    /// envelope mirrors the carve envelope (the max profile radius) so
+    /// other hand, uses `ToolProfile::radius()` = max of segments. Such a
+    /// mismatch would flag carved cells `tip_r < r ≤ max_r` as wall
+    /// collisions in the holder check. The holder's cutting envelope
+    /// mirrors the carve envelope (the max profile radius) so
     /// `holder_check` skips the same cells the sweep just lowered.
     #[test]
     fn form_profile_cutting_radius_matches_max_segment_radius() {

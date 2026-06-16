@@ -77,9 +77,9 @@
   let container: HTMLDivElement;
   import { clampPopup } from '../canvas/clamp-popup';
 
-  /// Cached resolved theme colors. `themeVar` was previously calling
+  /// Cached resolved theme colors. A bare
   /// `getComputedStyle(container).getPropertyValue(name)` on every
-  /// lookup, which fires a synchronous style recalc — and `draw()`
+  /// lookup fires a synchronous style recalc — and `draw()`
   /// invokes it 15-20× per frame. We memoise per CSS var until the
   /// Theme-observed CSS-var cache. `resetThemeCache()` clears it when
   /// the MutationObserver in onMount sees a `data-theme` change.
@@ -1778,7 +1778,7 @@
       {#if shiftDown && (approachPickActive || tabPlacementActive)}
         <!-- Visible cue that Shift is suppressing snap.
              Without this the snap glyph just silently disappears and
-             the user can't tell why their click no longer locks. -->
+             the user can't tell why their click stops locking. -->
         <span class="snap-off">snap off</span>
       {/if}
     </div>

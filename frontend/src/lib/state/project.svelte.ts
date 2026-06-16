@@ -1050,9 +1050,8 @@ export class ProjectState {
 
 export const project = new ProjectState();
 
-// These helpers used to live in this module; they were moved to
-// `sim/warnings.ts` and `sim/playhead.ts` so vitest can import them
-// without booting the Svelte rune runtime. Re-exported here for
-// backwards-compat with existing call sites.
+// These helpers live in `sim/warnings.ts` and `sim/playhead.ts` so
+// vitest can import them without booting the Svelte rune runtime.
+// Re-exported here for backwards-compat with existing call sites.
 export { simWarningSeverity, simWarningSegmentIdx, simWarningSummary } from '../sim/warnings';
 export { playheadToSegment } from '../sim/playhead';

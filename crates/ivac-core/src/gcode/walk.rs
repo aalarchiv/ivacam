@@ -264,9 +264,9 @@ pub(super) fn emit_path_with_corner_feed<P: PostProcessor>(
 /// the whole swivel + linear pre-move is skipped.
 ///
 /// Factored out so both Line and Arc branches in
-/// `emit_path_with_dragoff` can call the same logic. Previously the
-/// swivel was inlined only in the Line branch, so Line→Arc corners
-/// emitted the arc with NO swivel — bending the blade.
+/// `emit_path_with_dragoff` can call the same logic. Both branches
+/// must swivel: a Line→Arc corner that emits the arc with NO swivel
+/// bends the blade.
 ///
 /// When `self_align_angle_rad > 0`, skip the swivel + linear pre-move
 /// entirely for corners whose tangent change |diff| is below the

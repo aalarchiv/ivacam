@@ -207,9 +207,9 @@ impl Heightmap {
 /// Tool Z-profile: for radial offset `r` from the cutter axis, returns
 /// how much above the tip Z the cutter surface sits, or `None` if `r` is
 /// outside the cutting radius.
-// ToolProfile no longer derives Copy because FormProfile
-// carries a Vec of sample points. All sim entry points take `&ToolProfile`
-// now; the profile is built once per advance() and walked many times,
+// ToolProfile does not derive Copy because FormProfile
+// carries a Vec of sample points. All sim entry points take `&ToolProfile`;
+// the profile is built once per advance() and walked many times,
 // so the ref pattern is cheaper than cloning per segment.
 #[derive(Debug, Clone)]
 pub enum ToolProfile {
@@ -1006,8 +1006,8 @@ mod tests {
 
     /// Sample the `BullNose` profile at a fine grid of rims close
     /// to the cutter edge. The lip height must be uniform within 1e-5
-    /// mm across every neighboring rim sample — previously f32 jitter
-    /// at the boundary produced ~3e-4 mm speckle in close-up surface
+    /// mm across every neighboring rim sample — f32 jitter
+    /// at the boundary would produce ~3e-4 mm speckle in close-up surface
     /// renderings.
     #[test]
     fn bullnose_rim_lip_consistent_across_neighboring_cells() {

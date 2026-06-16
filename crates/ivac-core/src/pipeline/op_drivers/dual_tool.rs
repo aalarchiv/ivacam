@@ -41,8 +41,8 @@ pub(super) fn run_dual_tool_or_single<P: PostProcessor>(
         // Plain single-tool single-emit path — the common case for
         // Profile / Pocket / Engrave / etc. without a finish ring.
         // Includes the dual-tool-declared-but-no-finish-offsets
-        // fall-through, which previously left `prev_tool_id` biased
-        // to the finish id even though no swap was emitted.
+        // fall-through, which must not leave `prev_tool_id` biased
+        // to the finish id when no swap was emitted.
         emit_polylines_block(setup, offsets, post, last_pos);
         return Ok(false);
     };

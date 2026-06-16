@@ -156,9 +156,9 @@ pub(in crate::pipeline) fn validate_op_source_objects(
 }
 
 /// Sibling of `validate_op_source_objects` for `OpSource::Layers`.
-/// A user typo in a layer name (e.g. "TEXTT" instead of "TEXT") used to
-/// produce a silent no-op: `resolve_op_segments` returned an empty Vec,
-/// the op emitted nothing, no diagnostic surfaced. Now we check each
+/// A user typo in a layer name (e.g. "TEXTT" instead of "TEXT") would
+/// otherwise produce a silent no-op: `resolve_op_segments` returns an
+/// empty Vec, the op emits nothing, no diagnostic surfaces. We check each
 /// requested layer against the segment pool's layer set and emit
 ///   * `op_source_missing_layer` per layer not present in the segment
 ///     set (covers both user-imported layers and synthetic

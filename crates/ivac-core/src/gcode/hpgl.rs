@@ -214,8 +214,8 @@ impl PostProcessor for Post {
     fn tool_offsets(&mut self, _offset: ToolOffset) {}
     fn finish(&self) -> String {
         // HPGL is one logical "program-statement-list" terminated
-        // by `;`, and historically ivaCAM concatenated every
-        // statement onto a single mega-line. Plotter firmware accepts
+        // by `;`, which can be concatenated onto a single
+        // mega-line. Plotter firmware accepts
         // both forms; humans, diff tools, and the ivac preview pane do
         // not. Emit a newline after every `;` so the listing is
         // browsable and `git diff` shows per-statement changes. Some
@@ -370,7 +370,7 @@ mod tests {
 
     #[test]
     fn nll2_finish_inserts_newlines_after_semicolons() {
-        // HPGL output used to be a single mega-line; plotter
+        // HPGL output can be a single mega-line; plotter
         // firmware accepts that but humans, diff tools, and the ivac
         // preview pane don't. Verify each statement (terminated by
         // `;`) lands on its own output line so `git diff` and the

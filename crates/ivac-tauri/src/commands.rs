@@ -285,7 +285,7 @@ pub async fn generate_streaming_cmd(
 /// thread (spawned in `generate_streaming_cmd`) blocks on this signal
 /// before it starts the pipeline, eliminating the race where a fast
 /// pipeline finishes and emits its terminal event before the FE's
-/// listener for that event has finished registering, which used to
+/// listener for that event has finished registering — which would
 /// leave the Generate UI stuck in "running" / "cancelling".
 // `Result<(), String>` is the Tauri-command shape every other command in
 // this file returns; keeping it uniform lets the frontend reach for the

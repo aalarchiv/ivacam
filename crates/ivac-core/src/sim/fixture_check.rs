@@ -41,9 +41,9 @@ pub enum FixtureCheck {
     },
 }
 
-// WHY: the Z gate used to look only at the tip Z range, so a
+// WHY: a Z gate that looks only at the tip Z range misses a
 // clamp/jaw sitting *above* the tip Z but inside the path of the shank
-// or holder was invisible. The tool body (tip → flutes → shank → holder
+// or holder. The tool body (tip → flutes → shank → holder
 // top) extends upward by `holder.total_length()`, and the XY inflation
 // above the flutes must use `holder.max_radius()`, not just the cutting
 // radius — a wide ER nut close to a clamp must still be tested.
@@ -63,7 +63,7 @@ pub fn check_segment_against_fixtures(
     // The tool body extends `holder.total_length()` above the tip;
     // anything above the flutes sweeps a wider envelope (the holder /
     // shank radius). Fixtures *above* the tip Z but inside that band
-    // were previously invisible.
+    // would otherwise be invisible.
     let body_top_offset = holder.map_or(0.0, HolderProfile::total_length);
     let body_z_top = seg_z_max + body_top_offset;
     let body_radius = holder.map_or(tool_radius, |h| tool_radius.max(h.max_radius()));

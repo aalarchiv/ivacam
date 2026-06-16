@@ -12,8 +12,8 @@
 //! serde-JSON ([`hash_serde`]). The wire schema types are the single
 //! source of truth, so a new or renamed field on any of them
 //! automatically participates in the cache key — there is no
-//! hand-maintained field list to forget (which used to be the standing
-//! "forget a field → stale gcode" hazard). Two deliberate exceptions:
+//! hand-maintained field list to forget, which avoids the
+//! "forget a field → stale gcode" hazard. Two deliberate exceptions:
 //!
 //! - **Geometry** (`Segment`) keeps a lightweight direct hash
 //!   ([`hash_segment`]) — it's the per-op bulk and a stable leaf type, so
@@ -346,7 +346,7 @@ fn hash_segment<H: Hasher>(s: &Segment, h: &mut H) {
 mod tests {
     use super::*;
     // Types used only to construct test fixtures (the production hashing
-    // is now serde-based, so these are no longer needed at module scope).
+    // is serde-based, so these are not needed at module scope).
     use crate::project::MachineMode;
     use crate::project::ToolOffset;
     use crate::project::{Coolant, FixtureKind, TextAlignment, TextLayerKind, Wcs};

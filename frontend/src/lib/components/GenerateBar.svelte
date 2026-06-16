@@ -178,31 +178,28 @@
   });
 
   let warnings = $derived(project.gen.simDiagnostics?.warnings ?? []);
-  // Surface pipeline-level warnings in the same panel that showed sim
-  // warnings before. Previously the panel was hard-coded to
-  // `project.gen.simDiagnostics?.warnings` and the panel gate required a
-  // non-null simDiagnostics, so a Generate that raised, say,
-  // `op_source_empty` or `tool_too_large` flagged the chip but
-  // clicking it showed "No warnings — sim is clean." now we render
-  // BOTH lists in one panel with a source tag per row.
+  // Surface pipeline-level warnings in the same panel as sim warnings.
+  // A Generate that raises, say, `op_source_empty` or `tool_too_large`
+  // flags the chip, so we render BOTH lists in one panel with a source
+  // tag per row rather than gating the panel on a non-null
+  // simDiagnostics.
   let pipelineWarnings = $derived<PipelineWarning[]>(
     (project.gen.generated as { warnings?: PipelineWarning[] } | null)?.warnings ?? [],
   );
   // Critical-count now spans BOTH sim warnings AND pipeline-level
   // warnings (tool_too_large, op_order_suspect, frame_padding_below_tool_radius,
   // spindle_speed_clamped_above_max, stock_origin_outside_geometry_bbox, …).
-  // Previously the safety gate ignored everything the pipeline emitted at
-  // planning time — only sim post-mortem warnings could block the
-  // Generate button (a Pocket whose tool didn't fit emitted zero
-  // toolpath, raised `tool_too_large`, and the user's "block on
-  // critical" setting did NOT prevent the broken gcode from shipping).
-  // Both envelope checks are now pipeline-side: the work-area half
+  // The safety gate must count planning-time pipeline warnings, not just
+  // sim post-mortem ones — otherwise a Pocket whose tool didn't fit emits
+  // zero toolpath, raises `tool_too_large`, and the user's "block on
+  // critical" setting does NOT prevent the broken gcode from shipping.
+  // Both envelope checks are pipeline-side: the work-area half
   // (`out_of_work_area`) and the STOCK half (`out_of_stock`,
-  // warnings.rs::push_stock_warning) now that the core `Project` carries
+  // warnings.rs::push_stock_warning), since the core `Project` carries
   // a resolved stock box. Both ride in on
   // `project.gen.generated.warnings` → `pipelineWarnings`, so the
-  // frontend no longer synthesizes either — doing so would double-count.
-  // `allPipelineWarnings` is now just the pipeline's own findings.
+  // frontend does not synthesize either — doing so would double-count.
+  // `allPipelineWarnings` is just the pipeline's own findings.
   let allPipelineWarnings = $derived<PipelineWarning[]>(pipelineWarnings);
   let pipelineCriticalCount = $derived(countCriticalPipelineWarnings(allPipelineWarnings));
   // Tier-4 safety: count out-of-work-area moves from the last Generate.
@@ -365,7 +362,7 @@
   /// would change gcode (project.data.dirty flips true on every op / tool /
   /// stock / text mutation, and clears on the next successful Generate).
   /// The chip reflects this so the user knows the previous sim verdict
-  /// no longer matches what's on the canvas.
+  /// stops matching what's on the canvas.
   let simStale = $derived(project.gen.simDiagnostics != null && project.data.dirty);
 
   function chipClass(): string {
@@ -967,8 +964,8 @@
     border-color: var(--accent-strong);
   }
   /* Expanded body — full message + JSON dump. user-select: text so
-     drag-select to copy works (previously the row was a <button>
-     which broke selection in some browsers). */
+     drag-select to copy works (a <button> wrapper would break
+     selection in some browsers). */
   .list .row-body {
     padding: 0.4rem 0.6rem 0.55rem;
     background: var(--bg-app);

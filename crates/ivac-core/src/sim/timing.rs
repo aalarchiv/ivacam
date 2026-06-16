@@ -2,8 +2,7 @@
 //!
 //! This is a trapezoidal (constant-accel) model — jerk / S-curve
 //! limiting is NOT modeled (reserved for a Phase-2 refinement; see the
-//! algorithm note below). The header previously claimed "jerk-aware",
-//! which overstated the fidelity.
+//! algorithm note below).
 //!
 //! The naive `path_length / feedrate` underpredicts real run-time by
 //! 1.5–3× on hobby machines because every short segment forces an
@@ -216,10 +215,9 @@ pub struct OpRates {
 /// the tool's declared plunge/cut rates. `op_rates` is a small lookup
 /// of `op_id → (plunge_rate, feed_rate)`; segments whose `op_id` isn't
 /// present fall through to the modal-F behavior.
-/// Also folds G4 dwell into the total (was previously dropped on this
-/// code path — `estimate_from_gcode` summed it but the `_with_rates`
-/// variant skipped it, so the pipeline's wall-clock estimate
-/// underreported any drill/finish dwell). Honors the active post
+/// Also folds G4 dwell into the total — `estimate_from_gcode` and this
+/// `_with_rates` variant both sum it, so the pipeline's wall-clock
+/// estimate accounts for any drill/finish dwell. Honors the active post
 /// profile's `dwell_unit` so GRBL/Mach3 millisecond emissions sum to
 /// the correct number of seconds.
 #[must_use]

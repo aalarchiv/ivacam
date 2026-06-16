@@ -1,6 +1,5 @@
 <script lang="ts">
-  /// "Recent ▾" toolbar dropdown — the recents list that used to live
-  /// under the File menu. Reads the workspace recent-projects list;
+  /// "Recent ▾" toolbar dropdown. Reads the workspace recent-projects list;
   /// selection is forwarded to the App's open-recent flow (which owns
   /// the dirty-check + path routing).
   import { workspace } from '../state/workspace.svelte';

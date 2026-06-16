@@ -109,9 +109,8 @@ export interface Footprint {
 }
 
 /// Solid outline of the workpiece bounds in XY. Mirrors the
-/// translucent stock box the 3D scene already paints — the 2D pane
-/// previously omitted it entirely, so users couldn't see whether
-/// their drawing sat inside the stock without flipping to 3D.
+/// translucent stock box the 3D scene already paints, so users can see
+/// whether their drawing sits inside the stock without flipping to 3D.
 export function drawStock(
   ctx: CanvasRenderingContext2D,
   p: ProjectFn,

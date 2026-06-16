@@ -502,15 +502,15 @@ mod tests {
     /// near-wall band is the user's job to finish with a contour or
     /// zigzag op).
     ///
-    /// Coverage regression: this test previously asserted ≥95% and passed only
-    /// because the buggy bail emitted full-slot bridge lines along
-    /// the centerline, which the path-point sampler counted as
-    /// "covered". With the bail-then-terminate fix in place, the
-    /// covered region is the trochoidally-reachable interior up to
-    /// the first vertex where the loop disc strays outside the
-    /// safe-clearance wall (a real wall-avoidance failure that we
-    /// now refuse to cut through). The threshold is dropped to a
-    /// representative 30% — the unswept tail near the wall is
+    /// Coverage regression: a ≥95% threshold would pass only because a
+    /// buggy bail emits full-slot bridge lines along the centerline,
+    /// which the path-point sampler counts as "covered". With the
+    /// bail-then-terminate behavior, the covered region is the
+    /// trochoidally-reachable interior up to the first vertex where the
+    /// loop disc strays outside the safe-clearance wall (a real
+    /// wall-avoidance failure that we refuse to cut through). The
+    /// threshold is a representative 30% — the unswept tail near the
+    /// wall is
     /// expected and surfaced via `trochoidal_incomplete`.
     #[test]
     fn rectangular_pocket_covers_safe_interior() {

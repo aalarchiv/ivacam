@@ -895,9 +895,9 @@ mod tests {
 
     /// Regression: `chord_stays_in_region` must adapt its sample
     /// density to the chord length. A long chord with a narrow hole
-    /// sitting between two of the old fixed-8 sample positions used to
-    /// pass the in-region check (the hole was invisible to the sampler)
-    /// — the v-carve emitter then drew a chord that crossed the hole.
+    /// sitting between two fixed-8 sample positions can pass the
+    /// in-region check (the hole is invisible to the sampler) — and the
+    /// v-carve emitter then draws a chord that crosses the hole.
     #[test]
     fn chord_stays_in_region_catches_narrow_hole_on_long_chord() {
         // Outer ring: 100 × 10 corridor.

@@ -169,10 +169,9 @@ mod tests {
         );
     }
 
-    /// Same guarantee under a `RoundedRectangle` frame. The audit
-    /// flagged this case because the difference call previously could
-    /// have lost the hole boundary if the rounded outer collapsed or
-    /// the polytree-to-region conversion ignored children.
+    /// Same guarantee under a `RoundedRectangle` frame. The difference
+    /// call can lose the hole boundary if the rounded outer collapses or
+    /// the polytree-to-region conversion ignores children.
     #[test]
     fn rounded_rectangle_frame_preview_carries_selection_as_hole() {
         let project = project_with_segments(

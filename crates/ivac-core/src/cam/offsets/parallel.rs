@@ -267,9 +267,10 @@ pub fn pocket_cascade(boundary: &[Point2], delta: f64) -> Vec<Vec<Point2>> {
 /// cutter centerline keeps a tool-radius clearance from the raw island
 /// wall. The pocket emitters (`pocket_zigzag`, `pocket_cascade_with_islands`,
 /// `stitch_rings_to_polyline`) all document islands as
-/// "pre-inflated by `tool_radius`" — pipeline callers used to pass RAW
-/// holes / inner-object polygons, so the cutter edge ploughed into the
-/// island by `tool_r` at the boundary. This helper bridges the gap.
+/// "pre-inflated by `tool_radius`". Pipeline callers hold RAW
+/// holes / inner-object polygons, which would let the cutter edge
+/// plough into the island by `tool_r` at the boundary; this helper
+/// bridges the gap.
 ///
 /// Returns the inflated outer rings (clipper2 may merge overlapping
 /// islands, drop a degenerate one, or split one into multiple). On
@@ -438,10 +439,10 @@ pub fn pocket_cascade_with_islands(
             // Cap the cascade and stash a thread-local record so
             // the per-op driver can attribute the event to the user's op
             // (drained via `take_pocket_cascade_truncations`). Large
-            // pockets at fine steps used to silently lose interior rings
-            // here — leaving a hollow doughnut that looked machined but
-            // wasn't. The cap was 1024 before; we raise to 4096 (an
-            // OOM/runaway guard, not a project setting).
+            // pockets at fine steps could otherwise silently lose
+            // interior rings here — leaving a hollow doughnut that looks
+            // machined but isn't. The cap is 4096 (an OOM/runaway guard,
+            // not a project setting).
             POCKET_CASCADE_TRUNCATIONS.with(|s| {
                 s.borrow_mut().push(PocketCascadeTruncation {
                     rings_emitted: rings.len(),

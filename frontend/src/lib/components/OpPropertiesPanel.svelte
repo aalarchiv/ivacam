@@ -45,11 +45,9 @@
   const apiClient = defaultClient();
   const HELIX_PREVIEW_DEBOUNCE_MS = 300;
 
-  /// Help text for the per-op dropdowns. Used to live in
-  /// `lib/locales/{en,de}.json` driven by svelte-i18n; the dictionary
-  /// was sparse and the language switch never reached most of the UI,
-  /// so we tore i18n out and hardcoded English. Keep these grouped
-  /// near the top so future translators have one obvious target.
+  /// Help text for the per-op dropdowns. Hardcoded English (the UI is
+  /// not localized). Keep these grouped near the top so future
+  /// translators have one obvious target.
   const COMBINE_HELP: Record<string, string> = {
     auto: 'Containment-aware: nested closed objects become holes (outer + inner = annulus). Default.',
     union: 'Boolean union of all selected closed contours.',
@@ -1059,11 +1057,11 @@
       <ThreadSection {op} {patch} />
     {/if}
 
-    <!-- Standalone helix op was removed: users get helical
-         plunge by adding a Pocket and setting Plunge → Helix in the
-         Cut section. The OpKind 'helix' value is no longer in the
-         union so this branch is unreachable; kept as a comment for
-         the eventual standalone-helix-emitter feature reintroduction. -->
+    <!-- No standalone helix op: users get helical plunge by adding a
+         Pocket and setting Plunge → Helix in the Cut section. The
+         OpKind 'helix' value is not in the union so this branch is
+         unreachable; kept as a comment for the eventual
+         standalone-helix-emitter feature. -->
 
     <!-- Group label. Consecutive enabled ops sharing the same
          value emit `; === GROUP: <name> ===` only ONCE at the entry —

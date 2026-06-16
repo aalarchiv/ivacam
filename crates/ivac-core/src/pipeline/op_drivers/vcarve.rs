@@ -24,8 +24,8 @@ use crate::project::{Op, Project};
 /// gate — V-Carve emits exactly when `combine_source_regions` is
 /// non-empty (matches the actual driver's first emission gate at
 /// `regions.is_empty()`). Open polylines / single-line sources fail
-/// closure and produce an empty regions vec, so the M6 dwells used to
-/// fire pointlessly for a no-output op. Returning `false` here skips
+/// closure and produce an empty regions vec, so without this gate the
+/// M6 dwells fire pointlessly for a no-output op. Returning `false` here skips
 /// the envelope; the driver still runs (so it can still emit its
 /// `vcarve_no_closed_region` warning).
 #[must_use]
@@ -233,9 +233,9 @@ pub(in crate::pipeline) fn run_vcarve_op<P: PostProcessor>(
                     any_depth_limited = true;
                 }
                 if all_zero {
-                    // Full-medial-axis path used to silently emit
-                    // a z=0 walk along this chain — cutter scrubs the
-                    // surface, removes nothing, user thinks they cut.
+                    // Skipping avoids a silent z=0 walk along this chain —
+                    // the cutter would scrub the surface, remove nothing,
+                    // and the user would think they cut.
                     // Skip the chain; report below.
                     any_skipped_below_tip = true;
                     continue;
@@ -729,9 +729,9 @@ mod tests {
     }
 
     /// Full-medial-axis V-Carve where the effective r-cap drops
-    /// at or below the V-bit's flat tip used to silently emit a Z=0
-    /// toolpath (the cutter walked the medial axis without engaging,
-    /// removing nothing — looked like a successful cut). Verify a
+    /// at or below the V-bit's flat tip must not silently emit a Z=0
+    /// toolpath (the cutter would walk the medial axis without engaging,
+    /// removing nothing — looking like a successful cut). Verify a
     /// `vcarve_below_tip_radius` warning fires and NO cutting moves
     /// are emitted.
     #[test]

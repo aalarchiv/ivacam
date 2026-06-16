@@ -84,14 +84,13 @@ pub(in crate::pipeline) fn run_halfpipe_op<P: PostProcessor>(
                 });
             }
             let tool_r = tool.effective_diameter() * 0.5;
-            // The previous threshold was 50 % of the profile R,
-            // which let large mismatches through silently (a 6 mm tool
-            // on a 5 mm profile is a 20 % mismatch and used to pass —
-            // the resulting floor isn't even close to the requested
-            // half-pipe shape). The user-facing acceptance criterion is
-            // a 10 % tolerance: anything looser produces visibly wrong
-            // gcode. Made effectively constant here; if a future op
-            // needs to override, add a per-op tolerance knob.
+            // A threshold of 50 % of the profile R would let large
+            // mismatches through silently (a 6 mm tool on a 5 mm profile
+            // is a 20 % mismatch — the resulting floor isn't even close
+            // to the requested half-pipe shape). The user-facing
+            // acceptance criterion is a 10 % tolerance: anything looser
+            // produces visibly wrong gcode. Effectively constant here;
+            // if a future op needs to override, add a per-op tolerance knob.
             let tolerance_factor = 0.10_f64;
             let allowed = tolerance_factor * radius_mm.max(1e-9);
             if (tool_r - radius_mm).abs() > allowed {
@@ -432,8 +431,8 @@ mod tests {
     }
 
     /// A 20 % tool/profile-R mismatch — 6 mm tool on a 5 mm
-    /// profile — used to pass silently under the loose 50 % threshold.
-    /// The tightened 10 % gate now fires `halfpipe_radius_mismatch`.
+    /// profile — passes silently under a loose 50 % threshold.
+    /// The 10 % gate fires `halfpipe_radius_mismatch`.
     #[test]
     fn halfpipe_warns_when_tool_radius_mismatch_exceeds_10pct() {
         let mut segments_8w: Vec<Segment> = Vec::new();

@@ -1065,7 +1065,7 @@ pub struct PostState {
     /// True while the spindle / beam / torch is commanded on (M3/M4,
     /// laser arm included). Lets `spindle_off` skip the defensive
     /// program-end M5 when the per-contour `laser_off` already dropped
-    /// it — laser / plasma programs used to end `M5 … M5 M30`. Only
+    /// it — otherwise laser / plasma programs end `M5 … M5 M30`. Only
     /// trusted when no custom post profile is attached: template lines
     /// are raw text and could switch the spindle on invisibly.
     #[serde(default)]
@@ -1263,8 +1263,8 @@ pub fn fmt_num_dp(v: f64, sep: char, decimals: u8) -> String {
     }
     // Suppress signed-zero: any value with magnitude < 0.5 * 10^-N
     // (half-ULP of the N-decimal output) would round to "0" anyway —
-    // including `-0.000049…` at 4 dp, which used to render as `-0`.
-    // Snap those to a clean positive zero before formatting so the
+    // including `-0.000049…` at 4 dp, which would otherwise render as
+    // `-0`. Snap those to a clean positive zero before formatting so the
     // leading `-` never appears.
     let zero_eps = 0.5 * 10f64.powi(-i32::from(decimals));
     let v = if v.abs() < zero_eps { 0.0 } else { v };
@@ -2209,7 +2209,7 @@ mod tests {
         // M5 must appear AFTER the last G1 cut — that's the
         // cut_tool_off beam drop. Exactly ONE M5: the program-end
         // spindle_off is deduped via spindle_lit (the beam is already
-        // off), so laser programs no longer end `M5 … M5 M30`.
+        // off), so laser programs do not end `M5 … M5 M30`.
         let m5_positions: Vec<usize> = lines
             .iter()
             .enumerate()
@@ -2627,16 +2627,15 @@ mod tests {
         let _ = g1_xy_after_f800;
     }
 
-    /// With the lead-plunge-feed fix in place, EVERY lead
-    /// arm (Arc / Straight / None) must restore F<`rate_h`> between
-    /// the plunge Z-drop and the first cut motion. The Arc arm handled
-    /// this via a defensive re-emit historically; the Straight
-    /// and None arms relied on the modal F set further upstream
-    /// matching `rate_h` — which after the plunge-feed fix it no longer
-    /// does (modal is `rate_v` at that point). Regression: an op with
-    /// each lead kind must emit `F<rate_h>` between plunge Z and the
-    /// first cutting motion. Uses a separately-closed square per arm to
-    /// avoid Arc lead-fit fallback to Straight on tight geometry.
+    /// EVERY lead arm (Arc / Straight / None) must restore F<`rate_h`>
+    /// between the plunge Z-drop and the first cut motion. The Arc arm
+    /// does this via a defensive re-emit; the Straight and None arms
+    /// cannot rely on the modal F set further upstream matching
+    /// `rate_h`, because the modal is `rate_v` at that point.
+    /// Regression: an op with each lead kind must emit `F<rate_h>`
+    /// between plunge Z and the first cutting motion. Uses a
+    /// separately-closed square per arm to avoid Arc lead-fit fallback
+    /// to Straight on tight geometry.
     #[test]
     fn irg7_feedrate_restored_on_all_three_lead_arms() {
         use crate::cam::offsets::PolylineOffset;
@@ -3265,12 +3264,13 @@ mod tests {
     fn pxyt_trait_default_drill_honors_ms_dwell_unit() {
         // GRBL inherits the default trait drill_simple / drill_peck /
         // drill_chip_break impls (it has no canned cycle support). Those
-        // defaults previously emitted `G4 P<seconds>` via a seconds-only
-        // helper, ignoring the active profile's dwell_unit. A Mach3-metric
-        // profile (DwellUnit::Milliseconds) running on GRBL would emit
-        // `G4 P0.5` for an intended 500 ms dwell — a 1000x mismatch.
+        // defaults must not emit `G4 P<seconds>` via a seconds-only
+        // helper that ignores the active profile's dwell_unit: a
+        // Mach3-metric profile (DwellUnit::Milliseconds) running on GRBL
+        // would then emit `G4 P0.5` for an intended 500 ms dwell — a
+        // 1000x mismatch.
         //
-        // After the fix, the trait routes through `fmt_dwell_post`, which
+        // Instead the trait routes through `fmt_dwell_post`, which
         // GRBL delegates into LinuxCNC's `fmt_dwell_p` — that consults
         // PostState.profile.dwell_unit and scales seconds → ms when asked.
         use crate::gcode::post_profile::{DwellUnit, PostProfile};

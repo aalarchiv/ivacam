@@ -134,9 +134,9 @@ export function requestPreview(layer: TextLayer): void {
     generation.set(layer.id, gen);
     // Build the wire payload (the base64 font string + params, marshalled
     // across the worker / IPC boundary) only when the debounce actually
-    // fires. Origin is out of the hash, so a drag no longer reaches here at
+    // fires. Origin is out of the hash, so a drag does not reach here at
     // all — this runs only on a real text / size / font change. The
-    // font rides as a base64 string now, not a ~742 KB integer array.
+    // font rides as a base64 string rather than a ~742 KB integer array.
     const wire = toWire(layer);
     // The origin baked into these segments. Consumers translate by
     // (currentOrigin - renderOrigin), so an origin drag needs no re-render.

@@ -58,9 +58,9 @@ use crate::project::{Op, OpKind, Project};
 /// `prev_tool_id` only when a real swap happened.
 ///
 /// `build_op_offsets` takes `&[VcObject]` and produces pattern / frame
-/// expansions in locally-owned `Vec<VcObject>`s. The caller no longer
-/// needs a defensive `.to_vec()` clone per op — a 50-op project on a
-/// 5000-segment DXF used to clone the full vec 50 times every Generate.
+/// expansions in locally-owned `Vec<VcObject>`s. The caller does not
+/// need a defensive `.to_vec()` clone per op — that would make a 50-op
+/// project on a 5000-segment DXF clone the full vec 50 times every Generate.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::pipeline) fn run_standard_op<P: PostProcessor>(
     op: &Op,

@@ -107,10 +107,10 @@ pub(super) fn build_op_offsets(
     // attached to the original objects are translated/rotated alongside
     // the geometry so each instance keeps its tab placement.
     //
-    // The expansion now owns a local `Vec<VcObject>` instead
+    // The expansion owns a local `Vec<VcObject>` instead
     // of mutating an input `&mut Vec<VcObject>`. The caller can pass the
-    // imported chain by shared reference and skip the per-op `.to_vec()`
-    // it used to do defensively.
+    // imported chain by shared reference and skip a defensive per-op
+    // `.to_vec()`.
     let pattern_expanded: Option<Vec<VcObject>> = if let Some(pattern) = op.pattern() {
         let instances = pattern_offsets(pattern);
         let mut expanded: Vec<VcObject> = Vec::with_capacity(instances.len() * objects.len());
@@ -305,9 +305,9 @@ pub(super) fn build_op_offsets(
         0.5
     };
     let xy_step = setup.tool.diameter * (1.0 - overlap);
-    // Whirl no longer clamps the cascade step. The v1 implementation
-    // (xy_step ≤ tool_radius / 2) bounded engagement by reducing
-    // stepover, which slowed every cut. The helical overlay applied at
+    // Whirl does not clamp the cascade step. Clamping it
+    // (xy_step ≤ tool_radius / 2) would bound engagement by reducing
+    // stepover, which slows every cut. The helical overlay applied at
     // gcode-emit time bounds engagement directly by making the cutter
     // rotate around the toolpath centerline — the cascade can stay at
     // the user's xy_step regardless.
@@ -488,7 +488,7 @@ pub(super) fn build_op_offsets(
                     // before handing them to pocket_for_object. The
                     // pocket emitters treat the island input as the
                     // centerline safe boundary; passing raw inner
-                    // contours used to gouge the island wall by tool_r.
+                    // contours would gouge the island wall by tool_r.
                     let inflated_islands = inflate_islands_by_tool_radius(&islands, radius);
                     for mut o in pocket_for_object(
                         obj,

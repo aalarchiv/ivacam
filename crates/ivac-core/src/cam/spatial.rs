@@ -345,10 +345,111 @@ impl RegionInsideIndex {
     }
 }
 
+// ─── boundary-robust point-in-polygon by scanline row buckets ───────────
+
+/// Boundary-robust (epsilon) point-in-polygon accelerator. Reproduces
+/// [`crate::geometry::point_in_polygon`] exactly — the variant the
+/// offset / pocket / trochoidal guards rely on, distinct from the plain
+/// no-epsilon [`PolygonRayIndex`] above (which mirrors `is_inside_polygon`).
+///
+/// Same row-bucket idea: each edge `(verts[i], verts[i+1 % n])` is filed
+/// under every grid row its y-extent covers, and a query walks only the
+/// edges in the probe's row. Correctness is by construction — the query
+/// applies `point_in_polygon`'s exact per-edge arithmetic (the
+/// `1e-12`-slop y-range test and the `xi > x` crossing flip), so filing
+/// an edge under *extra* rows is harmless (the formula simply skips it);
+/// the only requirement is that no edge a probe could cross is ever
+/// missed. The y-range an edge is active over is `[lo.y - 1e-12,
+/// hi.y - 1e-12)`, so it is filed over `cell_floor(lo.y - 1e-12)
+/// ..= cell_floor(hi.y)` — a safe superset of the rows any such probe
+/// can land in.
+#[derive(Debug)]
+pub struct PolygonRayIndexEps {
+    cell: f64,
+    rows: HashMap<i64, Vec<(Point2, Point2)>>,
+    n_points: usize,
+}
+
+impl PolygonRayIndexEps {
+    /// Slop used by [`crate::geometry::point_in_polygon`]'s y-range test;
+    /// kept identical here so the bucket range can't drop an active edge.
+    const Y_EPS: f64 = 1e-12;
+
+    #[must_use]
+    pub fn new(verts: &[Point2]) -> Self {
+        let n_points = verts.len();
+        if n_points < 3 {
+            return Self {
+                cell: 1.0,
+                rows: HashMap::new(),
+                n_points,
+            };
+        }
+        let (mut min_y, mut max_y) = (f64::INFINITY, f64::NEG_INFINITY);
+        for q in verts {
+            min_y = min_y.min(q.y);
+            max_y = max_y.max(q.y);
+        }
+        let cell = auto_cell((max_y - min_y).max(1e-6), n_points);
+
+        let mut rows: HashMap<i64, Vec<(Point2, Point2)>> = HashMap::new();
+        let n = n_points;
+        for i in 0..n {
+            // Edge orientation matches point_in_polygon: (verts[i],
+            // verts[i+1 mod n]), the closing edge implied.
+            let a = verts[i];
+            let b = verts[(i + 1) % n];
+            let lo_y = a.y.min(b.y);
+            let hi_y = a.y.max(b.y);
+            // Active over [lo_y - Y_EPS, hi_y - Y_EPS); file the superset
+            // [cell_floor(lo_y - eps), cell_floor(hi_y)].
+            let r0 = cell_floor(lo_y - Self::Y_EPS, cell);
+            let r1 = cell_floor(hi_y, cell);
+            for row in r0..=r1 {
+                rows.entry(row).or_default().push((a, b));
+            }
+        }
+        Self {
+            cell,
+            rows,
+            n_points,
+        }
+    }
+
+    /// `true` iff `(x, y)` is inside by the boundary-robust even-odd rule —
+    /// the same value [`crate::geometry::point_in_polygon`] returns.
+    #[must_use]
+    pub fn contains(&self, x: f64, y: f64) -> bool {
+        if self.n_points < 3 {
+            return false;
+        }
+        let row = cell_floor(y, self.cell);
+        let Some(edges) = self.rows.get(&row) else {
+            return false;
+        };
+        let mut inside = false;
+        for &(a, b) in edges {
+            if (a.y - b.y).abs() < Self::Y_EPS {
+                continue;
+            }
+            let (lo, hi) = if a.y < b.y { (a, b) } else { (b, a) };
+            if y < lo.y - Self::Y_EPS || y >= hi.y - Self::Y_EPS {
+                continue;
+            }
+            let t = (y - lo.y) / (hi.y - lo.y);
+            let xi = lo.x + t * (hi.x - lo.x);
+            if xi > x {
+                inside = !inside;
+            }
+        }
+        inside
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::is_inside_polygon;
+    use crate::geometry::{is_inside_polygon, point_in_polygon};
 
     /// Tiny deterministic LCG so the randomized sweeps are reproducible
     /// (and don't pull in a dev-dependency).
@@ -494,6 +595,92 @@ mod tests {
     fn polygon_index_degenerate_under_three_points() {
         let idx = PolygonRayIndex::new(&[Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)]);
         assert!(!idx.contains(Point2::new(0.5, 0.5)));
+    }
+
+    /// Dense sweep asserting the epsilon index matches `point_in_polygon`
+    /// cell for cell, plus an extra sweep along every vertex y-value
+    /// (where the `1e-12` slop in the y-range test bites) so the row
+    /// bucketing can't drop an edge active only within that epsilon band.
+    fn assert_polygon_eps_index_matches(poly: &[Point2]) {
+        let idx = PolygonRayIndexEps::new(poly);
+        let (mut min_x, mut min_y, mut max_x, mut max_y) = (
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        );
+        for q in poly {
+            min_x = min_x.min(q.x);
+            min_y = min_y.min(q.y);
+            max_x = max_x.max(q.x);
+            max_y = max_y.max(q.y);
+        }
+        let steps = 73;
+        for i in 0..=steps {
+            for j in 0..=steps {
+                let x = min_x - 2.0 + (max_x - min_x + 4.0) * f64::from(i) / f64::from(steps);
+                let y = min_y - 2.0 + (max_y - min_y + 4.0) * f64::from(j) / f64::from(steps);
+                assert_eq!(
+                    idx.contains(x, y),
+                    point_in_polygon(poly, x, y),
+                    "eps index disagrees with point_in_polygon at ({x}, {y})"
+                );
+            }
+        }
+        // Probe AT and just-around each vertex y across the x range —
+        // the scanline values the epsilon y-range test is sensitive to.
+        for v in poly {
+            for &dy in &[-2e-12, -1e-12, 0.0, 1e-12, 2e-12] {
+                let y = v.y + dy;
+                for i in 0..=steps {
+                    let x = min_x - 2.0 + (max_x - min_x + 4.0) * f64::from(i) / f64::from(steps);
+                    assert_eq!(
+                        idx.contains(x, y),
+                        point_in_polygon(poly, x, y),
+                        "eps index disagrees at vertex-y scanline ({x}, {y})"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn polygon_eps_index_matches_point_in_polygon() {
+        // Square.
+        assert_polygon_eps_index_matches(&[
+            Point2::new(0.0, 0.0),
+            Point2::new(10.0, 0.0),
+            Point2::new(10.0, 10.0),
+            Point2::new(0.0, 10.0),
+        ]);
+        // Non-convex L-shape.
+        assert_polygon_eps_index_matches(&[
+            Point2::new(0.0, 0.0),
+            Point2::new(10.0, 0.0),
+            Point2::new(10.0, 4.0),
+            Point2::new(4.0, 4.0),
+            Point2::new(4.0, 10.0),
+            Point2::new(0.0, 10.0),
+        ]);
+        // Concave star-ish polygon with shared scanline y-values.
+        assert_polygon_eps_index_matches(&[
+            Point2::new(5.0, 0.0),
+            Point2::new(6.5, 3.5),
+            Point2::new(10.0, 3.5),
+            Point2::new(7.0, 6.0),
+            Point2::new(8.5, 10.0),
+            Point2::new(5.0, 7.5),
+            Point2::new(1.5, 10.0),
+            Point2::new(3.0, 6.0),
+            Point2::new(0.0, 3.5),
+            Point2::new(3.5, 3.5),
+        ]);
+    }
+
+    #[test]
+    fn polygon_eps_index_degenerate_under_three_points() {
+        let idx = PolygonRayIndexEps::new(&[Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)]);
+        assert!(!idx.contains(0.5, 0.5));
     }
 
     #[test]

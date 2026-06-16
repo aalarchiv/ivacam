@@ -31,9 +31,9 @@
     clippy::many_single_char_names
 )]
 
-use crate::cam::offsets::{bridge_stays_inside_polygon, stitch_rings_to_polyline};
+use crate::cam::offsets::stitch_rings_to_polyline;
+use crate::cam::spatial::PolygonRayIndexEps;
 use crate::cancel::CancelToken;
-use crate::geometry::point_in_polygon;
 use crate::geometry::{Point2, Segment};
 
 /// Structured record produced when the trochoidal emitter has to
@@ -171,6 +171,18 @@ pub fn pocket_trochoidal_cancellable(
     // pockets while still catching the re-entrant-corner failure
     // mode that matters (disc straying through a narrow neck).
     let outer = boundary_pts;
+    // Row-bucketed point-in-polygon indexes over the wall + islands,
+    // built once here and reused for every centerline vertex's disc
+    // guard. The guard fires ~20 point-in-polygon probes per vertex
+    // (1 center + 12 disc-rim + 7 bridge, all vs `outer`, plus 12·islands
+    // island probes), so re-scanning the full rings each vertex is
+    // O(centerline · boundary); the index drops each probe to its
+    // scanline row. Reproduces `point_in_polygon` exactly (see
+    // PolygonRayIndexEps), so the bail decisions — and thus the emitted
+    // toolpath — are unchanged.
+    let outer_idx = PolygonRayIndexEps::new(outer);
+    let island_idxs: Vec<PolygonRayIndexEps> =
+        islands.iter().map(|i| PolygonRayIndexEps::new(i)).collect();
 
     let mut out: Vec<Segment> = Vec::new();
     // Sweep angle for each loop. 300° leaves a 60° gap between
@@ -249,7 +261,7 @@ pub fn pocket_trochoidal_cancellable(
         //       the user the unswept tail needs a smaller
         //       `loop_radius_factor` / engagement angle (or a
         //       separate finishing op).
-        if !disc_inside_polygon(center, r_loop, outer, islands) {
+        if !disc_inside_indexed(center, r_loop, &outer_idx, &island_idxs) {
             if emitted_any_loop {
                 TROCHOIDAL_INCOMPLETES.with(|s| {
                     s.borrow_mut().push(TrochoidalIncomplete {
@@ -352,8 +364,13 @@ fn subdivide_chords(pts: &[Point2], max_chord: f64) -> Vec<Point2> {
 /// at 12 boundary points + the center; not exact but catches the
 /// failure mode that matters here (loop center too close to a
 /// re-entrant corner or a narrow neck the cutter can't thread).
-fn disc_inside_polygon(center: Point2, r: f64, outer: &[Point2], islands: &[Vec<Point2>]) -> bool {
-    if !point_in_polygon(outer, center.x, center.y) {
+fn disc_inside_indexed(
+    center: Point2,
+    r: f64,
+    outer_idx: &PolygonRayIndexEps,
+    island_idxs: &[PolygonRayIndexEps],
+) -> bool {
+    if !outer_idx.contains(center.x, center.y) {
         return false;
     }
     let samples = 12;
@@ -361,25 +378,112 @@ fn disc_inside_polygon(center: Point2, r: f64, outer: &[Point2], islands: &[Vec<
         let theta = f64::from(i) * std::f64::consts::TAU / f64::from(samples);
         let px = center.x + r * theta.cos();
         let py = center.y + r * theta.sin();
-        if !point_in_polygon(outer, px, py) {
+        if !outer_idx.contains(px, py) {
             return false;
         }
-        for island in islands {
-            if point_in_polygon(island, px, py) {
+        for island in island_idxs {
+            if island.contains(px, py) {
                 return false;
             }
         }
     }
     // Bridge sanity from center to a sample on the disc — re-uses the
-    // centerline guard so the disc isn't on the wrong side of a
-    // narrow passage.
+    // centerline guard so the disc isn't on the wrong side of a narrow
+    // passage. Mirrors `bridge_stays_inside_polygon` exactly: 8 samples on
+    // the open segment, same per-point test (the n<3 early-true there
+    // never applies — `outer` is guaranteed >= 3 at the caller).
     let sample = Point2::new(center.x + r, center.y);
-    bridge_stays_inside_polygon(center, sample, outer)
+    let bridge_samples = 8;
+    for i in 1..bridge_samples {
+        let t = f64::from(i) / f64::from(bridge_samples);
+        let px = center.x + (sample.x - center.x) * t;
+        let py = center.y + (sample.y - center.y) * t;
+        if !outer_idx.contains(px, py) {
+            return false;
+        }
+    }
+    true
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::point_in_polygon;
+
+    /// The pre-index disc guard, kept verbatim as the equivalence oracle
+    /// for `disc_inside_indexed`. If the indexed path ever diverges from
+    /// the raw `point_in_polygon` math, `disc_indexed_matches_raw` fails.
+    fn disc_inside_raw(center: Point2, r: f64, outer: &[Point2], islands: &[Vec<Point2>]) -> bool {
+        if !point_in_polygon(outer, center.x, center.y) {
+            return false;
+        }
+        let samples = 12;
+        for i in 0..samples {
+            let theta = f64::from(i) * std::f64::consts::TAU / f64::from(samples);
+            let px = center.x + r * theta.cos();
+            let py = center.y + r * theta.sin();
+            if !point_in_polygon(outer, px, py) {
+                return false;
+            }
+            for island in islands {
+                if point_in_polygon(island, px, py) {
+                    return false;
+                }
+            }
+        }
+        let sample = Point2::new(center.x + r, center.y);
+        let bridge_samples = 8;
+        for i in 1..bridge_samples {
+            let t = f64::from(i) / f64::from(bridge_samples);
+            let px = center.x + (sample.x - center.x) * t;
+            let py = center.y + (sample.y - center.y) * t;
+            if !point_in_polygon(outer, px, py) {
+                return false;
+            }
+        }
+        true
+    }
+
+    #[test]
+    fn disc_indexed_matches_raw() {
+        // A wall with a re-entrant notch + an island, so discs at varied
+        // centers/radii exercise the inside/outside and island-overlap
+        // branches both ways.
+        let outer = vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(40.0, 0.0),
+            Point2::new(40.0, 40.0),
+            Point2::new(24.0, 40.0),
+            Point2::new(24.0, 16.0),
+            Point2::new(16.0, 16.0),
+            Point2::new(16.0, 40.0),
+            Point2::new(0.0, 40.0),
+        ];
+        let islands = vec![vec![
+            Point2::new(6.0, 6.0),
+            Point2::new(12.0, 6.0),
+            Point2::new(12.0, 12.0),
+            Point2::new(6.0, 12.0),
+        ]];
+        let outer_idx = PolygonRayIndexEps::new(&outer);
+        let island_idxs: Vec<_> = islands.iter().map(|i| PolygonRayIndexEps::new(i)).collect();
+        let steps = 60;
+        for ci in 0..=steps {
+            for cj in 0..=steps {
+                let center = Point2::new(
+                    -4.0 + 48.0 * f64::from(ci) / f64::from(steps),
+                    -4.0 + 48.0 * f64::from(cj) / f64::from(steps),
+                );
+                for &r in &[0.5, 2.0, 5.0, 9.0] {
+                    assert_eq!(
+                        disc_inside_indexed(center, r, &outer_idx, &island_idxs),
+                        disc_inside_raw(center, r, &outer, &islands),
+                        "indexed disc guard differs from raw at {center:?} r={r}"
+                    );
+                }
+            }
+        }
+    }
 
     fn rect(w: f64, h: f64) -> Vec<Point2> {
         vec![

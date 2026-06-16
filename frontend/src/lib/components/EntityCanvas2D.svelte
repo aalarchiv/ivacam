@@ -1597,7 +1597,7 @@
       project2,
       scale,
       rasterImageCache,
-      rasterPlacements().map(({ op, src }) => ({
+      rasterPlacements.map(({ op, src }) => ({
         src,
         selected: project.sel.selectedOpId === op.id,
       })),
@@ -1682,7 +1682,9 @@
   /// The distinct relief sources referenced by raster-engrave ops, each
   /// paired with the (first) op referencing it — so the selection
   /// highlight + drag target know which op an image belongs to.
-  function rasterPlacements(): { op: OpEntry; src: ReliefSource }[] {
+  // Cached between repaints (recomputed only when ops / relief sources
+  // change) instead of rebuilt on every overlay paint + pointer hit-test.
+  const rasterPlacements = $derived.by<{ op: OpEntry; src: ReliefSource }[]>(() => {
     const out: { op: OpEntry; src: ReliefSource }[] = [];
     const seen = new Set<number>();
     for (const op of project.data.operations) {
@@ -1693,13 +1695,15 @@
       out.push({ op, src });
     }
     return out;
-  }
+  });
 
   /// Hit-test a data-space point against the placed raster images,
   /// preferring the selected op's image (so overlapping placements stay
   /// grabbable) then the topmost. Returns the placement or null.
   function rasterPlacementAtData(x: number, y: number): { op: OpEntry; src: ReliefSource } | null {
-    const ordered = rasterPlacements().sort(
+    // Copy before sorting — `rasterPlacements` is a shared cached derived,
+    // and `.sort()` mutates in place.
+    const ordered = [...rasterPlacements].sort(
       (a, b) =>
         (a.op.id === project.sel.selectedOpId ? 1 : 0) -
         (b.op.id === project.sel.selectedOpId ? 1 : 0),
@@ -1729,7 +1733,7 @@
   /// defined. Null when there's nothing placeable to frame.
   function placementFallbackBBox(): BBox | null {
     const rects: Rect[] = [];
-    for (const { src } of rasterPlacements()) {
+    for (const { src } of rasterPlacements) {
       rects.push({
         minX: src.origin.x,
         minY: src.origin.y,

@@ -167,6 +167,23 @@ export class ToolpathBuilder implements PickableLineBuilder {
       rasterHeatTotal > RASTER_HEAT_BUDGET ? Math.ceil(rasterHeatTotal / RASTER_HEAT_BUDGET) : 1;
     let rasterCutSeen = 0;
 
+    // Memoize the op-hue RGB per op_id: the HSL→RGB conversion depends
+    // only on op_id, but a big toolpath has ~100k segments across a
+    // handful of ops — without this we'd allocate a THREE.Color per
+    // segment (build-time, but ~100k short-lived objects). O(segments) →
+    // O(ops).
+    const opColCache = new Map<number, [number, number, number]>();
+    const opColFor = (id: number): [number, number, number] => {
+      let c = opColCache.get(id);
+      if (!c) {
+        const hue = id === 0 ? 0.0 : opHue(id);
+        const col = new THREE.Color().setHSL(hue, 0.55, 0.5);
+        c = [col.r, col.g, col.b];
+        opColCache.set(id, c);
+      }
+      return c;
+    };
+
     const total = gen.toolpath.length;
     for (let i = 0; i < total; i++) {
       const seg = gen.toolpath[i];
@@ -195,15 +212,13 @@ export class ToolpathBuilder implements PickableLineBuilder {
         [r, g, b] = heatColor(t);
       } else {
         const moveTint = moveTints[seg.kind] ?? moveTints.cut;
-        const opHueV = opId === 0 ? 0.0 : opHue(opId);
-        const opCol = new THREE.Color().setHSL(opHueV, 0.55, 0.5);
         // THREE/theme resolution stays here; the op_id-0 vs
         // boosted-hue channel math lives in the pure resolveSegmentColor.
         [r, g, b] = resolveSegmentColor(
           opId,
           seg.kind,
           [moveTint.r, moveTint.g, moveTint.b],
-          [opCol.r, opCol.g, opCol.b],
+          opColFor(opId),
         );
       }
       const startVertex = positions.length / 3;

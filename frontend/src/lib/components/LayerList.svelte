@@ -6,6 +6,29 @@
   /// Same visual language as op groups so the sidebar reads as one
   /// coherent panel.
   import { isIdentityFileTransform, project } from '../state/project.svelte';
+  import { Throttle } from '../state/throttle';
+  import { onDestroy } from 'svelte';
+
+  // Throttle the live file-transform spinbox edits: each edit
+  // re-transforms every imported segment and re-uploads the GPU buffer,
+  // so a spinner hold / drag on a large DXF would recompute per input
+  // event. ~30 Hz (leading + trailing) keeps the preview live while
+  // collapsing the burst; the trailing edge guarantees the final value
+  // lands. Keyed per (import, field) so independent fields don't clobber
+  // each other's patches.
+  const xformThrottle = new Throttle(32);
+  function patchTransform(
+    importId: number,
+    field: string,
+    patch: Parameters<typeof project.patchFileTransformForImport>[1],
+  ) {
+    xformThrottle.run(`${importId}:${field}`, () =>
+      project.patchFileTransformForImport(importId, patch),
+    );
+  }
+  // Apply any pending trailing edit on teardown so a value typed in the
+  // last frame before navigating away isn't dropped.
+  onDestroy(() => xformThrottle.flush());
 
   interface Props {
     /// Accordion-controlled: parent passes `active` and `onActivate`;
@@ -293,7 +316,7 @@
                       oninput={(e) => {
                         const v = (e.target as HTMLInputElement).valueAsNumber;
                         if (Number.isFinite(v))
-                          project.patchFileTransformForImport(entry.id, { translate: { x: v } });
+                          patchTransform(entry.id, 'tx', { translate: { x: v } });
                       }}
                     />
                     <span class="xform-unit">mm</span>
@@ -309,7 +332,7 @@
                       oninput={(e) => {
                         const v = (e.target as HTMLInputElement).valueAsNumber;
                         if (Number.isFinite(v))
-                          project.patchFileTransformForImport(entry.id, { translate: { y: v } });
+                          patchTransform(entry.id, 'ty', { translate: { y: v } });
                       }}
                     />
                     <span class="xform-unit">mm</span>
@@ -326,8 +349,7 @@
                       value={entry.fileTransform.rotateDeg}
                       oninput={(e) => {
                         const v = (e.target as HTMLInputElement).valueAsNumber;
-                        if (Number.isFinite(v))
-                          project.patchFileTransformForImport(entry.id, { rotateDeg: v });
+                        if (Number.isFinite(v)) patchTransform(entry.id, 'rot', { rotateDeg: v });
                       }}
                     />
                     <span class="xform-unit">°</span>
@@ -346,7 +368,7 @@
                       oninput={(e) => {
                         const v = (e.target as HTMLInputElement).valueAsNumber;
                         if (Number.isFinite(v) && v > 0)
-                          project.patchFileTransformForImport(entry.id, { scale: v });
+                          patchTransform(entry.id, 'scale', { scale: v });
                       }}
                     />
                     <span class="xform-unit">×</span>

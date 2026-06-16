@@ -105,6 +105,40 @@
     drawOverlay();
   }
 
+  // rAF-coalesced repaint scheduling for the reactive draw effects below.
+  // A pan/zoom drag mutates userPanX/Y/userZoom on every pointermove, and
+  // each change would otherwise synchronously re-stroke the whole imported
+  // wireframe (O(segments) ctx ops). Instead the effects SCHEDULE a redraw
+  // and at most one background + one overlay paint runs per animation
+  // frame — intermediate frames under load are dropped. Reactivity is
+  // unaffected: the effects still `void` every dependency synchronously,
+  // so tracking is exact; only the paint itself is deferred to the frame.
+  let drawFrame = 0;
+  let needBackground = false;
+  let needOverlay = false;
+  function flushDraw() {
+    drawFrame = 0;
+    if (needBackground) {
+      needBackground = false;
+      drawBackground();
+    }
+    if (needOverlay) {
+      needOverlay = false;
+      drawOverlay();
+    }
+  }
+  function ensureDrawFrame() {
+    if (drawFrame === 0) drawFrame = requestAnimationFrame(flushDraw);
+  }
+  function scheduleBackground() {
+    needBackground = true;
+    ensureDrawFrame();
+  }
+  function scheduleOverlay() {
+    needOverlay = true;
+    ensureDrawFrame();
+  }
+
   onMount(() => {
     // Defer the resize-driven redraw to the next animation frame.
     // ResizeObserver fires synchronously during layout; if the
@@ -150,6 +184,7 @@
       ro.disconnect();
       mql.removeEventListener('change', onChange);
       themeMo.disconnect();
+      if (drawFrame !== 0) cancelAnimationFrame(drawFrame);
     };
   });
 
@@ -188,7 +223,7 @@
     void userZoom;
     void userPanX;
     void userPanY;
-    drawBackground();
+    scheduleBackground();
   });
 
   $effect(() => {
@@ -211,7 +246,7 @@
     void userZoom;
     void userPanX;
     void userPanY;
-    drawOverlay();
+    scheduleOverlay();
   });
 
   // Keep the live-preview cache warm. Loops every text layer and asks

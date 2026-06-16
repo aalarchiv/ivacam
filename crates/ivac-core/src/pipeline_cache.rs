@@ -1,8 +1,8 @@
 //! Per-operation toolpath result cache.
 //!
 //! When the user re-clicks Generate without changing anything, the
-//! pipeline can re-emit each enabled operation's gcode body and toolpath
-//! slice from a cache instead of re-running offsets / cascade / emit.
+//! pipeline can re-emit each enabled operation's gcode body from a
+//! cache instead of re-running offsets / cascade / emit.
 //! With ~5 ops on a moderate project that's the difference between
 //! 5–10 s of work and ~100 ms of dictionary lookups.
 //!
@@ -47,7 +47,6 @@ use lru::LruCache;
 use seahash::SeaHasher;
 use serde::Serialize;
 
-use crate::gcode::preview::ToolpathSegment;
 use crate::gcode::CapturedPostState;
 use crate::geometry::{Point2, Segment, SegmentKind};
 use crate::pipeline::PipelineWarning;
@@ -69,10 +68,6 @@ pub struct OpCacheKey(pub u64);
 /// are NOT cached — only this op's body.
 #[derive(Debug, Clone)]
 pub struct OpCacheValue {
-    /// Per-op slice of toolpath segments produced by this op (`op_id`
-    /// stamped). Used when the caller wants per-op toolpath without a
-    /// full re-interpret pass.
-    pub toolpath: Vec<ToolpathSegment>,
     /// Per-op gcode body (the raw lines this op contributed to the
     /// program), without program header / footer.
     pub gcode_body: String,
@@ -689,7 +684,6 @@ mod tests {
             cache.put(
                 OpCacheKey(i),
                 OpCacheValue {
-                    toolpath: Vec::new(),
                     gcode_body: format!("op{i}"),
                     closed_count: 0,
                     offset_count: 0,
@@ -718,7 +712,6 @@ mod tests {
     fn put_then_get_round_trips() {
         let cache = PipelineCache::new(10);
         let v = OpCacheValue {
-            toolpath: Vec::new(),
             gcode_body: "G1 X1 Y2".into(),
             closed_count: 3,
             offset_count: 4,

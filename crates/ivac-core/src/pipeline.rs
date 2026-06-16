@@ -1065,16 +1065,15 @@ fn apply_cached_op<P: PostProcessor>(
 }
 
 /// Build and store the cache value for a freshly-emitted op: its gcode
-/// body (from `body_marker` to now), the interpreted toolpath, stats,
-/// exit state / position, and exactly the warnings it pushed since
-/// `warn_start` (replayed verbatim on a future hit).
+/// body (from `body_marker` to now), stats, exit state / position, and
+/// exactly the warnings it pushed since `warn_start` (replayed verbatim
+/// on a future hit).
 #[allow(clippy::too_many_arguments)]
 fn store_op_cache<P: PostProcessor>(
     cache: &PipelineCache,
     key: crate::pipeline_cache::OpCacheKey,
     post: &P,
     body_marker: usize,
-    op: &Op,
     closed_count: usize,
     offset_count: usize,
     internal_swap_emitted: bool,
@@ -1084,11 +1083,9 @@ fn store_op_cache<P: PostProcessor>(
 ) {
     let lines = post.out_lines_clone_from(body_marker);
     let body = lines.join("\n");
-    let (toolpath, _idx) = preview::interpret_with_index(&format!("; OP {}\n{body}", op.id));
     cache.put(
         key,
         OpCacheValue {
-            toolpath,
             gcode_body: body,
             closed_count,
             offset_count,
@@ -1499,7 +1496,6 @@ where
                 key,
                 post,
                 body_marker,
-                op,
                 closed_count_emitted,
                 offset_count_emitted,
                 internal_swap_emitted,

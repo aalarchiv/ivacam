@@ -36,6 +36,17 @@ interface CacheEntry {
 const cache: Map<number, CacheEntry> = new Map();
 const inflight: Map<number, { key: string; timer: ReturnType<typeof setTimeout> }> = new Map();
 
+/// Memo of the last translated output per layer. A single pointer move
+/// reads `previewSegmentsFor` for the same (layer, origin) several times —
+/// hover hit-test + bg repaint + overlay halo — each of which otherwise
+/// re-`.map()`s the whole glyph list (100s–1000s of segments) to apply the
+/// identical origin delta. Keyed by the SOURCE segments reference + delta:
+/// a re-render (fresh `segments` array) or a moved origin misses and
+/// recomputes, so the output stays byte-identical to the inline map it
+/// replaces. Holds one array per layer; cleared alongside the cache entry.
+const translateMemo: Map<number, { src: Segment[]; dx: number; dy: number; out: Segment[] }> =
+  new Map();
+
 /// Per-layer generation token of the most-recently-dispatched render.
 /// `inflight` only tracks the debounce timer and is cleared the moment a
 /// render fires, so two renders for the same layer can be in flight at
@@ -147,6 +158,7 @@ export function requestPreview(layer: TextLayer): void {
       .then((resp) => {
         if (generation.get(layer.id) !== gen) return; // superseded
         cache.set(layer.id, { key, segments: resp.segments, renderOrigin });
+        translateMemo.delete(layer.id); // stale: keyed on the old segments ref
         bumpVersion();
       })
       .catch(() => {
@@ -155,6 +167,7 @@ export function requestPreview(layer: TextLayer): void {
         // typically mean an empty / parseable-but-empty render; the UI
         // shows nothing rather than a stale outdated preview.
         cache.delete(layer.id);
+        translateMemo.delete(layer.id);
         bumpVersion();
       });
   }, DEBOUNCE_MS);
@@ -180,11 +193,17 @@ export function previewSegmentsFor(
   const dx = origin.x - entry.renderOrigin.x;
   const dy = origin.y - entry.renderOrigin.y;
   if (dx === 0 && dy === 0) return entry.segments;
-  return entry.segments.map((s) => ({
+  const memo = translateMemo.get(layerId);
+  if (memo && memo.src === entry.segments && memo.dx === dx && memo.dy === dy) {
+    return memo.out;
+  }
+  const out = entry.segments.map((s) => ({
     ...s,
     start: { ...s.start, x: s.start.x + dx, y: s.start.y + dy },
     end: { ...s.end, x: s.end.x + dx, y: s.end.y + dy },
   }));
+  translateMemo.set(layerId, { src: entry.segments, dx, dy, out });
+  return out;
 }
 
 /// Force reactive readers (3D scene) to re-derive without a re-render —
@@ -205,6 +224,7 @@ export function invalidatePreview(layerId: number): void {
   // Supersede any already-dispatched render so its late resolution can't
   // repopulate the cache for a layer we just deleted.
   generation.delete(layerId);
+  translateMemo.delete(layerId);
   if (cache.delete(layerId)) bumpVersion();
 }
 
@@ -217,5 +237,6 @@ export function resetPreviewCache(): void {
   // Supersede every in-flight render so none repopulates the fresh cache.
   generation.clear();
   cache.clear();
+  translateMemo.clear();
   bumpVersion();
 }

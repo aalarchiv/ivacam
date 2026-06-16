@@ -17,9 +17,24 @@
   ///
   /// Powered by project.gen.generated.gcode_index (lines_to_segment +
   /// segments_to_line) emitted by ivac_core::gcode::preview.
+  ///
+  /// Rendering is windowed: only the rows in the scroll viewport (plus a
+  /// small overscan) become DOM nodes, with spacer divs above/below
+  /// preserving the scrollbar extent. A 100k-line program therefore
+  /// mounts ~60 nodes instead of 100k+ — see `state/gcode_window.ts`.
 
   import { project, playheadToSegment } from '../state/project.svelte';
   import { parseGcodeChapters, NO_SEGMENT } from '../state/gcode_chapters';
+  import { buildRowOffsets, computeWindow } from '../state/gcode_window';
+
+  /// Extra rows rendered above/below the viewport so a fast scroll or
+  /// flung wheel doesn't reveal blank gaps before the next frame.
+  const OVERSCAN = 12;
+  /// Fallback row / header heights (px) used until the live probe below
+  /// measures the real values. Sized for the panel's default font so the
+  /// very first frame is close even before measurement lands.
+  const DEFAULT_ROW_H = 16;
+  const DEFAULT_CHAPTER_H = 30;
 
   // Split the gcode lazily — only when the project's generated output
   // changes — so scrolling a 5000-line program doesn't redo work.
@@ -41,6 +56,44 @@
       arr[i] = chapterIdx;
     }
     return arr;
+  });
+
+  /// Per-line flag: does this line begin a (real, non-program) chapter,
+  /// i.e. should a header block render stacked above the row? Drives the
+  /// virtualization row heights so the scrollbar accounts for headers.
+  const chapterStart = $derived.by<Uint8Array>(() => {
+    const arr = new Uint8Array(lines.length);
+    for (let i = 0; i < lines.length; i++) {
+      const ch = chapters[lineChapter[i]];
+      if (ch != null && i + 1 === ch.startLine && ch.opId !== 0) arr[i] = 1;
+    }
+    return arr;
+  });
+
+  // Measured row / header heights. A hidden probe (rendered below)
+  // reports the real pixel heights so the windowing math survives font /
+  // zoom / theme changes instead of hard-coding a row height.
+  let rowH = $state(DEFAULT_ROW_H);
+  let chapterH = $state(DEFAULT_CHAPTER_H);
+
+  /// Cumulative pixel offset of every line (length lines.length + 1).
+  /// Rebuilt only when the line set, chapter starts, or measured heights
+  /// change — never per scroll frame.
+  const offsets = $derived(buildRowOffsets(chapterStart, rowH, chapterH));
+
+  // Live scroll state. `scrollTop` / `viewportH` drive the window; both
+  // come from the host element (onscroll + a ResizeObserver).
+  let scrollTop = $state(0);
+  let viewportH = $state(0);
+
+  const win = $derived(computeWindow(offsets, lines.length, scrollTop, viewportH, OVERSCAN));
+
+  /// 1-based line numbers currently in the render window.
+  const visibleLines = $derived.by<number[]>(() => {
+    if (win.last < win.first) return [];
+    const out: number[] = [];
+    for (let i = win.first; i <= win.last; i++) out.push(i + 1);
+    return out;
   });
 
   // Active gcode line = the line of the segment the playhead currently
@@ -65,17 +118,68 @@
   });
 
   let host = $state<HTMLDivElement | undefined>();
+  let probeEl = $state<HTMLDivElement | undefined>();
 
-  // Scroll the active row into view as the playhead moves. We use the
-  // row's data-line attribute to find it; cheaper than keeping a Map of
-  // refs for thousands of lines.
+  function onScroll() {
+    if (host) scrollTop = host.scrollTop;
+  }
+
+  /// Scroll line `line` (1-based) just into view — equivalent to the old
+  /// `scrollIntoView({ block: 'nearest' })`, but computed from `offsets`
+  /// so it works even when the target row is virtualized out of the DOM.
+  /// `align: 'start'` pins the line's top to the viewport top (used for
+  /// chapter jumps so the header isn't left off-screen).
+  function ensureVisible(line: number, align: 'nearest' | 'start' = 'nearest') {
+    if (!host || line < 1 || line > offsets.length - 1) return;
+    const top = offsets[line - 1];
+    const bottom = offsets[line];
+    const viewTop = host.scrollTop;
+    const viewBottom = viewTop + host.clientHeight;
+    if (align === 'start') {
+      host.scrollTop = top;
+    } else if (top < viewTop) {
+      host.scrollTop = top;
+    } else if (bottom > viewBottom) {
+      host.scrollTop = bottom - host.clientHeight;
+    }
+  }
+
+  // Scroll the active row into view as the playhead moves.
   $effect(() => {
     void activeLine;
-    if (!host || activeLine == null) return;
-    const row = host.querySelector(`[data-line="${activeLine}"]`);
-    if (row) {
-      (row as HTMLElement).scrollIntoView({ block: 'nearest', behavior: 'auto' });
-    }
+    void offsets;
+    if (activeLine == null) return;
+    ensureVisible(activeLine);
+  });
+
+  // Measure the real row / header heights from a hidden probe so the
+  // windowing offsets match the rendered layout. A ResizeObserver keeps
+  // them current across font-load / zoom / theme changes.
+  $effect(() => {
+    if (!probeEl) return;
+    const measure = () => {
+      const r = probeEl?.querySelector('.row')?.getBoundingClientRect().height;
+      const c = probeEl?.querySelector('.chapter-head')?.getBoundingClientRect().height;
+      if (r && r > 0) rowH = r;
+      if (c && c > 0) chapterH = c;
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(probeEl);
+    return () => ro.disconnect();
+  });
+
+  // Track the viewport height (and seed the initial value) so the window
+  // covers the whole visible area, not just one row.
+  $effect(() => {
+    if (!host) return;
+    viewportH = host.clientHeight;
+    scrollTop = host.scrollTop;
+    const ro = new ResizeObserver(() => {
+      if (host) viewportH = host.clientHeight;
+    });
+    ro.observe(host);
+    return () => ro.disconnect();
   });
 
   function jumpToLine(line: number) {
@@ -122,13 +226,12 @@
     } else return;
     e.preventDefault();
     focusedLine = next;
-    const row = host?.querySelector(`[data-line="${next}"]`) as HTMLElement | null;
-    row?.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+    ensureVisible(next);
   }
 
   /// When the playhead moves onto a new chapter (driven by PlaybackBar's
   /// prev/next-op buttons), scroll the chapter header into view. Without
-  /// this nudge the row-level $effect lands on `block: 'nearest'` of the
+  /// this nudge the row-level scroll lands on `block: 'nearest'` of the
   /// first segment line, which can leave the chapter header off-screen
   /// when the chapter starts with comment-only setup lines.
   let prevChapterIdx = $state<number | null>(null);
@@ -136,10 +239,10 @@
     const ci = activeLine == null ? null : (lineChapter[activeLine - 1] ?? null);
     if (ci != null && ci !== prevChapterIdx && host) {
       prevChapterIdx = ci;
-      queueMicrotask(() => {
-        const el = host?.querySelector(`[data-chapter-idx="${ci}"]`);
-        (el as HTMLElement | null)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-      });
+      const start = chapters[ci]?.startLine;
+      if (start != null) {
+        queueMicrotask(() => ensureVisible(start, 'start'));
+      }
     }
   });
 </script>
@@ -153,6 +256,7 @@
     aria-label="G-code"
     tabindex="0"
     onkeydown={onPanelKey}
+    onscroll={onScroll}
   >
     {#if project.data.dirty}
       <div
@@ -163,12 +267,14 @@
       </div>
     {/if}
     <div class="gcode-inner">
-      {#each lines as text, i (i)}
-        {@const line = i + 1}
+      <!-- Top spacer stands in for the rows scrolled above the window. -->
+      <div class="spacer" style:height="{win.padTop}px"></div>
+      {#each visibleLines as line (line)}
+        {@const i = line - 1}
         {@const chIdx = lineChapter[i] ?? 0}
         {@const ch = chapters[chIdx]}
-        {@const isChapterStart = ch != null && line === ch.startLine && ch.opId !== 0}
-        {#if isChapterStart}
+        {@const text = lines[i] ?? ''}
+        {#if chapterStart[i]}
           <div class="chapter-head" data-chapter-idx={chIdx} class:disabled={ch.disabled}>
             <span class="chapter-caret">▾</span>
             <span class="chapter-name">{ch.name}</span>
@@ -199,6 +305,17 @@
           <span class="text">{ch?.disabled && text.length > 0 ? '; ' + text : text}</span>
         </div>
       {/each}
+      <!-- Bottom spacer stands in for the rows below the window. -->
+      <div class="spacer" style:height="{win.padBottom}px"></div>
+    </div>
+    <!-- Off-screen probe: one header + one row whose measured heights
+         feed the windowing offsets. Never interactive, never read. -->
+    <div class="measure" aria-hidden="true" bind:this={probeEl}>
+      <div class="chapter-head">
+        <span class="chapter-caret">▾</span>
+        <span class="chapter-name">probe</span>
+      </div>
+      <div class="row"><span class="num">0</span><span class="text">probe</span></div>
     </div>
   </div>
 {/if}
@@ -239,6 +356,21 @@
   .gcode-inner {
     /* Fixed-row baseline so scrollIntoView lands cleanly. */
     padding: 0.25rem 0;
+  }
+  .spacer {
+    /* Pure scroll-extent filler for the virtualized rows outside the
+       window — no content, no interaction. */
+    width: 100%;
+  }
+  /* Hidden measurement probe — laid out (so it has real heights) but
+     visually gone and out of the a11y / hit-test tree. */
+  .measure {
+    position: absolute;
+    visibility: hidden;
+    pointer-events: none;
+    left: -9999px;
+    top: 0;
+    width: 20rem;
   }
   .chapter-head {
     display: flex;

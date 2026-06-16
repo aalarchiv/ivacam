@@ -29,6 +29,8 @@
 // the three axes of an `AxisLimits` triple.
 #![allow(clippy::similar_names)]
 
+use std::borrow::Cow;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -582,15 +584,17 @@ fn feeds_per_segment(gcode: &str, segments: &[ToolpathSegment]) -> Vec<f64> {
     // gcode lines are 1..n contiguous, so a dense Vec<f64> indexed by
     // line_no is one allocation and O(1) lookup — no hashing cost.
     // Index 0 stays at 0.0 since gcode lines are 1-based.
-    let line_count = gcode.lines().count();
-    let mut feed_by_line: Vec<f64> = vec![0.0; line_count + 1];
+    // Single scan: push one feed per line (index 0 stays 0.0 since gcode
+    // lines are 1-based). No `count()` pre-pass — the Vec grows as we go.
+    let mut feed_by_line: Vec<f64> = Vec::new();
+    feed_by_line.push(0.0);
     let mut current: f64 = 0.0;
-    for (idx0, raw) in gcode.lines().enumerate() {
+    for raw in gcode.lines() {
         let line = strip_comment(raw);
         if let Some(v) = scan_modal_f(&line) {
             current = v;
         }
-        feed_by_line[idx0 + 1] = current;
+        feed_by_line.push(current);
     }
     segments
         .iter()
@@ -644,26 +648,42 @@ fn scan_modal_f(line: &str) -> Option<f64> {
     last
 }
 
-fn strip_comment(line: &str) -> String {
-    let mut out = String::new();
-    let mut in_paren = false;
-    for ch in line.chars() {
-        if ch == '(' {
-            in_paren = true;
-            continue;
-        }
-        if ch == ')' {
-            in_paren = false;
-            continue;
-        }
-        if ch == ';' {
-            break;
-        }
-        if !in_paren {
-            out.push(ch);
+/// Strip gcode comments — `;`-to-EOL and `(...)` parentheticals — from a
+/// line. Borrows whenever possible: a line with no parentheticals needs
+/// at most a `;`-truncation (a sub-slice), so only lines that actually
+/// carry a `(...)` comment allocate. Most cut lines (`G1 X.. Y.. F..`)
+/// have neither, so the common case is zero-alloc.
+fn strip_comment(line: &str) -> Cow<'_, str> {
+    match (line.find('('), line.find(';')) {
+        // No parentheticals: borrow the whole line, or just the prefix
+        // before the first `;` comment.
+        (None, None) => Cow::Borrowed(line),
+        (None, Some(semi)) => Cow::Borrowed(&line[..semi]),
+        // Has a `(...)` parenthetical somewhere — fall back to the
+        // char-walk, which removes paren content and stops at the first
+        // top-level (or in-paren) `;`, matching the original semantics.
+        _ => {
+            let mut out = String::new();
+            let mut in_paren = false;
+            for ch in line.chars() {
+                if ch == '(' {
+                    in_paren = true;
+                    continue;
+                }
+                if ch == ')' {
+                    in_paren = false;
+                    continue;
+                }
+                if ch == ';' {
+                    break;
+                }
+                if !in_paren {
+                    out.push(ch);
+                }
+            }
+            Cow::Owned(out)
         }
     }
-    out
 }
 
 #[cfg(test)]

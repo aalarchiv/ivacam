@@ -44,7 +44,21 @@ pub fn import_svg_bytes(
     bytes: &[u8],
     opts: &ImportOptions,
 ) -> Result<ImportOutput> {
-    let tree = Tree::from_data(bytes, &usvg::Options::default()).map_err(|e| {
+    // usvg resolves physical lengths (mm/cm/in/pt/pc) to px using `dpi`
+    // (default 96 → 1mm = 96/25.4 ≈ 3.78 px). The walker below treats
+    // usvg's output coordinates directly as millimetres, so the default
+    // dpi would inflate an Inkscape `width="75mm"` drawing to ~283mm
+    // (≈3.78×). Setting dpi = 25.4 makes 1mm resolve to exactly 1px, so a
+    // physical-unit SVG imports at its true size. Unitless / px geometry
+    // (Unit::None / Unit::Px) skips the dpi factor in usvg's unit
+    // resolver, so a bare-`viewBox` SVG with no real-world size still maps
+    // user units → mm at 1:1 — preserving the DXF-style convention the
+    // unitless-viewBox path (and the tests below) rely on.
+    let usvg_opts = usvg::Options {
+        dpi: 25.4,
+        ..usvg::Options::default()
+    };
+    let tree = Tree::from_data(bytes, &usvg_opts).map_err(|e| {
         Error::bad_input(format!("svg parse: {e}"))
             .with_hint("File is not a valid SVG — check for malformed XML or unsupported features.")
     })?;
@@ -265,6 +279,53 @@ mod tests {
             let gap = w[0].end.distance(w[1].start);
             assert!(gap < 1e-3, "gap between flattened chords: {gap}");
         }
+    }
+
+    #[test]
+    fn physical_mm_units_import_at_true_size() {
+        // Inkscape-style: a 75mm page whose viewBox is in mm user units
+        // (width="75mm" + viewBox="0 0 75 75"). Must import at 75mm, not
+        // the ~283mm the default 96-dpi px resolution produced (the bug
+        // that made stock compute ~4× too large).
+        let svg = br"<svg xmlns='http://www.w3.org/2000/svg' width='75mm' height='75mm' viewBox='0 0 75 75'>
+            <rect x='0' y='0' width='75' height='75'/>
+        </svg>";
+        let out = import_svg_bytes("mm.svg".into(), svg, &ImportOptions::default()).unwrap();
+        let w = out.bbox.max_x - out.bbox.min_x;
+        let h = out.bbox.max_y - out.bbox.min_y;
+        assert!((w - 75.0).abs() < 0.1, "width should be ~75mm, got {w}");
+        assert!((h - 75.0).abs() < 0.1, "height should be ~75mm, got {h}");
+    }
+
+    #[test]
+    fn physical_mm_units_with_px_viewbox_import_at_true_size() {
+        // Same 75mm physical size but a px-based viewBox (75mm = 283.4646
+        // px at 96dpi). usvg scales the viewBox to the 75px viewport, so
+        // geometry still lands at true mm regardless of the viewBox unit.
+        let svg = br"<svg xmlns='http://www.w3.org/2000/svg' width='75mm' height='75mm' viewBox='0 0 283.4646 283.4646'>
+            <rect x='0' y='0' width='283.4646' height='283.4646'/>
+        </svg>";
+        let out = import_svg_bytes("mmpx.svg".into(), svg, &ImportOptions::default()).unwrap();
+        let w = out.bbox.max_x - out.bbox.min_x;
+        let h = out.bbox.max_y - out.bbox.min_y;
+        assert!((w - 75.0).abs() < 0.2, "width should be ~75mm, got {w}");
+        assert!((h - 75.0).abs() < 0.2, "height should be ~75mm, got {h}");
+    }
+
+    #[test]
+    fn unitless_viewbox_still_maps_user_units_to_mm_one_to_one() {
+        // No physical width/height — a bare viewBox. The dpi change must
+        // NOT touch this path: 100 user units stay 100mm (Unit::None skips
+        // the dpi factor in usvg).
+        let svg = br"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
+            <rect x='0' y='0' width='100' height='100'/>
+        </svg>";
+        let out = import_svg_bytes("unitless.svg".into(), svg, &ImportOptions::default()).unwrap();
+        let w = out.bbox.max_x - out.bbox.min_x;
+        assert!(
+            (w - 100.0).abs() < 0.01,
+            "unitless width should stay 100, got {w}"
+        );
     }
 
     #[test]

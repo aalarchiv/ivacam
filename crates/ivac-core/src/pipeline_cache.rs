@@ -204,14 +204,99 @@ pub fn op_cache_key_with_finish(
     work_offset: &WorkOffset,
     post_processor_tag: u8,
 ) -> OpCacheKey {
+    // Back-compat shell: serialize the project-global blobs and borrow
+    // the segments, then defer to the shared keying core. The per-Generate
+    // hot path skips this shell and reuses one [`GlobalKeyBlobs`] across
+    // all ops (see `op_cache_key_with_blobs`).
+    let blobs = GlobalKeyBlobs::new(machine, fixtures, text_layers, relief_sources, work_offset);
+    let refs: Vec<&Segment> = selected_segments.iter().collect();
+    op_cache_key_with_blobs(&blobs, op, tool, finish_tool, &refs, post_processor_tag)
+}
+
+/// Pre-serialized JSON of the project-global cache-key inputs that are
+/// identical for every op in a single Generate — normalized machine
+/// config, fixtures, text layers, relief sources, and work offset.
+///
+/// Build this ONCE per Generate and feed it to every op via
+/// [`op_cache_key_with_blobs`]. The old per-op path re-ran
+/// `serde_json::to_vec` on each of these blobs for every op — O(ops ×
+/// config-size) of throwaway JSON, worst of all for relief sources whose
+/// brightness grids can be large. Serializing once collapses that to
+/// O(config) + a cheap byte-rehash per op.
+///
+/// Because every op key folds these bytes, editing any global blob
+/// (machine, fixture, text, relief, work offset) still invalidates the
+/// cached output of all ops — correctness is unchanged.
+#[derive(Debug)]
+pub struct GlobalKeyBlobs {
+    machine: Option<Vec<u8>>,
+    fixtures: Option<Vec<u8>>,
+    text_layers: Option<Vec<u8>>,
+    relief_sources: Option<Vec<u8>>,
+    work_offset: Option<Vec<u8>>,
+}
+
+impl GlobalKeyBlobs {
+    #[must_use]
+    pub fn new(
+        machine: &MachineConfig,
+        fixtures: &[Fixture],
+        text_layers: &[TextLayer],
+        relief_sources: &[ReliefSource],
+        work_offset: &WorkOffset,
+    ) -> Self {
+        // MachineConfig is the one wire type with a deliberate
+        // gcode/estimator split: accel / jerk / rapid_speed /
+        // toolchange_s / use_kinematic_time_estimate affect only the TIME
+        // ESTIMATE, not the emitted gcode, so tuning them must hit the
+        // cheap re-estimate path rather than invalidate the expensive
+        // toolpath cache. Normalize those to default, then serialize the
+        // rest — a new GCODE-affecting machine field still auto-
+        // participates; a future estimator-only field would (until added
+        // here) merely over-invalidate, never serve stale gcode.
+        let mut machine_key = machine.clone();
+        let machine_defaults = MachineConfig::default();
+        machine_key.accel = machine_defaults.accel;
+        machine_key.jerk = machine_defaults.jerk;
+        machine_key.rapid_speed = machine_defaults.rapid_speed;
+        machine_key.toolchange_s = machine_defaults.toolchange_s;
+        machine_key.use_kinematic_time_estimate = machine_defaults.use_kinematic_time_estimate;
+        Self {
+            machine: serialize_for_hash(&machine_key),
+            fixtures: serialize_for_hash(fixtures),
+            text_layers: serialize_for_hash(text_layers),
+            relief_sources: serialize_for_hash(relief_sources),
+            work_offset: serialize_for_hash(work_offset),
+        }
+    }
+}
+
+/// Shared keying core. Hashes the op-local inputs (op, tool, finish
+/// tool, selected segments) fresh, and folds the once-serialized global
+/// blobs from `blobs`. Produces a byte-identical key to the all-in-one
+/// `op_cache_key_with_finish` for the same inputs — the only difference
+/// is that the global blobs were serialized once, not per op.
+///
+/// Segments are taken by reference (`&[&Segment]`) so the caller hashes
+/// the project's geometry without cloning it — `OpSource::All` would
+/// otherwise deep-clone the whole segment pool per op just to key it.
+#[must_use]
+pub fn op_cache_key_with_blobs(
+    blobs: &GlobalKeyBlobs,
+    op: &Op,
+    tool: &ToolEntry,
+    finish_tool: Option<&ToolEntry>,
+    selected_segments: &[&Segment],
+    post_processor_tag: u8,
+) -> OpCacheKey {
     let mut h = SeaHasher::new();
     PIPELINE_VERSION.hash(&mut h);
     h.write_u8(post_processor_tag);
-    // Every op/tool/machine/config input is hashed via its canonical
-    // serde-JSON — the schema types are the single source of truth, so a
-    // new field on any wire type automatically participates in the key
-    // with no hand-mirror to forget. Geometry (`selected_segments`) is
-    // the bulk and a stable leaf, so it keeps a lightweight direct hash.
+    // Op-local inputs are hashed via their canonical serde-JSON — the
+    // schema types are the single source of truth, so a new field on any
+    // wire type automatically participates in the key with no hand-mirror
+    // to forget. Geometry (`selected_segments`) is the bulk and a stable
+    // leaf, so it keeps a lightweight direct hash.
     hash_serde(op, &mut h);
     hash_serde(tool, &mut h);
     match finish_tool {
@@ -221,42 +306,19 @@ pub fn op_cache_key_with_finish(
             hash_serde(t, &mut h);
         }
     }
-    // MachineConfig is the one wire type with a deliberate gcode/estimator
-    // split: accel / jerk / rapid_speed / toolchange_s /
-    // use_kinematic_time_estimate affect only the TIME ESTIMATE, not the
-    // emitted gcode, so tuning them must hit the cheap re-estimate path
-    // rather than invalidate the expensive toolpath cache. Normalize those
-    // to default, then serde-hash the rest — a new GCODE-affecting machine
-    // field still auto-participates; a future estimator-only field would
-    // (until added here) merely over-invalidate, never serve stale gcode.
-    let mut machine_key = machine.clone();
-    let machine_defaults = MachineConfig::default();
-    machine_key.accel = machine_defaults.accel;
-    machine_key.jerk = machine_defaults.jerk;
-    machine_key.rapid_speed = machine_defaults.rapid_speed;
-    machine_key.toolchange_s = machine_defaults.toolchange_s;
-    machine_key.use_kinematic_time_estimate = machine_defaults.use_kinematic_time_estimate;
-    hash_serde(&machine_key, &mut h);
+    hash_serialized(&blobs.machine, &mut h);
     h.write_usize(selected_segments.len());
-    for seg in selected_segments {
+    for &seg in selected_segments {
         hash_segment(seg, &mut h);
     }
-    hash_serde(fixtures, &mut h);
-    // Fold the consumed text layers into the key. Edits to font /
-    // content / size / placement / alignment must invalidate the cache
-    // (otherwise the user changes the engraving text and Generate
-    // happily serves the old gcode). Conservative — every text_layer,
-    // not just the ones this op consumes via `OpSource::Layers`.
-    hash_serde(text_layers, &mut h);
-    // Fold relief surface sources into the key like text_layers —
-    // editing the source image (brightness grid) must invalidate the
-    // cached relief toolpath. Conservative (hash all).
-    hash_serde(relief_sources, &mut h);
-    // Project work_offset (xyz + WCS selector) is consulted by sim
-    // alignment + the WCS-origin warning, and will drive G10 L20 /
-    // G54..G59 emission — hash it so cached gcode authored against a
-    // different work_offset is invalidated.
-    hash_serde(work_offset, &mut h);
+    hash_serialized(&blobs.fixtures, &mut h);
+    // The fixtures / text layers / relief sources / work offset blobs
+    // were folded into `blobs` once per Generate — see GlobalKeyBlobs for
+    // why each must still participate (text content, relief brightness
+    // grids, and the work offset all change emitted gcode).
+    hash_serialized(&blobs.text_layers, &mut h);
+    hash_serialized(&blobs.relief_sources, &mut h);
+    hash_serialized(&blobs.work_offset, &mut h);
     OpCacheKey(h.finish())
 }
 
@@ -272,9 +334,26 @@ pub fn op_cache_key_with_finish(
 /// never are (see module docs); on a degenerate input we fold a sentinel
 /// rather than panic, so the key stays total.
 fn hash_serde<T: Serialize + ?Sized, H: Hasher>(v: &T, h: &mut H) {
-    match serde_json::to_vec(v) {
-        Ok(bytes) => bytes.hash(h),
-        Err(_) => 0xDEAD_BEEF_u32.hash(h),
+    hash_serialized(&serialize_for_hash(v), h);
+}
+
+/// Serialize a wire type to the canonical JSON bytes [`hash_serde`]
+/// would hash, returning `None` on the same `serde_json` error (non-
+/// finite float — never happens for these types; see module docs).
+/// Lets a global blob be serialized once and re-folded into many op keys
+/// via [`hash_serialized`] without re-running serde per op.
+fn serialize_for_hash<T: Serialize + ?Sized>(v: &T) -> Option<Vec<u8>> {
+    serde_json::to_vec(v).ok()
+}
+
+/// Fold pre-serialized JSON bytes (from [`serialize_for_hash`]) into a
+/// hasher with EXACTLY the byte sequence [`hash_serde`] emits for the
+/// same value — `Some` hashes the bytes, `None` folds the same sentinel
+/// the serde-error path uses.
+fn hash_serialized<H: Hasher>(bytes: &Option<Vec<u8>>, h: &mut H) {
+    match bytes {
+        Some(b) => b.hash(h),
+        None => 0xDEAD_BEEF_u32.hash(h),
     }
 }
 
@@ -760,6 +839,39 @@ mod tests {
         let k2 =
             op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[tl2], &[], &wo, 0);
         assert_ne!(k1, k2, "text content change must invalidate the cache key");
+    }
+
+    /// Editing a `ReliefSource` (its brightness grid) invalidates the
+    /// per-op cache. Relief grids are the heaviest blob the key folds, so
+    /// the H4 fix serializes them once per Generate; this guards that the
+    /// serialize-once path still notices a grid edit. Two relief slices
+    /// differing only in one brightness cell must produce two keys.
+    #[test]
+    fn relief_source_change_changes_key() {
+        let segs = square(20.0);
+        let op = profile_op();
+        let tool = endmill();
+        let machine = MachineConfig::default();
+        let wo = WorkOffset::default();
+        let rs1 = ReliefSource {
+            id: 1,
+            name: "heightmap".into(),
+            origin: Point2::new(0.0, 0.0),
+            cell: 0.5,
+            cols: 2,
+            rows: 2,
+            brightness: vec![0.1, 0.2, 0.3, 0.4],
+        };
+        let mut rs2 = rs1.clone();
+        rs2.brightness[3] = 0.99;
+        let k1 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &[rs1], &wo, 0);
+        let k2 =
+            op_cache_key_with_finish(&op, &tool, None, &machine, &segs, &[], &[], &[rs2], &wo, 0);
+        assert_ne!(
+            k1, k2,
+            "relief brightness edit must invalidate the cache key"
+        );
     }
 
     /// Changing `machine.name` / `work_area` / `capabilities`

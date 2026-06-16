@@ -26,17 +26,20 @@ use super::PipelineWarning;
 /// falls outside the current `objects` set is silently skipped (e.g.
 /// after a prior op's pattern expansion replaced the chained set — the
 /// resulting empty segment list still hashes deterministically).
-pub(in crate::pipeline) fn resolve_op_segments(
+pub(in crate::pipeline) fn resolve_op_segment_refs<'a>(
     op: &Op,
-    all: &[Segment],
-    objects: &[VcObject],
-) -> Vec<Segment> {
+    all: &'a [Segment],
+    objects: &'a [VcObject],
+) -> Vec<&'a Segment> {
     match &op.source {
-        OpSource::All => all.to_vec(),
+        // Borrow, never clone: the sole production caller is the cache
+        // key, which only iterates these to hash them. `OpSource::All`
+        // would otherwise deep-clone the entire segment pool per op
+        // (O(ops·segments) of pure throwaway copies just to key).
+        OpSource::All => all.iter().collect(),
         OpSource::Layers { layers, .. } => all
             .iter()
             .filter(|s| layers.iter().any(|l| l.as_str() == s.layer.as_ref()))
-            .cloned()
             .collect(),
         OpSource::Objects { ids, .. } => {
             let mut out = Vec::new();
@@ -52,7 +55,7 @@ pub(in crate::pipeline) fn resolve_op_segments(
                     continue;
                 };
                 if let Some(obj) = objects.get(idx) {
-                    out.extend(obj.segments.iter().cloned());
+                    out.extend(obj.segments.iter());
                 }
             }
             out
@@ -295,7 +298,7 @@ mod tests {
             ids: vec![0, 2], // id=0 invalid (should be skipped), id=2 → obj_b
             combine: SourceCombine::Auto,
         };
-        let segs_id0 = resolve_op_segments(&op_id0, &[], &objects);
+        let segs_id0 = resolve_op_segment_refs(&op_id0, &[], &objects);
         // Only obj_b's segments should be present; obj_a (index 0) must
         // NOT be smuggled in through saturating_sub(1)=0.
         assert_eq!(
@@ -319,7 +322,7 @@ mod tests {
             ids: vec![2],
             combine: SourceCombine::Auto,
         };
-        let segs_no_id0 = resolve_op_segments(&op_no_id0, &[], &objects);
+        let segs_no_id0 = resolve_op_segment_refs(&op_no_id0, &[], &objects);
         assert_eq!(
             segs_id0, segs_no_id0,
             "OpSource::Objects ids=[0,2] and [2] must resolve to the same segments after the id=0 guard"

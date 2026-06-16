@@ -57,7 +57,7 @@ mod warnings;
 // they moved out of pipeline.rs. Visibility matches the underlying
 // pub(in crate::pipeline) declarations in selection.rs.
 pub(in crate::pipeline) use selection::{
-    op_includes_object, ordered_selection, resolve_op_segments, source_combine_mode,
+    op_includes_object, ordered_selection, resolve_op_segment_refs, source_combine_mode,
     validate_op_source_layers, validate_op_source_objects,
 };
 
@@ -86,7 +86,9 @@ use crate::gcode::{
     emit_program_begin, emit_program_end, grbl, hpgl, linuxcnc, preview, PostProcessor,
 };
 use crate::geometry::Point2;
-use crate::pipeline_cache::{op_cache_key_with_finish, OpCacheValue, PipelineCache};
+use crate::pipeline_cache::{
+    op_cache_key_with_blobs, GlobalKeyBlobs, OpCacheValue, PipelineCache,
+};
 use crate::project::ToolChangeStrategy;
 use crate::project::{Op, OpKind, PocketStrategy, Project, ToolEntry};
 
@@ -999,36 +1001,35 @@ fn spindle_warmup_seconds(project: &Project) -> f64 {
 // Per-op dispatch + dual-tool finish coordination is a long state machine
 // that doesn't usefully split.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-/// Compute the op's toolpath cache key, or `None` when caching is off or
-/// the op's primary tool is unknown. Folds the dual-tool finish entry
-/// into the key so changing the finish tool's diameter / feeds /
-/// RPMs invalidates cached output.
+/// Compute the op's toolpath cache key, or `None` when caching is off
+/// (`blobs == None`) or the op's primary tool is unknown. Folds the
+/// dual-tool finish entry into the key so changing the finish tool's
+/// diameter / feeds / RPMs invalidates cached output.
+///
+/// `blobs` carries the project-global key inputs serialized once per
+/// Generate (machine / fixtures / text / relief / work offset); passing
+/// `None` means caching is disabled. Segments are borrowed, not cloned.
 fn compute_op_cache_key(
     op: &Op,
     project: &Project,
     objects: &[VcObject],
     tool_index: &HashMap<u32, &ToolEntry>,
     post_tag: u8,
-    caching: bool,
+    blobs: Option<&GlobalKeyBlobs>,
 ) -> Option<crate::pipeline_cache::OpCacheKey> {
-    if !caching {
-        return None;
-    }
+    let blobs = blobs?;
     let tool = tool_index.get(&op.tool_id).copied()?;
     let finish_tool = op
         .finish_tool_id
         .filter(|id| *id != op.tool_id)
         .and_then(|id| tool_index.get(&id).copied());
-    Some(op_cache_key_with_finish(
+    let segments = resolve_op_segment_refs(op, &project.segments, objects);
+    Some(op_cache_key_with_blobs(
+        blobs,
         op,
         tool,
         finish_tool,
-        &project.machine,
-        &resolve_op_segments(op, &project.segments, objects),
-        &project.fixtures,
-        &project.text_layers,
-        &project.relief_sources,
-        &project.work_offset,
+        &segments,
         post_tag,
     ))
 }
@@ -1317,6 +1318,20 @@ where
     // the M6 envelope decision (`op.tool_id`), the cache-key tool lookup,
     // and the finish-tool lookup all run in O(1) instead of O(tools).
     let tool_index = build_tool_index(&project.tools);
+    // Serialize the project-global cache-key inputs (machine / fixtures /
+    // text layers / relief sources / work offset) ONCE per Generate, not
+    // per op — relief brightness grids especially are large and were
+    // previously re-serialized for every op's key. `None` when caching is
+    // off so we skip the work entirely.
+    let key_blobs = cache.map(|_| {
+        GlobalKeyBlobs::new(
+            &project.machine,
+            &project.fixtures,
+            &project.text_layers,
+            &project.relief_sources,
+            &project.work_offset,
+        )
+    });
     // Track the tool number last asserted via post.tool() so we
     // can emit T<n> M6 + Z-shift at every op boundary where the
     // primary tool changes — and at the FIRST op so the program never
@@ -1440,7 +1455,7 @@ where
         // store_op_cache; this loop keeps only the control flow (hit ⇒
         // bookkeep + continue; miss ⇒ emit + store + fall through).
         let cache_key =
-            compute_op_cache_key(op, project, objects, &tool_index, post_tag, cache.is_some());
+            compute_op_cache_key(op, project, objects, &tool_index, post_tag, key_blobs.as_ref());
 
         if let (Some(c), Some(key)) = (cache, cache_key) {
             if let Some(cached) = c.get(key) {

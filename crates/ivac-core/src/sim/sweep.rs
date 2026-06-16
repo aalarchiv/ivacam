@@ -752,6 +752,92 @@ pub fn sweep_range_cancellable(
     total
 }
 
+/// Per-segment sim-diagnostics cache for fast backward scrubbing. The
+/// fixture / holder / rapid checks are deterministic for a fixed toolpath
+/// and heightmap prefix, yet a scrub-back re-sweeps (and re-checks) the
+/// same segments. Caching each segment's emitted warnings by index lets a
+/// re-sweep REPLAY them (a cheap clone) instead of re-running the
+/// holder-footprint pass — which walks a footprint typically ~10× the
+/// cutter's cell count and dominates re-sweep cost.
+///
+/// Validity: a cached entry assumes the heightmap prefix leading to that
+/// segment is unchanged. That holds across pure scrubbing (sweeps are
+/// deterministic and monotone, so re-sweeping `[0, i)` reproduces the same
+/// walls segment `i` was first checked against) but NOT across a fixture
+/// edit or a new toolpath — callers must [`SegmentWarningCache::clear`]
+/// then.
+#[derive(Debug, Default)]
+pub struct SegmentWarningCache {
+    by_segment: std::collections::HashMap<usize, Vec<SimWarning>>,
+}
+
+impl SegmentWarningCache {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Forget every cached segment. Call when the toolpath or fixtures
+    /// change so a stale diagnostic can't be replayed.
+    pub fn clear(&mut self) {
+        self.by_segment.clear();
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.by_segment.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.by_segment.is_empty()
+    }
+}
+
+/// Like [`sweep_range`] but replays each segment's diagnostics from
+/// `cache` instead of recomputing them when the segment has already been
+/// swept once (the scrub-back hot path). On a cache miss the warnings are
+/// computed via [`sweep_segment`] and stored. The carve always runs — only
+/// the (expensive) warning pass is short-circuited — so the heightfield
+/// is identical to a plain [`sweep_range`], and the replayed warnings are
+/// byte-identical to the recomputed ones (the checks are deterministic for
+/// the same heightmap prefix).
+#[allow(clippy::too_many_arguments)]
+pub fn sweep_range_cached(
+    heightmap: &mut Heightmap,
+    segments: &[ToolpathSegment],
+    from_idx: usize,
+    to_idx: usize,
+    profile: &ToolProfile,
+    fixtures: &[Fixture],
+    holder: Option<&HolderProfile>,
+    diagnostics: &mut SimDiagnostics,
+    cache: &mut SegmentWarningCache,
+) -> u32 {
+    let lo = from_idx.min(segments.len());
+    let hi = to_idx.min(segments.len());
+    let mut total = 0u32;
+    for (offset, seg) in segments[lo..hi].iter().enumerate() {
+        let idx = lo + offset;
+        if let Some(cached) = cache.by_segment.get(&idx) {
+            // Cache hit: replay this segment's warnings (cheap clone) and
+            // carve only — skip the holder/fixture/rapid recompute.
+            for w in cached {
+                diagnostics.push(w.clone());
+            }
+            total += sweep_chord_carve(heightmap, seg, profile);
+        } else {
+            // Cache miss: compute warnings + carve, then capture exactly
+            // the warnings this segment pushed for future replay.
+            let before = diagnostics.warnings.len();
+            total += sweep_segment(heightmap, seg, profile, idx, fixtures, holder, diagnostics);
+            let produced = diagnostics.warnings[before..].to_vec();
+            cache.by_segment.insert(idx, produced);
+        }
+    }
+    total
+}
+
 /// Convert a world-space AABB to the inclusive cell-index range it
 /// covers. Returns None when the AABB is fully outside the heightmap.
 fn world_aabb_to_cells(

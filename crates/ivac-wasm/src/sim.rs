@@ -31,7 +31,7 @@ use ivac_core::project::{Fixture, ToolEntry};
 use ivac_core::sim::diagnostics::{SimDiagnostics, SimRunSummary};
 use ivac_core::sim::heightmap::{Heightmap, ToolProfile};
 use ivac_core::sim::holder::HolderProfile;
-use ivac_core::sim::sweep::{sweep_range, sweep_segment_partial};
+use ivac_core::sim::sweep::{sweep_range_cached, sweep_segment_partial, SegmentWarningCache};
 
 use crate::{into_js_error, panic_message, structured_error_to_js};
 
@@ -70,6 +70,11 @@ pub struct Simulator {
     /// replays the tail instead of re-simulating the whole prefix. See
     /// [`Simulator::checkpoint`] / [`Simulator::restore_checkpoint`].
     checkpoints: Vec<HeightmapCheckpoint>,
+    /// Per-segment fixture/holder/rapid diagnostics cache. A scrub-back
+    /// re-sweep replays each already-swept segment's warnings instead of
+    /// re-running the holder-footprint pass (the dominant re-sweep cost).
+    /// Cleared whenever the toolpath or fixtures change.
+    warning_cache: SegmentWarningCache,
 }
 
 /// One backward-scrub heightmap snapshot. `data` mirrors
@@ -95,6 +100,7 @@ impl Simulator {
             toolpath: Vec::new(),
             sticky_warnings: Vec::new(),
             checkpoints: Vec::new(),
+            warning_cache: SegmentWarningCache::new(),
         }
     }
 
@@ -181,6 +187,10 @@ impl Simulator {
             serde_wasm_bindgen::from_value(segments).map_err(into_js_error)?;
         let n = parsed.len() as u32;
         self.toolpath = parsed;
+        // New program → cached per-segment diagnostics + heightmap
+        // checkpoints are stale.
+        self.warning_cache.clear();
+        self.checkpoints.clear();
         Ok(n)
     }
 
@@ -189,6 +199,8 @@ impl Simulator {
     /// WASM-side memory.
     pub fn clear_toolpath(&mut self) {
         self.toolpath = Vec::new();
+        self.warning_cache.clear();
+        self.checkpoints.clear();
     }
 
     /// Number of cached segments.
@@ -233,6 +245,10 @@ impl Simulator {
         let parsed: Vec<Fixture> =
             serde_wasm_bindgen::from_value(fixtures).map_err(into_js_error)?;
         self.fixtures = parsed;
+        // Fixture-collision warnings depend on the fixture set — drop the
+        // cached per-segment diagnostics so they recompute against the new
+        // fixtures.
+        self.warning_cache.clear();
         Ok(())
     }
 
@@ -276,7 +292,7 @@ impl Simulator {
             self.last_diagnostics = SimDiagnostics::new();
             let profile = ToolProfile::from_tool(&tool_entry);
             let holder = HolderProfile::from_tool(&tool_entry);
-            let touched = sweep_range(
+            let touched = sweep_range_cached(
                 &mut self.heightmap,
                 &self.toolpath,
                 from_idx as usize,
@@ -285,6 +301,7 @@ impl Simulator {
                 &self.fixtures,
                 holder.as_ref(),
                 &mut self.last_diagnostics,
+                &mut self.warning_cache,
             );
             // Emit a single tracing::info line per advance so the
             // frontend (and post-mortem tooling) have a stable telemetry
@@ -427,7 +444,7 @@ impl Simulator {
         self.last_diagnostics = SimDiagnostics::new();
         let profile = ToolProfile::from_tool(tool);
         let holder = HolderProfile::from_tool(tool);
-        let _touched = sweep_range(
+        let _touched = sweep_range_cached(
             &mut self.heightmap,
             segments,
             from_idx as usize,
@@ -436,6 +453,7 @@ impl Simulator {
             &self.fixtures,
             holder.as_ref(),
             &mut self.last_diagnostics,
+            &mut self.warning_cache,
         );
         match self.heightmap.dirty_aabb() {
             Some((ix0, iy0, ix1, iy1)) => vec![ix0, iy0, ix1, iy1],
@@ -485,6 +503,12 @@ impl Simulator {
     #[cfg(test)]
     pub(crate) fn heightmap(&self) -> &Heightmap {
         &self.heightmap
+    }
+
+    /// Test-only: number of segments with cached diagnostics.
+    #[cfg(test)]
+    pub(crate) fn warning_cache_len(&self) -> usize {
+        self.warning_cache.len()
     }
 }
 
@@ -850,6 +874,72 @@ mod tests {
             sim.checkpoints[0].data,
             "restore reflects the overwritten snapshot"
         );
+    }
+
+    /// Re-sweeping the same range must replay cached per-segment
+    /// diagnostics byte-identically to the first (computed) sweep — the
+    /// M1 win: scrub-back skips the holder/fixture/rapid recompute but the
+    /// warnings the user sees are unchanged.
+    #[test]
+    fn re_sweep_replays_cached_diagnostics_identically() {
+        let mut sim = Simulator::new(0.0, 0.0, 40.0, 40.0, 1.0, 0.0);
+        // seg 0 plunges a hole; seg 1 is a rapid dragging through stock at
+        // z=-2 → a rapid_through_material collision warning.
+        let segs = vec![
+            plunge(10.0, 10.0, 0.0, -5.0),
+            ToolpathSegment {
+                from: Pose3 {
+                    x: 0.0,
+                    y: 20.0,
+                    z: -2.0,
+                },
+                to: Pose3 {
+                    x: 40.0,
+                    y: 20.0,
+                    z: -2.0,
+                },
+                kind: MoveKind::Rapid,
+                gcode_line: 0,
+                op_id: 0,
+            },
+        ];
+        let tool = endmill(4.0);
+
+        let _ = sim.advance_inner(&segs, &tool, 0, 2);
+        let first: Vec<_> = sim.last_diagnostics.warnings.clone();
+        assert!(
+            first.iter().any(|w| matches!(
+                w,
+                ivac_core::sim::diagnostics::SimWarning::RapidThroughMaterial { .. }
+            )),
+            "first sweep should flag the rapid-through-material"
+        );
+        assert_eq!(sim.warning_cache_len(), 2, "both segments cached");
+
+        // Rewind the heightfield (cache retained) and re-sweep — the
+        // warnings must be replayed identically from the cache.
+        sim.reset();
+        let _ = sim.advance_inner(&segs, &tool, 0, 2);
+        let second: Vec<_> = sim.last_diagnostics.warnings.clone();
+        assert_eq!(
+            format!("{first:?}"),
+            format!("{second:?}"),
+            "re-sweep diagnostics must match the first sweep exactly"
+        );
+    }
+
+    /// Clearing the toolpath must drop the diagnostics cache so stale
+    /// warnings can't be replayed against a changed program. (`set_toolpath`
+    /// / `set_fixtures` route through the same `warning_cache.clear()`; they
+    /// take a `JsValue` so they're exercised in the browser, not here.)
+    #[test]
+    fn clear_toolpath_drops_warning_cache() {
+        let mut sim = Simulator::new(0.0, 0.0, 40.0, 40.0, 1.0, 0.0);
+        let segs = vec![plunge(10.0, 10.0, 0.0, -1.0)];
+        let _ = sim.advance_inner(&segs, &endmill(4.0), 0, 1);
+        assert_eq!(sim.warning_cache_len(), 1);
+        sim.clear_toolpath();
+        assert_eq!(sim.warning_cache_len(), 0, "clear_toolpath drops the cache");
     }
 
     /// Partial slices with `t_start > 0` MUST NOT emit fixture / holder /

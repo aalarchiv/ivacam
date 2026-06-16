@@ -31,6 +31,10 @@ hasn't been run on real Windows — don't ship it to users without a
 native (or VM, [§6](#6-building-from-a-windows-vm)) build that you've
 actually launched.
 
+For **code signing** (so testers don't hit a SmartScreen wall), see
+[`docs/SIGNING.md`](./docs/SIGNING.md) — ivaCAM uses a free SignPath
+Foundation certificate, applied in CI against the native Windows build.
+
 Either way the codebase is already portable: the only Linux-specific
 Rust (`crates/ivac-tauri/src/main.rs` — the WebKit-child SIGKILL and the
 GStreamer media-backend disable) is gated behind

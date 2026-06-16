@@ -7,8 +7,15 @@ name: Release desktop bundles
 #
 # Triggered on a `v*` tag push (e.g. v0.1.0). Builds Tauri 2 bundles for
 # Linux (.deb / .rpm / AppImage), macOS (.dmg / .app, optionally notarized),
-# and Windows (.msi via WiX, optionally Authenticode-signed) in parallel,
-# then attaches the artifacts to a GitHub Release.
+# and Windows (.msi + NSIS .exe) in parallel, then attaches the artifacts
+# to a GitHub Release.
+#
+# Windows code signing is done by SignPath Foundation (free OV cert for
+# OSS) — see docs/SIGNING.md. The signing steps stay INERT until the repo
+# variable SIGNPATH_ENABLED is set to 'true' (after SignPath approves the
+# project). Until then the Windows installers are produced unsigned and
+# kept as CI artifacts only — public Releases publish signed installers
+# exclusively.
 #
 # Manual triggers (workflow_dispatch) build the bundles without a release
 # so we can sanity-check the matrix against main.
@@ -102,7 +109,10 @@ jobs:
             -o -name "*.msi" -o -name "*.exe" \
           \) -print
 
+      # Linux + macOS bundles publish directly. Windows is handled by the
+      # dedicated steps below so it can route through SignPath.
       - name: upload artifacts
+        if: matrix.platform.name != 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: ivaCAM-${{ matrix.platform.name }}
@@ -112,8 +122,47 @@ jobs:
             target/release/bundle/appimage/*.AppImage
             target/release/bundle/dmg/*.dmg
             target/release/bundle/macos/*.app.tar.gz
+
+      # ── Windows: unsigned upload → SignPath → signed upload ──
+      # The unsigned upload is ALWAYS produced: it's the input SignPath
+      # signs (referenced by artifact-id), and it stays a CI artifact for
+      # dev testing. It is excluded from public Releases (see release job).
+      - name: upload unsigned Windows installers
+        id: upload-unsigned-windows
+        if: matrix.platform.name == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivaCAM-windows-unsigned
+          path: |
             target/release/bundle/msi/*.msi
-            target/**/release/bundle/**/*
+            target/release/bundle/nsis/*-setup.exe
+
+      # Submit to SignPath Foundation for Authenticode signing. Inert
+      # until SIGNPATH_ENABLED=true and the SIGNPATH_* vars + token exist
+      # (Settings → Secrets and variables → Actions). Obtain the org id /
+      # slugs / API token from the SignPath web console after approval;
+      # define an artifact configuration there that signs the .msi and
+      # the NSIS .exe. See docs/SIGNING.md.
+      - name: submit to SignPath for signing
+        id: signpath
+        if: matrix.platform.name == 'windows' && vars.SIGNPATH_ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned-windows.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: upload signed Windows installers
+        if: matrix.platform.name == 'windows' && vars.SIGNPATH_ENABLED == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ivaCAM-windows-signed
+          path: signed/**/*
 
   release:
     name: attach to GitHub Release
@@ -126,7 +175,14 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+      # Publish everything except the unsigned Windows installers — those
+      # exist only as SignPath's signing input / dev CI artifacts. With
+      # SIGNPATH_ENABLED, the signed installers (ivaCAM-windows-signed)
+      # are published instead; without it, no Windows installer is
+      # attached to the public Release (by design — never ship unsigned).
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: artifacts/**/*
+          files: |
+            artifacts/**/*
+            !artifacts/ivaCAM-windows-unsigned/**

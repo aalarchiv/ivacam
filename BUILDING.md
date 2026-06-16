@@ -118,6 +118,17 @@ cd frontend && pnpm install && pnpm dev
 The browser downloads the ivac-wasm pkg lazily and runs the entire
 CAM pipeline client-side — no Rust server, no Python, no anything.
 
+> **Pkg freshness is automatic.** `pnpm dev` / `pnpm build` (and thus
+> every `cargo tauri build/dev`, which drives `pnpm build`) run
+> `frontend/scripts/ensure-wasm-fresh.mjs` first: it rebuilds the pkg via
+> `wasm-pack` only when the compiled wasm is older than the
+> `ivac-wasm`/`ivac-core` sources, and is a fast no-op otherwise. So you
+> normally don't run `wasm-pack` by hand — the explicit command above is
+> just for a clean first build or to refresh the pkg in isolation. If
+> `wasm-pack` isn't installed but a pkg already exists, the guard warns
+> and proceeds (a frontend-only dev can keep working); it only errors when
+> the pkg is missing entirely.
+
 #### Install-free trial channel (OS-agnostic)
 
 This is the lowest-friction way to let someone *try* ivaCAM:

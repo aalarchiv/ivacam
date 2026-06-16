@@ -193,8 +193,12 @@ pub fn pocket_zigzag(
     let mut flip = false;
     let tool_r = tool_diameter * 0.5;
     let mut y = min_y + tool_r;
+    // Scratch buffers reused across every scanline (and island) so
+    // `horizontal_crossings` doesn't allocate a fresh Vec per row.
+    let mut outer: Vec<f64> = Vec::new();
+    let mut island_xs: Vec<f64> = Vec::new();
     while y <= max_y - tool_r + 1e-9 {
-        let outer = horizontal_crossings(boundary, y, min_x, max_x);
+        horizontal_crossings_into(boundary, y, min_x, max_x, &mut outer);
         // Per-island crossings at this Y. Each island's crossings come
         // in even-odd pairs (entry/exit of the island interior). We
         // subtract those interior intervals from the outer-boundary
@@ -204,8 +208,8 @@ pub fn pocket_zigzag(
             if isl.len() < 3 {
                 continue;
             }
-            let xs = horizontal_crossings(isl, y, f64::NEG_INFINITY, f64::INFINITY);
-            for pair in xs.chunks_exact(2) {
+            horizontal_crossings_into(isl, y, f64::NEG_INFINITY, f64::INFINITY, &mut island_xs);
+            for pair in island_xs.chunks_exact(2) {
                 let lo = pair[0].min(pair[1]);
                 let hi = pair[0].max(pair[1]);
                 if hi > lo + 1e-9 {
@@ -393,8 +397,30 @@ fn orient(a: Point2, b: Point2, c: Point2) -> f64 {
     (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
 }
 
+/// `Vec`-returning convenience wrapper around [`horizontal_crossings_into`].
+/// Production code uses the buffer-reusing variant; this stays for the
+/// crossing-coalescing unit test.
+#[cfg(test)]
 pub(super) fn horizontal_crossings(poly: &[Point2], y: f64, min_x: f64, max_x: f64) -> Vec<f64> {
-    let mut xs = Vec::new();
+    let mut out = Vec::new();
+    horizontal_crossings_into(poly, y, min_x, max_x, &mut out);
+    out
+}
+
+/// Buffer-reusing variant of [`horizontal_crossings`]: writes the sorted,
+/// tangent-deduped crossing x-values into `out` (cleared first) instead of
+/// allocating a fresh `Vec` per call. The scanline pocket fill calls this
+/// once per row plus once per island per row, so reusing one buffer drops
+/// O(rows·islands) short-lived allocations. Output is identical to the
+/// `Vec`-returning wrapper.
+pub(super) fn horizontal_crossings_into(
+    poly: &[Point2],
+    y: f64,
+    min_x: f64,
+    max_x: f64,
+    out: &mut Vec<f64>,
+) {
+    out.clear();
     let n = poly.len();
     for i in 0..n {
         let a = poly[i];
@@ -412,10 +438,10 @@ pub(super) fn horizontal_crossings(poly: &[Point2], y: f64, min_x: f64, max_x: f
         let t = (y - lo.y) / (hi.y - lo.y);
         let x = lo.x + t * (hi.x - lo.x);
         if x >= min_x - 1e-3 && x <= max_x + 1e-3 {
-            xs.push(x);
+            out.push(x);
         }
     }
-    xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    out.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     // Collapse coincident crossings whose x values are within a
     // FUZZY-equivalent tolerance. A scanline that just grazes a vertex
     // produces TWO crossings at the same x (one per adjacent edge) when
@@ -428,25 +454,27 @@ pub(super) fn horizontal_crossings(poly: &[Point2], y: f64, min_x: f64, max_x: f
     // fill boundary at the vertex). An even run vanishes; an odd run is a
     // genuinely degenerate input that leaves one crossing (and trips the
     // odd-count warning below) rather than being dropped silently.
-    if xs.len() >= 2 {
+    // Done in place (write index ≤ read index) so no second allocation.
+    if out.len() >= 2 {
         let snap_tol = 1e-3_f64;
-        let mut dedup = Vec::with_capacity(xs.len());
+        let mut w = 0;
         let mut i = 0;
-        while i < xs.len() {
+        while i < out.len() {
             let mut j = i + 1;
-            while j < xs.len() && (xs[j] - xs[i]).abs() <= snap_tol {
+            while j < out.len() && (out[j] - out[i]).abs() <= snap_tol {
                 j += 1;
             }
             // Keep one crossing only when the coincident run has odd length
             // (a residual real crossing); pure tangent pairs cancel out.
             if (j - i) % 2 == 1 {
-                dedup.push(xs[i]);
+                out[w] = out[i];
+                w += 1;
             }
             i = j;
         }
-        xs = dedup;
+        out.truncate(w);
     }
-    if xs.len() % 2 == 1 {
+    if out.len() % 2 == 1 {
         // The snap pass couldn't bring the count to even (genuinely
         // degenerate input — e.g. an open contour or self-intersecting
         // ring). Surface a warning so the user sees uncut stock instead
@@ -454,12 +482,11 @@ pub(super) fn horizontal_crossings(poly: &[Point2], y: f64, min_x: f64, max_x: f
         // unpaired crossing for THIS scanline only.
         tracing::warn!(
             "horizontal_crossings: odd crossing count {} at y = {:.3}; trailing crossing dropped (degenerate polygon? open contour?)",
-            xs.len(),
+            out.len(),
             y
         );
-        xs.pop();
+        out.pop();
     }
-    xs
 }
 
 /// Combine a parallel-offset boundary pass with an inward cascade. Returns

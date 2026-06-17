@@ -27,7 +27,9 @@ describe('WorkspaceStore', () => {
     const t = new MemoryTransport();
     const s = await freshLoaded(t);
     s.update({ camera: { px: 1, py: 2, pz: 3, tx: 4, ty: 5, tz: 6 } });
-    s.update({ panels: { left_width: 100, right_width: 200, bottom_height: 300 } });
+    s.update({
+      panels: { left_width: 100, right_width: 200, bottom_height: 300, ops_fold_snap: 0.75 },
+    });
     s.addRecentProject('/tmp/a.vc-project.json', 'a.vc-project.json');
     s.setPerProject('/tmp/a.vc-project.json', {
       visible_layers: ['L1', 'L2'],
@@ -39,7 +41,12 @@ describe('WorkspaceStore', () => {
     const s2 = await freshLoaded(t);
     const w = s2.get();
     expect(w.camera).toEqual({ px: 1, py: 2, pz: 3, tx: 4, ty: 5, tz: 6 });
-    expect(w.panels).toEqual({ left_width: 100, right_width: 200, bottom_height: 300 });
+    expect(w.panels).toEqual({
+      left_width: 100,
+      right_width: 200,
+      bottom_height: 300,
+      ops_fold_snap: 0.75,
+    });
     expect(w.recent_projects).toHaveLength(1);
     expect(w.recent_projects[0].path).toBe('/tmp/a.vc-project.json');
     expect(w.last_project).toBe('/tmp/a.vc-project.json');

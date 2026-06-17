@@ -10,6 +10,7 @@
   import LayerList from './lib/components/LayerList.svelte';
   import TextList from './lib/components/TextList.svelte';
   import OperationsList from './lib/components/OperationsList.svelte';
+  import OperationsSheet from './lib/components/OperationsSheet.svelte';
   import StockPanel from './lib/components/StockPanel.svelte';
   import GenerateBar from './lib/components/GenerateBar.svelte';
   import PlaybackBar from './lib/components/PlaybackBar.svelte';
@@ -310,6 +311,16 @@
     mainTab = mt;
     if (pane) activePane = pane;
   }
+
+  // Operations bottom sheet (7jug.9): the phone hot-path surface. Shown on
+  // the Project 2D/3D activities only, and never while the (other-panes)
+  // sidebar overlay is open. Replaces routing Operations through that
+  // overlay — Stock/Layers/Text still use it.
+  const showOpsSheet = $derived(
+    layout.isNarrow &&
+      !mobilePanelOpen &&
+      (currentActivity === 'project-2d' || currentActivity === 'project-3d'),
+  );
 
   /// 3D button label cycles with the preview mode: 'both' → "3D",
   /// 'wireframe' → "3Dwire", 'solid' → "3Dsolid". The button does
@@ -731,6 +742,13 @@
     />
   {/if}
 
+  <!-- Operations bottom sheet — phone hot-path surface (.9). Fixed to the
+       bottom edge over the canvas; the split reserves padding for its
+       always-visible handle (see `.split.with-ops-sheet`). -->
+  {#if showOpsSheet}
+    <OperationsSheet />
+  {/if}
+
   <!-- ============== MAIN TABS ================================= -->
   <nav class="main-tabs" aria-label="Main areas">
     <button
@@ -921,6 +939,7 @@
     class="split"
     class:tab-hidden={mainTab !== 'project'}
     class:narrow={layout.isNarrow}
+    class:with-ops-sheet={showOpsSheet}
     style:--sidebar-width="{sidebarWidth}px"
   >
     <section class="viewport">
@@ -1347,6 +1366,12 @@
      sidebar becomes a full-screen overlay toggled by `mobilePanelOpen`. */
   .split.narrow {
     grid-template-columns: minmax(0, 1fr);
+  }
+  /* Reserve the Operations-sheet handle strip (44px) at the bottom so the
+     PlaybackBar / G-code toggle in the canvas column aren't hidden behind
+     the fixed sheet (.9). Matches HANDLE_PX in OperationsSheet.svelte. */
+  .split.with-ops-sheet {
+    padding-bottom: 44px;
   }
   .viewport {
     position: relative;

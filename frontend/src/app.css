@@ -89,6 +89,8 @@
   --z-overlay: 20; /* loading spinner overlay */
   --z-floating: 40; /* on-canvas popovers (sim-warning panel, tab popover) */
   --z-dropdown: 100; /* menu / Add+ dropdowns */
+  --z-mobile-panel: 200; /* narrow-layout full-screen sidebar overlay — above
+                            canvas popovers/dropdowns, below modals */
   --z-modal: 500; /* MachineDialog / ToolLibraryDialog / SettingsDialog / AddTextDialog */
   --z-toast: 600; /* error toast / SourceStaleToast — above modals because
                             backend errors that surface while a dialog is open

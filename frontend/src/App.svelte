@@ -110,6 +110,7 @@
   import { computeFootprint } from './lib/sim/driver';
   import { togglePane, revealPane, type SidebarPane } from './lib/state/sidebar-pane';
   import { resolveShortcut } from './lib/state/app-menu';
+  import { layout } from './lib/state/layout.svelte';
 
   /// Live label for the Stock panel summary — shows the current
   /// dimensions inline so the user sees the workpiece size at a glance
@@ -150,7 +151,15 @@
     const next = revealPane({ active: activeSidebarPane, prev: prevSidebarPane }, target);
     activeSidebarPane = next.active;
     prevSidebarPane = next.prev;
+    // On narrow layouts the sidebar is a full-screen overlay over the
+    // canvas, so a programmatic "show me this pane" (e.g. a canvas tap
+    // that jumps to its operation) must also raise the overlay.
+    if (layout.isNarrow) mobilePanelOpen = true;
   }
+  // Narrow-layout (<1024px) only: the sidebar collapses out of the
+  // 3-column grid and shows as a full-screen overlay over the canvas.
+  // `mobilePanelOpen` toggles that overlay; on desktop it's inert.
+  let mobilePanelOpen = $state(false);
   const stockDimsLabel = $derived.by<string>(() => {
     const cfg = project.data.stock;
     const fp = computeFootprint(project.transformedImport, cfg, project.data.machine.workArea);
@@ -781,6 +790,17 @@
         <span>Regions</span>
       </label>
     {/if}
+    {#if layout.isNarrow}
+      <button
+        type="button"
+        class="tb-btn mobile-panels-btn"
+        onclick={() => (mobilePanelOpen = true)}
+        title="Show panels — stock, layers, operations"
+        aria-label="Show panels"
+      >
+        ☰ Panels
+      </button>
+    {/if}
     <div
       class="pane-toggle"
       role="tablist"
@@ -817,6 +837,7 @@
   <main
     class="split"
     class:tab-hidden={mainTab !== 'project'}
+    class:narrow={layout.isNarrow}
     style:--sidebar-width="{sidebarWidth}px"
   >
     <section class="viewport">
@@ -851,12 +872,14 @@
           </button>
         </div>
         {#if gcodeOpen}
-          <Splitter
-            direction="vertical"
-            onResize={onGcodeResize}
-            onReset={resetGcode}
-            title="Drag to resize the G-code panel · double-click to reset"
-          />
+          {#if !layout.isNarrow}
+            <Splitter
+              direction="vertical"
+              onResize={onGcodeResize}
+              onReset={resetGcode}
+              title="Drag to resize the G-code panel · double-click to reset"
+            />
+          {/if}
           <div class="gcode-row" style:height="{gcodeHeight}px">
             {#if GcodePanel}
               {@const C = GcodePanel}
@@ -866,13 +889,31 @@
         {/if}
       {/if}
     </section>
-    <Splitter
-      direction="horizontal"
-      onResize={onSidebarResize}
-      onReset={resetSidebar}
-      title="Drag to resize the side panel · double-click to reset"
-    />
-    <aside class="sidebar" data-active={activeSidebarPane}>
+    {#if !layout.isNarrow}
+      <Splitter
+        direction="horizontal"
+        onResize={onSidebarResize}
+        onReset={resetSidebar}
+        title="Drag to resize the side panel · double-click to reset"
+      />
+    {/if}
+    {#if layout.isNarrow && mobilePanelOpen}
+      <button
+        type="button"
+        class="mobile-panel-close"
+        onclick={() => (mobilePanelOpen = false)}
+        aria-label="Back to drawing"
+        title="Back to drawing"
+      >
+        ✕
+      </button>
+    {/if}
+    <aside
+      class="sidebar"
+      class:narrow={layout.isNarrow}
+      class:mobile-open={mobilePanelOpen}
+      data-active={activeSidebarPane}
+    >
       <div class="stock-host" class:active={activeSidebarPane === 'stock'}>
         <button
           type="button"
@@ -1156,6 +1197,14 @@
     grid-template-columns: minmax(0, 1fr) auto var(--sidebar-width, 360px);
     overflow: hidden;
     min-height: 0;
+    /* Anchor for the narrow-layout sidebar overlay (.sidebar.narrow). */
+    position: relative;
+  }
+  /* Narrow layout (<1024px): collapse the 3-column grid to a single
+     canvas column. The splitters are not rendered (see markup) and the
+     sidebar becomes a full-screen overlay toggled by `mobilePanelOpen`. */
+  .split.narrow {
+    grid-template-columns: minmax(0, 1fr);
   }
   .viewport {
     position: relative;
@@ -1222,6 +1271,42 @@
     min-height: 0;
     min-width: 0;
     overflow: hidden;
+  }
+  /* Narrow layout: lift the sidebar out of the (now single-column) grid
+     and float it over the canvas as a full-screen overlay. The accordion
+     inside is unchanged — only its host box changes. Hidden until the
+     user opens it via the Panels button (`.mobile-open`). */
+  .sidebar.narrow {
+    position: absolute;
+    inset: 0;
+    z-index: var(--z-mobile-panel);
+    background: var(--bg-app);
+  }
+  .sidebar.narrow:not(.mobile-open) {
+    display: none;
+  }
+  /* Close ("back to drawing") affordance for the narrow sidebar overlay,
+     pinned top-right above the panel so it never collides with the
+     accordion's per-host grid rows. */
+  .mobile-panel-close {
+    position: absolute;
+    top: 0.35rem;
+    right: 0.4rem;
+    z-index: calc(var(--z-mobile-panel) + 1);
+    width: 2rem;
+    height: 2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-elevated);
+    color: var(--text-strong);
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  .mobile-panel-close:hover {
+    border-color: var(--accent);
   }
   .sidebar[data-active='stock'] {
     grid-template-rows: minmax(0, 1fr) auto auto auto;

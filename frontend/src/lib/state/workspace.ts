@@ -35,6 +35,9 @@ export interface PanelLayout {
   /// viewport height (see `bottom-panel-fold.ts`). Persisted so the sheet
   /// reopens to the user's last-used height. Desktop ignores it.
   ops_fold_snap: number;
+  /// Phone G-code bottom-sheet open fold position — peer of
+  /// `ops_fold_snap` (7jug.11).
+  gcode_fold_snap: number;
 }
 
 export interface PerProjectState {
@@ -81,7 +84,13 @@ export const DEFAULT_WORKSPACE: WorkspaceState = {
   last_project: null,
   recent_projects: [],
   camera: null,
-  panels: { left_width: 0, right_width: 360, bottom_height: 240, ops_fold_snap: 0.55 },
+  panels: {
+    left_width: 0,
+    right_width: 360,
+    bottom_height: 240,
+    ops_fold_snap: 0.55,
+    gcode_fold_snap: 0.55,
+  },
   per_project: {},
   last_post_processor: 'linuxcnc',
   machine_profiles: [],
@@ -166,6 +175,10 @@ export function parseWorkspace(raw: string | null | undefined): WorkspaceState {
         typeof p.ops_fold_snap === 'number'
           ? p.ops_fold_snap
           : DEFAULT_WORKSPACE.panels.ops_fold_snap,
+      gcode_fold_snap:
+        typeof p.gcode_fold_snap === 'number'
+          ? p.gcode_fold_snap
+          : DEFAULT_WORKSPACE.panels.gcode_fold_snap,
     };
   }
   if (typeof obj.last_post_processor === 'string') {
@@ -352,7 +365,8 @@ export class WorkspaceStore {
       next.left_width === cur.left_width &&
       next.right_width === cur.right_width &&
       next.bottom_height === cur.bottom_height &&
-      next.ops_fold_snap === cur.ops_fold_snap
+      next.ops_fold_snap === cur.ops_fold_snap &&
+      next.gcode_fold_snap === cur.gcode_fold_snap
     ) {
       return;
     }

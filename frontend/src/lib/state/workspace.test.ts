@@ -28,7 +28,13 @@ describe('WorkspaceStore', () => {
     const s = await freshLoaded(t);
     s.update({ camera: { px: 1, py: 2, pz: 3, tx: 4, ty: 5, tz: 6 } });
     s.update({
-      panels: { left_width: 100, right_width: 200, bottom_height: 300, ops_fold_snap: 0.75 },
+      panels: {
+        left_width: 100,
+        right_width: 200,
+        bottom_height: 300,
+        ops_fold_snap: 0.75,
+        gcode_fold_snap: 0.33,
+      },
     });
     s.addRecentProject('/tmp/a.vc-project.json', 'a.vc-project.json');
     s.setPerProject('/tmp/a.vc-project.json', {
@@ -46,6 +52,7 @@ describe('WorkspaceStore', () => {
       right_width: 200,
       bottom_height: 300,
       ops_fold_snap: 0.75,
+      gcode_fold_snap: 0.33,
     });
     expect(w.recent_projects).toHaveLength(1);
     expect(w.recent_projects[0].path).toBe('/tmp/a.vc-project.json');

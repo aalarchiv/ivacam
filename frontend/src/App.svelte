@@ -10,7 +10,8 @@
   import LayerList from './lib/components/LayerList.svelte';
   import TextList from './lib/components/TextList.svelte';
   import OperationsList from './lib/components/OperationsList.svelte';
-  import OperationsSheet from './lib/components/OperationsSheet.svelte';
+  import BottomSheet from './lib/components/BottomSheet.svelte';
+  import { bottomPanels } from './lib/state/bottom-panels.svelte';
   import StockPanel from './lib/components/StockPanel.svelte';
   import GenerateBar from './lib/components/GenerateBar.svelte';
   import PlaybackBar from './lib/components/PlaybackBar.svelte';
@@ -332,15 +333,32 @@
     if (pane) activePane = pane;
   }
 
-  // Operations bottom sheet (7jug.9): the phone hot-path surface. Shown on
-  // the Project 2D/3D activities only, and never while the (other-panes)
-  // sidebar overlay is open. Replaces routing Operations through that
-  // overlay — Stock/Layers/Text still use it.
-  const showOpsSheet = $derived(
+  // Phone bottom panels (Operations — 7jug.9 — and G-code — 7jug.11): the
+  // hot-path surfaces. Shown on the Project 2D/3D activities only, and
+  // never while the (other-panes) sidebar overlay is open. Operations
+  // replaces routing through that overlay; Stock/Layers/Text still use it.
+  const showBottomPanels = $derived(
     layout.isNarrow &&
       !mobilePanelOpen &&
       (currentActivity === 'project-2d' || currentActivity === 'project-3d'),
   );
+  // Persisted per-panel open snaps (workspace), read reactively.
+  const opsSnap = $derived.by(() => {
+    void workspace.version;
+    return workspace.get().panels.ops_fold_snap;
+  });
+  const gcodeSnap = $derived.by(() => {
+    void workspace.version;
+    return workspace.get().panels.gcode_fold_snap;
+  });
+  /// When the Operations sheet opens from folded, surface the MRU op — the
+  /// current selection, else the most-recently-added (last) op — so the
+  /// user lands on something editable.
+  function surfaceMruOp() {
+    if (project.sel.selectedOpId != null) return;
+    const last = project.data.operations.at(-1);
+    if (last) project.sel.selectedOpId = last.id;
+  }
 
   /// 3D button label cycles with the preview mode: 'both' → "3D",
   /// 'wireframe' → "3Dwire", 'solid' → "3Dsolid". The button does
@@ -460,7 +478,9 @@
   // GcodePanel pulls in syntax-highlighter assets — defer until the
   // user opens the panel (it's collapsed by default).
   $effect(() => {
-    if (gcodeOpen && !GcodePanel && !gcodePanelLoading) {
+    // Load on the desktop toggle, or when the phone G-code bottom sheet is
+    // unfolded (7jug.11).
+    if ((gcodeOpen || bottomPanels.active === 'gcode') && !GcodePanel && !gcodePanelLoading) {
       gcodePanelLoading = true;
       void import('./lib/components/GcodePanel.svelte').then((m) => {
         GcodePanel = m.default;
@@ -763,11 +783,40 @@
     />
   {/if}
 
-  <!-- Operations bottom sheet — phone hot-path surface (.9). Fixed to the
-       bottom edge over the canvas; the split reserves padding for its
-       always-visible handle (see `.split.with-ops-sheet`). -->
-  {#if showOpsSheet}
-    <OperationsSheet openSignal={opsSheetOpenSignal} />
+  <!-- Phone bottom panels — G-code (left) + Operations (right) share one
+       folded strip (.9/.11). Fixed to the bottom edge over the canvas; the
+       split reserves padding for their always-visible handles (see
+       `.split.with-ops-sheet`). G-code only appears once a program exists. -->
+  {#if showBottomPanels}
+    {#if project.gen.generated}
+      <BottomSheet
+        key="gcode"
+        label="G-code"
+        side="left"
+        count={project.gen.generated.gcode.split('\n').length}
+        savedSnap={gcodeSnap}
+        onPersistSnap={(s) => workspace.setPanels({ gcode_fold_snap: s })}
+      >
+        {#if GcodePanel}
+          {@const C = GcodePanel}
+          <C />
+        {:else}
+          <p class="loading-3d">Loading G-code…</p>
+        {/if}
+      </BottomSheet>
+    {/if}
+    <BottomSheet
+      key="ops"
+      label="Operations"
+      side="right"
+      count={project.data.operations.length}
+      savedSnap={opsSnap}
+      onPersistSnap={(s) => workspace.setPanels({ ops_fold_snap: s })}
+      onOpen={surfaceMruOp}
+      openSignal={opsSheetOpenSignal}
+    >
+      <OperationsList active={true} onActivate={() => {}} />
+    </BottomSheet>
   {/if}
 
   <!-- ============== MAIN TABS ================================= -->
@@ -960,7 +1009,7 @@
     class="split"
     class:tab-hidden={mainTab !== 'project'}
     class:narrow={layout.isNarrow}
-    class:with-ops-sheet={showOpsSheet}
+    class:with-ops-sheet={showBottomPanels}
     style:--sidebar-width="{sidebarWidth}px"
   >
     <section class="viewport">
@@ -983,32 +1032,34 @@
       </div>
       {#if project.gen.generated}
         <PlaybackBar />
-        <div class="gcode-toggle">
-          <button
-            class:active={gcodeOpen}
-            onclick={() => (gcodeOpen = !gcodeOpen)}
-            title="Show / hide the G-code text panel. Click a line to scrub the playhead; the playhead's current line scrolls into view."
-          >
-            {gcodeOpen ? '▼' : '▶'}
-            G-code
-            <span class="hint">{project.gen.generated.gcode.split('\n').length} lines</span>
-          </button>
-        </div>
-        {#if gcodeOpen}
-          {#if !layout.isNarrow}
+        <!-- Desktop inline G-code (toggle + resizable row). On phone this
+             is the G-code bottom sheet instead (7jug.11), so hide it. -->
+        {#if !layout.isNarrow}
+          <div class="gcode-toggle">
+            <button
+              class:active={gcodeOpen}
+              onclick={() => (gcodeOpen = !gcodeOpen)}
+              title="Show / hide the G-code text panel. Click a line to scrub the playhead; the playhead's current line scrolls into view."
+            >
+              {gcodeOpen ? '▼' : '▶'}
+              G-code
+              <span class="hint">{project.gen.generated.gcode.split('\n').length} lines</span>
+            </button>
+          </div>
+          {#if gcodeOpen}
             <Splitter
               direction="vertical"
               onResize={onGcodeResize}
               onReset={resetGcode}
               title="Drag to resize the G-code panel · double-click to reset"
             />
+            <div class="gcode-row" style:height="{gcodeHeight}px">
+              {#if GcodePanel}
+                {@const C = GcodePanel}
+                <C />
+              {/if}
+            </div>
           {/if}
-          <div class="gcode-row" style:height="{gcodeHeight}px">
-            {#if GcodePanel}
-              {@const C = GcodePanel}
-              <C />
-            {/if}
-          </div>
         {/if}
       {/if}
     </section>
@@ -1081,7 +1132,7 @@
         />
       </div>
       <!-- On narrow layouts Operations lives in the bottom sheet
-           (OperationsSheet, 7jug.9/.16), not this overlay accordion —
+           (BottomSheet, 7jug.9/.16), not this overlay accordion —
            Stock/Layers/Text stay here. -->
       {#if !layout.isNarrow}
         <div class="ops-host" class:active={activeSidebarPane === 'operations'}>
@@ -1395,7 +1446,7 @@
   }
   /* Reserve the Operations-sheet handle strip (44px) at the bottom so the
      PlaybackBar / G-code toggle in the canvas column aren't hidden behind
-     the fixed sheet (.9). Matches HANDLE_PX in OperationsSheet.svelte. */
+     the fixed sheet (.9/.11). Matches HANDLE_PX in BottomSheet.svelte. */
   .split.with-ops-sheet {
     padding-bottom: 44px;
   }

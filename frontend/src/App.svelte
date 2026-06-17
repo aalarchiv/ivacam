@@ -111,6 +111,15 @@
   import { togglePane, revealPane, type SidebarPane } from './lib/state/sidebar-pane';
   import { resolveShortcut } from './lib/state/app-menu';
   import { layout } from './lib/state/layout.svelte';
+  import {
+    ACTIVITY_ORDER,
+    activityFor,
+    tabPaneForActivity,
+    nextActivity,
+    prevActivity,
+    activityLabel,
+    type Activity,
+  } from './lib/state/activities';
 
   /// Live label for the Stock panel summary — shows the current
   /// dimensions inline so the user sees the workpiece size at a glance
@@ -289,6 +298,17 @@
   });
 
   let activePane = $state<'2d' | '3d'>('2d');
+
+  // Phone navigation: the desktop main-tabs + 2D/3D pane toggle collapse
+  // into one swipeable activity list (activities.ts). `currentActivity`
+  // is a read-only view over the authoritative mainTab/activePane state;
+  // `goToActivity` writes back through them.
+  const currentActivity = $derived<Activity>(activityFor(mainTab, activePane));
+  function goToActivity(a: Activity) {
+    const { mainTab: mt, pane } = tabPaneForActivity(a);
+    mainTab = mt;
+    if (pane) activePane = pane;
+  }
 
   /// 3D button label cycles with the preview mode: 'both' → "3D",
   /// 'wireframe' → "3Dwire", 'solid' → "3Dsolid". The button does
@@ -636,7 +656,71 @@
   onresize={onWindowResize}
 />
 
-<div class="app">
+<div class="app" class:narrow={layout.isNarrow}>
+  <!-- ===== MOBILE TOP APP BAR (narrow only) ================== -->
+  <!-- Replaces the desktop main-tabs + toolbar on narrow screens: a
+       single row with the current activity (◂ label ▸ to move between
+       the swipeable activities) on the left and the core actions on the
+       right. The ☰ Panels button is an interim hook to the (superseded)
+       sidebar overlay so Operations/Layers/Stock stay reachable until
+       the on-canvas affordances (.15) + Operations bottom panel (.9)
+       land. -->
+  {#if layout.isNarrow}
+    <header class="mobile-appbar">
+      <div class="activity-nav" aria-label="Screen">
+        <button
+          type="button"
+          class="ab-btn ab-chevron"
+          onclick={() => goToActivity(prevActivity(currentActivity))}
+          disabled={currentActivity === ACTIVITY_ORDER[0]}
+          aria-label="Previous screen"
+        >
+          ◂
+        </button>
+        <span class="activity-title">{activityLabel(currentActivity)}</span>
+        <button
+          type="button"
+          class="ab-btn ab-chevron"
+          onclick={() => goToActivity(nextActivity(currentActivity))}
+          disabled={currentActivity === ACTIVITY_ORDER[ACTIVITY_ORDER.length - 1]}
+          aria-label="Next screen"
+        >
+          ▸
+        </button>
+      </div>
+      <span class="appbar-flex"></span>
+      <button type="button" class="ab-btn" onclick={() => openFile()} disabled={project.loading}>
+        Open
+      </button>
+      <button
+        type="button"
+        class="ab-btn"
+        onclick={() => saveProject()}
+        disabled={!project.transformedImport}
+      >
+        Save
+      </button>
+      <button
+        type="button"
+        class="ab-btn"
+        onclick={() => (reportOpen = true)}
+        aria-label="Project report"
+      >
+        Report
+      </button>
+      {#if currentActivity === 'project-2d' || currentActivity === 'project-3d'}
+        <button
+          type="button"
+          class="ab-btn"
+          onclick={() => (mobilePanelOpen = true)}
+          aria-label="Show panels"
+        >
+          ☰
+        </button>
+      {/if}
+    </header>
+  {/if}
+
   <!-- ============== MAIN TABS ================================= -->
   <nav class="main-tabs" aria-label="Main areas">
     <button
@@ -789,17 +873,6 @@
         />
         <span>Regions</span>
       </label>
-    {/if}
-    {#if layout.isNarrow}
-      <button
-        type="button"
-        class="tb-btn mobile-panels-btn"
-        onclick={() => (mobilePanelOpen = true)}
-        title="Show panels — stock, layers, operations"
-        aria-label="Show panels"
-      >
-        ☰ Panels
-      </button>
     {/if}
     <div
       class="pane-toggle"
@@ -1055,6 +1128,65 @@
   }
   .app > footer {
     flex: 0 0 auto;
+  }
+
+  /* ---------- mobile top app bar (narrow only) ----------------- */
+  /* The activity-swipe app bar replaces the desktop tabs + toolbar on
+     narrow screens, so hide those there. */
+  .app.narrow > .main-tabs,
+  .app.narrow > .toolbar {
+    display: none;
+  }
+  .mobile-appbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.5rem;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .mobile-appbar .appbar-flex {
+    flex: 1 1 auto;
+  }
+  .mobile-appbar .activity-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.1rem;
+  }
+  .mobile-appbar .activity-title {
+    min-width: 3.5rem;
+    text-align: center;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text-strong);
+  }
+  .mobile-appbar .ab-btn {
+    min-height: 40px;
+    min-width: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.6rem;
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .mobile-appbar .ab-btn.ab-chevron {
+    padding: 0;
+    font-size: 1.1rem;
+  }
+  .mobile-appbar .ab-btn:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+    border-color: var(--accent);
+    color: var(--text-strong);
+  }
+  .mobile-appbar .ab-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   /* ---------- toolbar ------------------------------------------ */

@@ -18,9 +18,19 @@
     FOLD_SNAPS,
     FOLDED,
     nearestSnap,
+    restoreOpenSnap,
     snapHeightPx,
     toggleFold,
   } from '../state/bottom-panel-fold';
+
+  interface Props {
+    /// Monotonic counter the parent bumps to request the sheet open — e.g.
+    /// a canvas element-tap that jumps to its operation (7jug.16). Each
+    /// increment opens the sheet to the persisted snap (and surfaces the
+    /// MRU op via `commit`). Folded by default.
+    openSignal?: number;
+  }
+  let { openSignal = 0 }: Props = $props();
 
   /// Handle-strip height (always visible, even folded). Sized for a
   /// coarse-pointer target.
@@ -78,6 +88,16 @@
       if (wasFolded) surfaceMruOp();
     }
   }
+
+  // Open on a parent request (canvas element-tap → its op; 7jug.16). The
+  // counter dedupes so re-running the effect for unrelated state doesn't
+  // re-open; only a fresh increment opens, to the persisted snap.
+  let lastOpenSignal = 0;
+  $effect(() => {
+    if (openSignal === lastOpenSignal) return;
+    lastOpenSignal = openSignal;
+    if (openSignal > 0) commit(restoreOpenSnap(savedOpenSnap()));
+  });
 
   // ---- handle gestures -------------------------------------------------
   let drag: { pointerId: number; startY: number; baseFrac: number; moved: number } | null = null;

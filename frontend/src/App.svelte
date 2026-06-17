@@ -160,6 +160,14 @@
     prevSidebarPane = next.prev;
   }
   function revealSidebarPane(target: SidebarPane) {
+    // On phone/tablet the Operations pane is the bottom sheet, not the
+    // sidebar overlay (7jug.16) — a canvas tap that jumps to its op opens
+    // the sheet instead of raising the overlay. Other panes still use the
+    // overlay.
+    if (layout.isNarrow && target === 'operations') {
+      opsSheetOpenSignal++;
+      return;
+    }
     const next = revealPane({ active: activeSidebarPane, prev: prevSidebarPane }, target);
     activeSidebarPane = next.active;
     prevSidebarPane = next.prev;
@@ -167,6 +175,17 @@
     // canvas, so a programmatic "show me this pane" (e.g. a canvas tap
     // that jumps to its operation) must also raise the overlay.
     if (layout.isNarrow) mobilePanelOpen = true;
+  }
+  // Bumped to ask the Operations bottom sheet to open (7jug.16).
+  let opsSheetOpenSignal = $state(0);
+  /// Open the narrow sidebar overlay (Stock/Layers/Text). Operations is no
+  /// longer in this overlay (it's the bottom sheet, 7jug.16), so a leftover
+  /// `operations` active pane — e.g. carried over from a desktop session
+  /// before the window shrank — would show an empty overlay; normalize it
+  /// to Layers.
+  function openMobilePanel() {
+    if (activeSidebarPane === 'operations') activateSidebarPane('layers');
+    mobilePanelOpen = true;
   }
   // Narrow-layout (<1024px) only: the sidebar collapses out of the
   // 3-column grid and shows as a full-screen overlay over the canvas.
@@ -725,7 +744,7 @@
         <button
           type="button"
           class="ab-btn"
-          onclick={() => (mobilePanelOpen = true)}
+          onclick={() => openMobilePanel()}
           aria-label="Show panels"
         >
           ☰
@@ -748,7 +767,7 @@
        bottom edge over the canvas; the split reserves padding for its
        always-visible handle (see `.split.with-ops-sheet`). -->
   {#if showOpsSheet}
-    <OperationsSheet />
+    <OperationsSheet openSignal={opsSheetOpenSignal} />
   {/if}
 
   <!-- ============== MAIN TABS ================================= -->
@@ -1061,12 +1080,17 @@
           onAddText={() => (addTextOpen = true)}
         />
       </div>
-      <div class="ops-host" class:active={activeSidebarPane === 'operations'}>
-        <OperationsList
-          active={activeSidebarPane === 'operations'}
-          onActivate={() => activateSidebarPane('operations')}
-        />
-      </div>
+      <!-- On narrow layouts Operations lives in the bottom sheet
+           (OperationsSheet, 7jug.9/.16), not this overlay accordion —
+           Stock/Layers/Text stay here. -->
+      {#if !layout.isNarrow}
+        <div class="ops-host" class:active={activeSidebarPane === 'operations'}>
+          <OperationsList
+            active={activeSidebarPane === 'operations'}
+            onActivate={() => activateSidebarPane('operations')}
+          />
+        </div>
+      {/if}
     </aside>
   </main>
 

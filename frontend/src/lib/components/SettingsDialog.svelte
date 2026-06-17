@@ -128,6 +128,21 @@
     <section class:group-hidden={groupHidden('view')}>
       <h3>View</h3>
       <div class="grid">
+        <label
+          >3D preview style
+          <select
+            value={project.data.settings.previewMode}
+            onchange={(e) =>
+              update(
+                'previewMode',
+                (e.currentTarget as HTMLSelectElement).value as AppSettings['previewMode'],
+              )}
+          >
+            <option value="both">Both</option>
+            <option value="wireframe">Wireframe</option>
+            <option value="solid">Solid</option>
+          </select>
+        </label>
         <label class="check">
           <input
             type="checkbox"
@@ -142,26 +157,11 @@
     <section class:group-hidden={groupHidden('preview')}>
       <h3>Cutting preview</h3>
       <p class="hint">
-        How the 3D viewport renders the simulated stock once cutting preview lands. These values are
-        stored now so the eventual renderer picks them up automatically.
+        Colors for how the 3D viewport renders the simulated stock once cutting preview lands.
+        Stored now so the eventual renderer picks them up automatically. The 3D preview style
+        (wireframe / solid / both) lives under View above.
       </p>
       <div class="grid">
-        <label
-          >Default mode
-          <select
-            value={project.data.settings.previewMode}
-            onchange={(e) =>
-              update(
-                'previewMode',
-                (e.currentTarget as HTMLSelectElement).value as AppSettings['previewMode'],
-              )}
-          >
-            <option value="wireframe">Wireframe</option>
-            <option value="solid">Solid</option>
-            <option value="both">Both</option>
-          </select>
-        </label>
-
         <label
           >Solid color
           <div class="color">

@@ -13,6 +13,7 @@
   // the last in-session position unless the window has shrunk past it,
   // in which case `clampPanelRect` snaps it back into view.
   import { clampPanelRect, initialPanelPosition } from './floating-panel';
+  import { layout } from '../state/layout.svelte';
 
   interface Props {
     /// Render gate. Keep the component mounted and toggle this so the
@@ -54,6 +55,12 @@
   let drag: { mode: 'move' | 'resize'; offX: number; offY: number; pointerId: number } | null =
     null;
 
+  // On narrow/coarse layouts a drag-movable, finger-resizable window is
+  // awkward — render as a full-screen bottom-sheet instead, with move +
+  // resize disabled (7jug.5). Position/size styles and the resize handle
+  // are dropped so the `.panel.narrow` CSS takes over.
+  const narrow = $derived(layout.isNarrow);
+
   function clamp() {
     if (typeof window === 'undefined') return;
     const next = clampPanelRect(
@@ -83,6 +90,7 @@
   });
 
   function headerPointerDown(e: PointerEvent) {
+    if (narrow) return; // full-screen sheet on narrow — not draggable
     if (e.button !== 0) return;
     const target = e.target as HTMLElement | null;
     if (target?.closest('button')) return; // don't grab a drag from the close button
@@ -136,24 +144,27 @@
 {#if open}
   <div
     class="panel"
+    class:narrow
     role="dialog"
     aria-label={ariaLabel ?? title}
-    style:left="{x ?? 0}px"
-    style:top="{y ?? 0}px"
-    style:width="{w}px"
-    style:height="{h}px"
-    style:min-width="{minWidth}px"
-    style:min-height="{minHeight}px"
+    style:left={narrow ? null : `${x ?? 0}px`}
+    style:top={narrow ? null : `${y ?? 0}px`}
+    style:width={narrow ? null : `${w}px`}
+    style:height={narrow ? null : `${h}px`}
+    style:min-width={narrow ? null : `${minWidth}px`}
+    style:min-height={narrow ? null : `${minHeight}px`}
   >
     <header
       role="toolbar"
       tabindex="-1"
-      aria-label="{ariaLabel ?? title} panel header — drag to move"
+      aria-label={narrow
+        ? `${ariaLabel ?? title} panel header`
+        : `${ariaLabel ?? title} panel header — drag to move`}
       onpointerdown={headerPointerDown}
       onpointermove={pointerMove}
       onpointerup={pointerUp}
       onpointercancel={pointerUp}
-      title="Drag to move"
+      title={narrow ? null : 'Drag to move'}
     >
       <h3>{title}</h3>
       <button class="dlg-close" onclick={onClose} aria-label="Close">×</button>
@@ -161,16 +172,18 @@
     {@render children()}
     <!-- Bottom-right resize handle. svg corner-glyph repeats the
          convention used by every other floating-resizable widget on
-         the platform. -->
-    <div
-      class="resize-handle"
-      onpointerdown={resizePointerDown}
-      onpointermove={pointerMove}
-      onpointerup={pointerUp}
-      onpointercancel={pointerUp}
-      title="Drag to resize"
-      aria-hidden="true"
-    ></div>
+         the platform. Dropped on narrow (the sheet is full-screen). -->
+    {#if !narrow}
+      <div
+        class="resize-handle"
+        onpointerdown={resizePointerDown}
+        onpointermove={pointerMove}
+        onpointerup={pointerUp}
+        onpointercancel={pointerUp}
+        title="Drag to resize"
+        aria-hidden="true"
+      ></div>
+    {/if}
   </div>
 {/if}
 
@@ -191,6 +204,19 @@
     flex-direction: column;
     overflow: hidden;
   }
+  /* Narrow / coarse: full-screen bottom-sheet, not a floating window. The
+     inline left/top/width/height are dropped (see markup) so these win. */
+  .panel.narrow {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    width: 100%;
+    height: 80vh;
+    max-height: 80vh;
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -4px 18px var(--shadow-modal);
+  }
   .panel header {
     display: flex;
     align-items: center;
@@ -204,6 +230,14 @@
   }
   .panel header:active {
     cursor: grabbing;
+  }
+  /* Header isn't a drag handle on narrow — reset its affordances. */
+  .panel.narrow header {
+    cursor: default;
+    touch-action: auto;
+  }
+  .panel.narrow header:active {
+    cursor: default;
   }
   .panel h3 {
     font-size: 0.85rem;

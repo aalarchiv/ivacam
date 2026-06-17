@@ -396,3 +396,58 @@ body,
   font-size: 0.7rem;
   color: var(--text-muted);
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+   Touch-target density pass (7jug.3). On coarse pointers (touch — phones,
+   tablets) bump interactive controls toward a ~44px tap target and loosen
+   their padding. Gated behind @media (pointer: coarse) so mouse/desktop
+   layouts are untouched.
+
+   Selectors stay at :where(...) (0 specificity) so this is a *floor*: any
+   per-component rule that sets its own size still wins, and bare controls
+   that only declared padding gain a comfortable minimum. Checkbox / radio /
+   range are excluded — a min-height there just stretches the box, it
+   doesn't enlarge the glyph. */
+@media (pointer: coarse) {
+  :where(
+    button,
+    [role='button'],
+    [role='menuitem'],
+    [role='menuitemcheckbox'],
+    [role='option'],
+    [role='tab'],
+    summary,
+    a.button
+  ) {
+    min-height: 44px;
+  }
+  :where(
+    input:not([type='checkbox']):not([type='radio']):not([type='range']),
+    select,
+    textarea
+  ) {
+    min-height: 44px;
+  }
+  /* Shared button utilities — taller with a roomier hit area. */
+  :where(.btn-primary, .btn-secondary, .btn-danger) {
+    min-height: 44px;
+    padding: 0.5rem 1rem;
+    font-size: 0.95rem;
+  }
+  /* Accordion / sidebar heads + their caret toggles. */
+  :where(.group-head) {
+    min-height: 44px;
+    padding: 0.4rem 0.5rem;
+  }
+  :where(.caret-btn) {
+    min-width: 40px;
+    min-height: 40px;
+    font-size: 1.05rem;
+  }
+  /* Number fields — easier to tap into and read. */
+  :where(.field) input[type='number'] {
+    min-height: 40px;
+    padding: 0.4rem 0.5rem;
+    font-size: 0.95rem;
+  }
+}

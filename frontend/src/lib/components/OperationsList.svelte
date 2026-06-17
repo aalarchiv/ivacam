@@ -5,6 +5,7 @@
   /// op (drives the inline OpPropertiesPanel). Drag the grip to
   /// reorder.
   import { project, type OpEntry } from '../state/project.svelte';
+  import { longpressTooltip } from '../actions/longpress-tooltip';
   import { opSourceCss } from '../state/op-color';
   import { warningFocus } from '../state/warning-focus.svelte';
   import { isProgramOnlyOp } from '../state/op_types';
@@ -465,6 +466,7 @@
                 <button
                   type="button"
                   class="status {status.tone} status-btn"
+                  use:longpressTooltip
                   title={`${status.reason}\n\n(click to show in the warnings panel)`}
                   aria-label={`Show warnings for ${op.name} in the warnings panel`}
                   onclick={(e) => {
@@ -493,6 +495,7 @@
               {/if}
               <button
                 class="dup"
+                use:longpressTooltip
                 onclick={(e) => {
                   e.stopPropagation();
                   project.duplicateOperation(op.id);
@@ -502,6 +505,7 @@
               >
               <button
                 class="del"
+                use:longpressTooltip
                 onclick={(e) => {
                   e.stopPropagation();
                   project.removeOperation(op.id);

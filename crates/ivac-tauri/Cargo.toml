@@ -9,6 +9,14 @@ authors.workspace = true
 publish.workspace = true
 description = "ivaCAM Tauri desktop shell"
 
+# Shared app shell. The mobile (Android / iOS) build loads the app as a
+# `cdylib` via Tauri's generated host glue (there is no `main()` on
+# mobile); `staticlib` is for the iOS link step; `rlib` lets the desktop
+# `[[bin]]` below link against it. The desktop binary just calls `run()`.
+[lib]
+name = "ivac_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
 [[bin]]
 name = "ivac-desktop"
 path = "src/main.rs"

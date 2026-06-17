@@ -9,6 +9,8 @@ import { project } from '../state/project.svelte';
 import { workspace } from '../state/workspace.svelte';
 import { confirmStore } from '../state/confirm.svelte';
 import { isTauri } from '../api/env';
+import { isProjectPath } from './file-kind';
+export { isProjectPath } from './file-kind';
 import { defaultClient } from '../api/http';
 import { tryParseStructuredError } from '../api/client';
 import { migrateLegacyToolTerms } from '../state/tool-migration';
@@ -91,6 +93,35 @@ function hiddenProjectInput(): HTMLInputElement | null {
   return (
     (window as unknown as { __ivacProjectInput?: HTMLInputElement }).__ivacProjectInput ?? null
   );
+}
+function hiddenOpenInput(): HTMLInputElement | null {
+  return (window as unknown as { __ivacOpenInput?: HTMLInputElement }).__ivacOpenInput ?? null;
+}
+
+/// Unified "Open" (7jug.14): one picker for drawings AND projects, routed
+/// by extension — replaces the separate "Open file" / "Open project".
+/// Desktop opens a single native dialog spanning both filter sets; browser
+/// clicks one combined hidden input whose change handler routes the same
+/// way (see FileUpload).
+export async function openAny() {
+  if (!(await confirmDiscardIfDirty('open another file'))) return;
+  if (isTauri()) {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const selected = await open({
+      multiple: false,
+      filters: [
+        {
+          name: 'Drawing or project',
+          extensions: ['dxf', 'svg', 'ivac-project.json', 'vc-project.json', 'json'],
+        },
+      ],
+    });
+    if (typeof selected !== 'string') return;
+    if (isProjectPath(selected)) await loadProjectPath(selected);
+    else await loadFromPath(selected);
+    return;
+  }
+  hiddenOpenInput()?.click();
 }
 
 /// Desktop: native open dialog. Browser: programmatically click the

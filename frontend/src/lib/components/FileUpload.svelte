@@ -24,11 +24,13 @@
     loadProjectFile,
     loadSample,
     loadSampleWithGenerate,
+    isProjectPath,
   } from '../services/file_ops';
   import ErrorToast from './ErrorToast.svelte';
 
   let inputEl: HTMLInputElement;
   let projectInput: HTMLInputElement;
+  let openInput: HTMLInputElement;
 
   function onPick(e: Event) {
     const target = e.target as HTMLInputElement;
@@ -42,6 +44,14 @@
     if (f) void loadProjectFile(f);
     target.value = '';
   }
+  /// Unified "Open" (7jug.14): route the picked file to the project or the
+  /// drawing loader by extension (.json → project, else drawing).
+  function onOpenPick(e: Event) {
+    const target = e.target as HTMLInputElement;
+    const f = target.files?.[0];
+    if (f) void (isProjectPath(f.name) ? loadProjectFile(f) : loadFile(f));
+    target.value = '';
+  }
 
   /// Register the hidden inputs globally so file_ops.openFile /
   /// openProject can fire them when running in a browser (no native
@@ -49,6 +59,7 @@
   function exposeInputs() {
     (window as unknown as Record<string, unknown>).__ivacFileInput = inputEl;
     (window as unknown as Record<string, unknown>).__ivacProjectInput = projectInput;
+    (window as unknown as Record<string, unknown>).__ivacOpenInput = openInput;
   }
 
   onMount(() => {
@@ -71,6 +82,7 @@
       unlistenFileAssoc?.();
       delete (window as unknown as Record<string, unknown>).__ivacFileInput;
       delete (window as unknown as Record<string, unknown>).__ivacProjectInput;
+      delete (window as unknown as Record<string, unknown>).__ivacOpenInput;
     };
   });
 </script>
@@ -81,6 +93,13 @@
   type="file"
   accept=".ivac-project.json,.vc-project.json,.json"
   onchange={onProjectPick}
+  hidden
+/>
+<input
+  bind:this={openInput}
+  type="file"
+  accept=".dxf,.svg,.ivac-project.json,.vc-project.json,.json"
+  onchange={onOpenPick}
   hidden
 />
 

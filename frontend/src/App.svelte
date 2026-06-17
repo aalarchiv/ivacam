@@ -91,7 +91,7 @@
   import { project } from './lib/state/project.svelte';
   import { workspace } from './lib/state/workspace.svelte';
   import ConfirmPrompt from './lib/components/ConfirmPrompt.svelte';
-  import { openFile, openProject, saveProject } from './lib/services/file_ops';
+  import { openFile, openAny, saveProject } from './lib/services/file_ops';
   import {
     sessionUi,
     loadWorkspaceAndMaybeReopen,
@@ -518,7 +518,7 @@
         project.redo();
         break;
       case 'open':
-        void openFile();
+        void openAny();
         break;
       case 'save':
         void saveProject();
@@ -741,7 +741,7 @@
         </button>
       </div>
       <span class="appbar-flex"></span>
-      <button type="button" class="ab-btn" onclick={() => openFile()} disabled={project.loading}>
+      <button type="button" class="ab-btn" onclick={() => openAny()} disabled={project.loading}>
         Open
       </button>
       <button
@@ -862,19 +862,11 @@
   <div class="toolbar" class:tab-hidden={mainTab !== 'project'}>
     <button
       class="tb-btn primary"
-      onclick={() => openFile()}
+      onclick={() => openAny()}
       disabled={project.loading}
-      title="Open a DXF or SVG file (Ctrl+O)"
+      title="Open a drawing (DXF / SVG) or a saved .ivac-project.json (Ctrl+O)"
     >
-      Open file
-    </button>
-    <button
-      class="tb-btn"
-      onclick={() => openProject()}
-      disabled={project.loading}
-      title="Open a saved .ivac-project.json"
-    >
-      Open project
+      Open
     </button>
     <RecentMenu onOpen={(path) => void openRecentProject(path)} />
     <button

@@ -11,7 +11,9 @@
   import TextList from './lib/components/TextList.svelte';
   import OperationsList from './lib/components/OperationsList.svelte';
   import BottomSheet from './lib/components/BottomSheet.svelte';
+  import PullToRefresh from './lib/components/PullToRefresh.svelte';
   import { bottomPanels } from './lib/state/bottom-panels.svelte';
+  import { generateBus } from './lib/state/generate-bus.svelte';
   import StockPanel from './lib/components/StockPanel.svelte';
   import GenerateBar from './lib/components/GenerateBar.svelte';
   import PlaybackBar from './lib/components/PlaybackBar.svelte';
@@ -1021,6 +1023,11 @@
           <p class="loading-3d">Loading 3D…</p>
         {/if}
         <LoadingOverlay visible={project.loading} message={project.loadingMessage} />
+        <!-- Phone: pull down from the top of the canvas to (re-)generate —
+             the Generate button is desktop-only on narrow (7jug.12/.2). -->
+        {#if showBottomPanels}
+          <PullToRefresh onRefresh={() => generateBus.request()} />
+        {/if}
       </div>
       {#if project.gen.generated}
         <PlaybackBar />

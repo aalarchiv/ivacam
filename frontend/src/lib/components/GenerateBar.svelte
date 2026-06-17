@@ -11,6 +11,7 @@
     simWarningSummary,
   } from '../state/project.svelte';
   import { buildProject, type GenerateRequestWithProject } from '../api/build-project';
+  import { generateBus } from '../state/generate-bus.svelte';
   import { exportGeneratedGcode, exportSimulatedStockStl } from '../services/file_ops';
   import type { SimWarning, TimeEstimate } from '../api/types';
   import {
@@ -296,6 +297,17 @@
       abortController = null;
     }
   }
+
+  // Honour external (re-)generate requests — e.g. the phone pull-to-refresh
+  // gesture (7jug.12). Only act on a fresh request and only when the
+  // pipeline is idle; `run()` itself early-bails (no ops → failGenerate).
+  let lastGenSeq = 0;
+  $effect(() => {
+    const seq = generateBus.seq;
+    if (seq === lastGenSeq) return;
+    lastGenSeq = seq;
+    if (seq > 0 && project.gen.pipelineState === 'idle') void run();
+  });
 
   async function downloadGcode() {
     // If the program we'd ship has critical warnings and the user hasn't

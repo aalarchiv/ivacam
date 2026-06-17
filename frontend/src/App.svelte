@@ -40,6 +40,7 @@
   import RecentMenu from './lib/components/RecentMenu.svelte';
   import LoadingOverlay from './lib/components/LoadingOverlay.svelte';
   import Splitter from './lib/components/Splitter.svelte';
+  import EdgeSwipeNav from './lib/components/EdgeSwipeNav.svelte';
 
   /// Top-level main-window tab. Machine and Tool library are
   /// first-class tabs (not modals); their panels stay mounted once
@@ -719,6 +720,15 @@
         </button>
       {/if}
     </header>
+  {/if}
+
+  <!-- Edge-swipe between activities (narrow only; inert while the sidebar
+       overlay is open so a panel swipe doesn't also flip activities). -->
+  {#if layout.isNarrow && !mobilePanelOpen}
+    <EdgeSwipeNav
+      onPrev={() => goToActivity(prevActivity(currentActivity))}
+      onNext={() => goToActivity(nextActivity(currentActivity))}
+    />
   {/if}
 
   <!-- ============== MAIN TABS ================================= -->

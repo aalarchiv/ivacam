@@ -109,6 +109,10 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    // Allow reaching the dev server via the `claude` proxy hostname —
+    // Vite's DNS-rebinding guard otherwise rejects unknown Host headers
+    // ("This host is not allowed"). Dev convenience; use `true` for any.
+    allowedHosts: ['claude'],
     fs: {
       // node_modules/ivac-wasm is a symlink into ../crates/ivac-wasm/pkg.
       // Vite resolves the symlink to that real path and serves the glue +

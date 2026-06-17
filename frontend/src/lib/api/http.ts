@@ -290,8 +290,10 @@ export type ApiChoice = { kind: 'tauri' } | { kind: 'wasm' } | { kind: 'http'; u
 ///        • production build → the in-browser wasm engine, so a static
 ///          deploy works from a bare URL with no backend. Point at a
 ///          server instead via VITE_IVAC_API.
-///        • dev → the local ivac-server on :8766 (the documented dev
-///          workflow runs `cargo run -p ivac-server`).
+///        • dev → the same-origin `/api` path, which vite.config proxies
+///          to the local ivac-server on :8766 (the documented dev
+///          workflow runs `cargo run -p ivac-server`). Same-origin so it
+///          works regardless of the host the dev server is reached by.
 export function resolveApiChoice(opts: {
   hasTauri: boolean;
   envApi: string | undefined;
@@ -313,8 +315,18 @@ export function defaultClient(): WiacClient {
   const w = hasWindow ? (window as unknown as Record<string, unknown>) : undefined;
   const hasTauri = !!w && typeof w.__TAURI_INTERNALS__ !== 'undefined';
   const queryApi = hasWindow ? new URLSearchParams(window.location.search).get('api') : null;
+  // In a dev browser, target the SAME-ORIGIN `/api` path that vite.config
+  // proxies to the local ivac-server (127.0.0.1:8766). Hard-coding
+  // `//${hostname}:8766` instead went cross-origin whenever the dev server
+  // was reached via anything but localhost (e.g. a proxy host) — the
+  // browser then blocked /import with a CORS failure. `/api` is same-origin
+  // so no CORS, and the proxy still reaches the server. Outside dev this
+  // path is unused (prod defaults to wasm; VITE_IVAC_API overrides it), but
+  // the old absolute URL is kept there as a harmless explicit fallback.
   const serverUrl = hasWindow
-    ? `${window.location.protocol}//${window.location.hostname}:8766`
+    ? import.meta.env.DEV
+      ? '/api'
+      : `${window.location.protocol}//${window.location.hostname}:8766`
     : 'http://127.0.0.1:8766';
   const choice = resolveApiChoice({
     hasTauri,

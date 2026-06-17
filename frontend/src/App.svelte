@@ -39,6 +39,7 @@
   let ReportDialog = $state<ReportDialogComp | null>(null);
   let reportDialogLoading = false;
   import RecentMenu from './lib/components/RecentMenu.svelte';
+  import AppBarOverflowMenu from './lib/components/AppBarOverflowMenu.svelte';
   import LoadingOverlay from './lib/components/LoadingOverlay.svelte';
   import Splitter from './lib/components/Splitter.svelte';
   import EdgeSwipeNav from './lib/components/EdgeSwipeNav.svelte';
@@ -730,6 +731,7 @@
           ☰
         </button>
       {/if}
+      <AppBarOverflowMenu onOpenRecent={(path) => void openRecentProject(path)} />
     </header>
   {/if}
 

@@ -121,8 +121,30 @@
     position: relative;
     display: inline-flex;
   }
-  /* Inherit the app-bar button look from the parent .mobile-appbar .ab-btn
-     rule; nothing extra needed for the trigger. */
+  /* Svelte scopes the parent's `.mobile-appbar .ab-btn` rule to App.svelte,
+     so it does NOT reach this child component's trigger. Restate the
+     app-bar button look here so the ⋮ matches the Open / Save / Report
+     buttons' height + style (punch-list 9). */
+  .overflow-menu .ab-btn {
+    min-height: 40px;
+    min-width: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.6rem;
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-size: 1.05rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .overflow-menu .ab-btn:hover {
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+    border-color: var(--accent);
+    color: var(--text-strong);
+  }
 
   .menu {
     position: absolute;

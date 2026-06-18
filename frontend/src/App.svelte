@@ -60,6 +60,51 @@
   const buildVersion =
     typeof __IVAC_BUILD_VERSION__ === 'string' ? __IVAC_BUILD_VERSION__ : 'unknown';
 
+  // ---- Phone app-bar warning chip (punch-list 7/11) -------------------
+  // The desktop GenerateBar owns the full warnings chip + panel; it's
+  // hidden on narrow, so the phone app bar carries a compact status chip
+  // (centre of the bar) that doubles as a re-Generate trigger. Same
+  // sim+pipeline aggregation the desktop chip uses.
+  const warnSim = $derived(project.gen.simDiagnostics?.warnings ?? []);
+  const warnPipe = $derived<PipelineWarning[]>(
+    (project.gen.generated as { warnings?: PipelineWarning[] } | null)?.warnings ?? [],
+  );
+  const warnStale = $derived(project.gen.simDiagnostics != null && project.data.dirty);
+  const warnCritical = $derived(
+    warnSim.filter((w) => simWarningSeverity(w) === 'critical').length +
+      countCriticalPipelineWarnings(warnPipe),
+  );
+  const warnTotal = $derived(warnSim.length + warnPipe.length);
+  /// Chip is meaningful once a program/sim run exists.
+  const warnChipShown = $derived(
+    project.gen.generated != null || project.gen.simDiagnostics != null,
+  );
+  const warnGlyph = $derived(
+    warnStale ? '↻' : warnCritical > 0 ? '⛔' : warnTotal > 0 ? '⚠' : '✓',
+  );
+  const warnClass = $derived(
+    warnStale ? 'stale' : warnCritical > 0 ? 'critical' : warnTotal > 0 ? 'warning' : 'clean',
+  );
+  const warnText = $derived.by(() => {
+    if (warnStale) return 'Stale';
+    if (warnTotal === 0) return 'OK';
+    return warnCritical > 0 ? `${warnTotal} (${warnCritical}!)` : `${warnTotal}`;
+  });
+  const warnTitle = $derived.by(() => {
+    if (warnStale) return 'Toolpath is stale — tap to re-Generate';
+    if (warnTotal === 0) return 'No warnings — tap to re-Generate';
+    return `${warnTotal} warning${warnTotal === 1 ? '' : 's'}${warnCritical > 0 ? ` (${warnCritical} critical)` : ''} — tap to re-Generate`;
+  });
+
+  // Phone Save dropdown (punch-list 10): project / G-code / carved STL.
+  let saveMenuOpen = $state(false);
+  const gcodeDialect = $derived<'linuxcnc' | 'grbl' | 'hpgl'>(
+    project.data.machine.gcodeDialect ?? 'linuxcnc',
+  );
+  function closeSaveMenu() {
+    saveMenuOpen = false;
+  }
+
   /// Window title carries the build version so a screenshot pins the
   /// report to the exact binary. Format: "ivaCAM v<pkg>
   /// (<git-describe>)" — package version comes from
@@ -94,7 +139,15 @@
   import { project } from './lib/state/project.svelte';
   import { workspace } from './lib/state/workspace.svelte';
   import ConfirmPrompt from './lib/components/ConfirmPrompt.svelte';
-  import { openFile, openAny, saveProject } from './lib/services/file_ops';
+  import {
+    openFile,
+    openAny,
+    saveProject,
+    exportGeneratedGcode,
+    exportSimulatedStockStl,
+  } from './lib/services/file_ops';
+  import { simWarningSeverity } from './lib/sim/warnings';
+  import { countCriticalPipelineWarnings, type PipelineWarning } from './lib/api/pipeline-warnings';
   import {
     sessionUi,
     loadWorkspaceAndMaybeReopen,
@@ -182,15 +235,6 @@
   }
   // Bumped to ask the Operations bottom sheet to open (7jug.16).
   let opsSheetOpenSignal = $state(0);
-  /// Open the narrow sidebar overlay (Stock/Layers/Text). Operations is no
-  /// longer in this overlay (it's the bottom sheet, 7jug.16), so a leftover
-  /// `operations` active pane — e.g. carried over from a desktop session
-  /// before the window shrank — would show an empty overlay; normalize it
-  /// to Layers.
-  function openMobilePanel() {
-    if (activeSidebarPane === 'operations') activateSidebarPane('layers');
-    mobilePanelOpen = true;
-  }
   // Narrow-layout (<1024px) only: the sidebar collapses out of the
   // 3-column grid and shows as a full-screen overlay over the canvas.
   // `mobilePanelOpen` toggles that overlay; on desktop it's inert.
@@ -722,6 +766,8 @@
        land. -->
   {#if layout.isNarrow}
     <header class="mobile-appbar">
+      <!-- Fixed 3-slot nav: ◂ left, name centre, ▸ right — the chevrons
+           never move regardless of screen-name length (punch-list 6). -->
       <div class="activity-nav" aria-label="Screen">
         <button
           type="button"
@@ -743,37 +789,97 @@
           ▸
         </button>
       </div>
-      <span class="appbar-flex"></span>
-      <button type="button" class="ab-btn" onclick={() => openAny()} disabled={project.loading}>
-        Open
-      </button>
-      <button
-        type="button"
-        class="ab-btn"
-        onclick={() => saveProject()}
-        disabled={!project.transformedImport}
-      >
-        Save
-      </button>
-      <button
-        type="button"
-        class="ab-btn"
-        onclick={() => (reportOpen = true)}
-        aria-label="Project report"
-      >
-        Report
-      </button>
-      {#if currentActivity === 'project-2d' || currentActivity === 'project-3d'}
+
+      <!-- Centre: warnings/stale status chip; tap re-Generates
+           (punch-list 7/11). -->
+      <div class="appbar-center">
+        {#if warnChipShown}
+          <button
+            type="button"
+            class="warn-chip {warnClass}"
+            onclick={() => generateBus.request()}
+            title={warnTitle}
+            aria-label={warnTitle}
+          >
+            <span class="warn-glyph" aria-hidden="true">{warnGlyph}</span>
+            <span class="warn-text">{warnText}</span>
+          </button>
+        {/if}
+      </div>
+
+      <!-- Right: primary actions. ☰ panels button retired — Stock/Layers/
+           Text are on-canvas chips and Operations is the bottom sheet. -->
+      <div class="appbar-actions">
+        <button type="button" class="ab-btn" onclick={() => openAny()} disabled={project.loading}>
+          Open
+        </button>
+        <div class="save-menu">
+          <button
+            type="button"
+            class="ab-btn"
+            aria-haspopup="menu"
+            aria-expanded={saveMenuOpen}
+            onclick={() => (saveMenuOpen = !saveMenuOpen)}
+            disabled={!project.transformedImport}
+          >
+            Save ▾
+          </button>
+          {#if saveMenuOpen}
+            <button
+              type="button"
+              class="save-backdrop"
+              aria-label="Close save menu"
+              onclick={closeSaveMenu}
+            ></button>
+            <div class="save-pop" role="menu" aria-label="Save options">
+              <button
+                type="button"
+                class="save-item"
+                role="menuitem"
+                onclick={() => {
+                  closeSaveMenu();
+                  void saveProject();
+                }}
+              >
+                Save project
+              </button>
+              <button
+                type="button"
+                class="save-item"
+                role="menuitem"
+                disabled={!project.gen.generated}
+                onclick={() => {
+                  closeSaveMenu();
+                  void exportGeneratedGcode(gcodeDialect);
+                }}
+              >
+                Save G-code (.{gcodeDialect === 'hpgl' ? 'plt' : 'ngc'})
+              </button>
+              <button
+                type="button"
+                class="save-item"
+                role="menuitem"
+                disabled={!project.gen.generated}
+                onclick={() => {
+                  closeSaveMenu();
+                  void exportSimulatedStockStl();
+                }}
+              >
+                Save carved STL
+              </button>
+            </div>
+          {/if}
+        </div>
         <button
           type="button"
           class="ab-btn"
-          onclick={() => openMobilePanel()}
-          aria-label="Show panels"
+          onclick={() => (reportOpen = true)}
+          aria-label="Project report"
         >
-          ☰
+          Report
         </button>
-      {/if}
-      <AppBarOverflowMenu onOpenRecent={(path) => void openRecentProject(path)} />
+        <AppBarOverflowMenu onOpenRecent={(path) => void openRecentProject(path)} />
+      </div>
     </header>
   {/if}
 
@@ -1259,20 +1365,119 @@
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
   }
-  .mobile-appbar .appbar-flex {
-    flex: 1 1 auto;
-  }
+  /* Fixed-width 3-slot nav: ◂ | name | ▸. The name column flexes and
+     truncates so the right chevron stays put regardless of label length. */
   .mobile-appbar .activity-nav {
-    display: inline-flex;
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: 2.5rem 1fr 2.5rem;
     align-items: center;
-    gap: 0.1rem;
+    width: 9.5rem;
   }
   .mobile-appbar .activity-title {
-    min-width: 3.5rem;
     text-align: center;
     font-weight: 600;
     font-size: 0.9rem;
     color: var(--text-strong);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Centre column holds the status chip, centred between nav and actions. */
+  .mobile-appbar .appbar-center {
+    flex: 1 1 auto;
+    display: flex;
+    justify-content: center;
+    min-width: 0;
+  }
+  .mobile-appbar .appbar-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  /* Warnings/stale status chip (centre). Tappable → re-Generate. */
+  .mobile-appbar .warn-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-height: 40px;
+    padding: 0 0.55rem;
+    border-radius: 1rem;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    font-size: 0.82rem;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    max-width: 100%;
+    white-space: nowrap;
+  }
+  .mobile-appbar .warn-chip .warn-glyph {
+    font-size: 0.95rem;
+    line-height: 1;
+  }
+  .mobile-appbar .warn-chip.stale {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .mobile-appbar .warn-chip.critical {
+    border-color: var(--danger, #d44);
+    color: var(--danger, #d44);
+  }
+  .mobile-appbar .warn-chip.warning {
+    border-color: var(--warning, #d49a00);
+    color: var(--warning, #d49a00);
+  }
+  .mobile-appbar .warn-chip.clean {
+    color: var(--text-muted);
+  }
+  /* Save dropdown. */
+  .mobile-appbar .save-menu {
+    position: relative;
+    display: inline-flex;
+  }
+  .mobile-appbar .save-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-dropdown);
+    background: none;
+    border: none;
+    cursor: default;
+  }
+  .mobile-appbar .save-pop {
+    position: absolute;
+    top: calc(100% + 0.3rem);
+    right: 0;
+    z-index: calc(var(--z-dropdown) + 1);
+    min-width: 12rem;
+    padding: 0.3rem;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 6px 22px rgb(0 0 0 / 35%);
+  }
+  .mobile-appbar .save-item {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 44px;
+    padding: 0 0.6rem;
+    background: none;
+    border: none;
+    border-radius: 5px;
+    color: var(--text);
+    font-size: 0.88rem;
+    text-align: left;
+    cursor: pointer;
+  }
+  .mobile-appbar .save-item:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+    color: var(--text-strong);
+  }
+  .mobile-appbar .save-item:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
   .mobile-appbar .ab-btn {
     min-height: 40px;

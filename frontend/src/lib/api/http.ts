@@ -310,7 +310,13 @@ export function resolveApiChoice(opts: {
   return opts.defaultWasm ? { kind: 'wasm' } : { kind: 'http', url: opts.serverUrl };
 }
 
-export function defaultClient(): WiacClient {
+/// Resolve which transport this runtime will use, gathering the live
+/// signals (Tauri injection, `?api=` query, build mode) that feed
+/// `resolveApiChoice`. Exported separately from `defaultClient` so the
+/// About panel's runtime diagnostics can show WHICH transport is active —
+/// and therefore why file ops route the way they do — without
+/// constructing a client. Pure read of `window`; safe to call anywhere.
+export function currentApiChoice(): ApiChoice {
   const hasWindow = typeof window !== 'undefined';
   const w = hasWindow ? (window as unknown as Record<string, unknown>) : undefined;
   const hasTauri = !!w && typeof w.__TAURI_INTERNALS__ !== 'undefined';
@@ -328,7 +334,7 @@ export function defaultClient(): WiacClient {
       ? '/api'
       : `${window.location.protocol}//${window.location.hostname}:8766`
     : 'http://127.0.0.1:8766';
-  const choice = resolveApiChoice({
+  return resolveApiChoice({
     hasTauri,
     envApi: import.meta.env.VITE_IVAC_API as string | undefined,
     queryApi,
@@ -338,6 +344,12 @@ export function defaultClient(): WiacClient {
     defaultWasm: hasWindow && import.meta.env.PROD === true,
     serverUrl,
   });
+}
+
+export function defaultClient(): WiacClient {
+  const w =
+    typeof window !== 'undefined' ? (window as unknown as Record<string, unknown>) : undefined;
+  const choice = currentApiChoice();
   switch (choice.kind) {
     case 'tauri': {
       const mod = (w!.__IVAC_TAURI_CLIENT__ ??= new TauriClientLazy()) as TauriClientLazy;

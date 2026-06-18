@@ -13,6 +13,7 @@ import { isProjectPath } from './file-kind';
 export { isProjectPath } from './file-kind';
 import { defaultClient } from '../api/http';
 import { tryParseStructuredError } from '../api/client';
+import { recordDiagnosticError } from './diagnostics';
 import { migrateLegacyToolTerms } from '../state/tool-migration';
 // `pushRecent` (from ../recent) was a parallel store the UI never read
 // — the File menu draws Recent Projects from workspace.recent_projects.
@@ -46,6 +47,10 @@ async function clearPipelineCacheOnReplace(): Promise<void> {
 export function reportError(input: unknown) {
   const raw = input instanceof Error ? input.message : String(input);
   const structured = tryParseStructuredError(raw);
+  // Latch for the About-screen diagnostics readout — on the Android phone
+  // layout the error toast can be off-screen, so this keeps the message
+  // legible without a cable (wiaconstructor-0gu0).
+  recordDiagnosticError(structured?.message ?? raw);
   project.setError(structured ?? raw);
 }
 

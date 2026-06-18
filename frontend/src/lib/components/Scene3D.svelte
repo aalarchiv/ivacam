@@ -1320,12 +1320,27 @@
     transition:
       opacity 0.12s ease,
       color 0.12s ease;
-    z-index: var(--z-anchor);
+    /* Above the gesture catch layers (pull-to-refresh strip + EdgeSwipeNav
+       edge zones at --z-floating) so the tap reaches the button, matching
+       the 2D pane's fix. */
+    z-index: calc(var(--z-floating) + 2);
   }
   .fit-btn:hover,
   .fit-btn:focus-visible {
     opacity: 1;
     color: var(--text-strong);
+  }
+  /* Touch: enlarge to a ~40px target and move clear of the pull-refresh
+     strip (top 28px) and the 22px EdgeSwipeNav right edge zone, so the
+     whole button is tappable (matches EntityCanvas2D). */
+  @media (pointer: coarse) {
+    .fit-btn {
+      top: 2.4rem;
+      right: 1.75rem;
+      width: 2.5rem;
+      height: 2.5rem;
+      opacity: 0.85;
+    }
   }
   /* Empty-state overlay shown when no drawing is loaded. Mirrors the
      2D pane's empty hint so the user gets the same affordance in

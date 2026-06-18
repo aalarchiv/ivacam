@@ -270,6 +270,23 @@ cargo tauri android build --debug --apk --target aarch64
 cargo tauri android dev
 ```
 
+**Staging for testers.** The build tools each drop output in their own
+tool-specific tree (the APK path above; AppImages under
+`target/release/bundle/appimage/`). Do **not** hand those out or copy
+them by hand — names and locations drift. Instead run, from the repo
+root, after a build:
+
+```sh
+scripts/stage-artifacts.sh android     # or: appimage | all
+```
+
+It copies the freshest build into **`dist-test/`** (the one
+git-ignored directory testers are handed) under a version-stamped
+canonical name read from `tauri.conf.json`:
+`ivaCAM-<ver>-debug-arm64.apk` / `ivaCAM-<ver>-amd64.AppImage`.
+`dist-test/` is the single source of truth for "shippable package" —
+nothing else should accumulate loose APKs/AppImages.
+
 `gen/android/` is **git-ignored** (`.gitignore` → `crates/ivac-tauri/gen`)
 while the port settles — `cargo tauri android init` regenerates it
 deterministically, so you re-scaffold rather than clone it. Once the

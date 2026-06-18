@@ -71,6 +71,32 @@
           <dd>Cancel mode / clear selection / close menu</dd>
         </dl>
       </section>
+
+      <section>
+        <h3>Touch (phone / tablet)</h3>
+        <dl>
+          <dt><kbd>pinch</kbd></dt>
+          <dd>Zoom in / out (2D &amp; 3D)</dd>
+          <dt><kbd>two-finger drag</kbd></dt>
+          <dd>Pan (2D); pan / zoom (3D)</dd>
+          <dt><kbd>one-finger drag</kbd></dt>
+          <dd>Orbit (3D view)</dd>
+          <dt><kbd>tap</kbd></dt>
+          <dd>Select object; tap empty space to deselect</dd>
+          <dt><kbd>⧉</kbd> then <kbd>tap</kbd></dt>
+          <dd>Multi-select — add / remove objects without a keyboard</dd>
+          <dt><kbd>long-press</kbd></dt>
+          <dd>Context menu</dd>
+          <dt><kbd>⌖</kbd></dt>
+          <dd>Fit view to scene</dd>
+          <dt><kbd>edge-swipe</kbd> ◂ ▸</dt>
+          <dd>Switch screens (2D / 3D / Machine / Tools / Settings / Help)</dd>
+          <dt><kbd>pull down</kbd></dt>
+          <dd>Generate / re-generate the program</dd>
+          <dt><kbd>bottom handles</kbd></dt>
+          <dd>Drag up to open the G-code and Operations panels</dd>
+        </dl>
+      </section>
     </div>
 
     {#if !embedded}

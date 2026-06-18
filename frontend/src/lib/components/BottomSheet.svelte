@@ -82,7 +82,13 @@
 
   // Open on a parent request (counter dedupes so unrelated re-runs don't
   // re-open; only a fresh increment opens, to the persisted snap).
-  let lastOpenSignal = 0;
+  // Seed from the MOUNT-TIME signal value, not 0: the sheet unmounts when
+  // the activity leaves Project 2D/3D and remounts on return, but
+  // `openSignal` (an app-level counter) keeps its value across that. Seeding
+  // at 0 made every remount see "0 → N" as a fresh request and re-open the
+  // folded sheet (punch-list 2). Only a real post-mount increment opens it.
+  // svelte-ignore state_referenced_locally
+  let lastOpenSignal = openSignal;
   $effect(() => {
     if (openSignal === lastOpenSignal) return;
     lastOpenSignal = openSignal;

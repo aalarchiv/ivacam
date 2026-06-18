@@ -31,7 +31,13 @@
   import { objectsContainedInBox } from '../canvas/box_select';
   import { resolveAci, hexToCss } from '../canvas/aci-color';
   import { drawSegment } from '../canvas/render/segment';
-  import { drawGrid, drawAxes, drawWorkArea, drawStock, drawStockGizmo } from '../canvas/render/chrome';
+  import {
+    drawGrid,
+    drawAxes,
+    drawWorkArea,
+    drawStock,
+    drawStockGizmo,
+  } from '../canvas/render/chrome';
   import {
     hitStockHandle,
     dragStockBox,
@@ -1336,12 +1342,32 @@
       // overlays a context-menu open if the finger stays put.
       cancelLongPress();
       longPressStart = { x: cx, y: cy };
+      // Snapshot the selection BEFORE the pointer-down selection logic
+      // (below) runs. A long-press is meant to open the "new operation
+      // from selection" menu — but on touch a press that lands just off a
+      // thin line reads as an empty-space tap and clears the selection, so
+      // the menu would then show only the "select something first" hint.
+      // Restore the snapshot in the timer if that happened, so long-press
+      // never drops the user's selection.
+      const selBefore = {
+        objs: [...project.sel.selectedObjects],
+        textId: project.sel.selectedTextLayerId,
+      };
       longPressTimer = setTimeout(() => {
         longPressTimer = null;
         longPressStart = null;
         // Fire only while exactly one finger is still down — a pinch
         // would have cleared this. Open at the press position.
-        if (activePointers.size === 1) openContextMenuAt(cx, cy);
+        if (activePointers.size !== 1) return;
+        if (
+          project.sel.selectedObjects.size === 0 &&
+          project.sel.selectedTextLayerId == null &&
+          (selBefore.objs.length > 0 || selBefore.textId != null)
+        ) {
+          if (selBefore.objs.length > 0) project.selectObjects(selBefore.objs, 'replace');
+          project.sel.selectedTextLayerId = selBefore.textId;
+        }
+        openContextMenuAt(cx, cy);
       }, LONG_PRESS_MS);
     }
 
@@ -1977,11 +2003,22 @@
   {/if}
   {#if project.transformedImport && project.data.operations.length === 0}
     <div class="firstrun-hint" role="status">
-      <span class="firstrun-step">1</span>
-      <span>Click an object to select it</span>
-      <span class="firstrun-arrow">→</span>
-      <span class="firstrun-step">2</span>
-      <span>Right-click for new operation</span>
+      {#if isTouchDevice}
+        <span class="firstrun-step">1</span>
+        <span>Tap an object to select it</span>
+        <span class="firstrun-arrow">→</span>
+        <span class="firstrun-step">2</span>
+        <span>Long-press for new operation</span>
+        <span class="firstrun-arrow">→</span>
+        <span class="firstrun-step">3</span>
+        <span>⧉ then tap to multi-select</span>
+      {:else}
+        <span class="firstrun-step">1</span>
+        <span>Click an object to select it</span>
+        <span class="firstrun-arrow">→</span>
+        <span class="firstrun-step">2</span>
+        <span>Right-click for new operation</span>
+      {/if}
     </div>
   {/if}
   {#if tabPopover}
@@ -2186,17 +2223,21 @@
     transform: translateX(-50%);
     display: inline-flex;
     align-items: center;
-    gap: 0.55rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.55rem;
     padding: 0.5rem 0.9rem;
     background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
     border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
-    border-radius: 999px;
+    border-radius: 16px;
     color: var(--text-strong);
     font-size: 0.78rem;
     box-shadow: 0 6px 18px var(--shadow-modal);
     pointer-events: none;
     max-width: calc(100% - 2rem);
-    white-space: nowrap;
+    /* Above the layer / stock-info chips (var(--z-floating)) so the hint
+       isn't clipped behind them on the phone layout. */
+    z-index: calc(var(--z-floating) + 1);
   }
   .firstrun-step {
     display: inline-flex;

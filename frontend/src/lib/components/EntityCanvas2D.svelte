@@ -2473,6 +2473,19 @@
     color: var(--text-strong);
   }
 
+  /* Lift the corner buttons ABOVE the gesture catch layers (the
+     pull-to-refresh strip at the top and the EdgeSwipeNav edge zones at
+     the sides, both at --z-floating). Without this, those transparent
+     zones sit over the buttons and swallow the tap — the help (?) button
+     at right:0.5rem is under the right edge zone, and the fit button was
+     under the pull strip. Higher z-index lets a tap on the button hit the
+     button while gestures elsewhere still reach the zones. */
+  .fit-btn,
+  .multiselect-btn,
+  .help-btn {
+    z-index: calc(var(--z-floating) + 2);
+  }
+
   /* Touch: (1) enlarge the 1.6rem corner buttons to a ~40px target, and
      (2) drop them BELOW the pull-to-refresh catch strip (top 28px of the
      canvas) — that strip captured pointer events over the buttons, so a
@@ -2487,14 +2500,17 @@
       height: 2.5rem;
       opacity: 0.85;
     }
+    /* Right offsets clear the 22px (≈1.4rem) EdgeSwipeNav right edge zone
+       so the buttons don't physically overlap it (the top:2.4rem already
+       clears the pull strip). */
     .help-btn {
-      right: 0.5rem;
+      right: 1.75rem;
     }
     .fit-btn {
-      right: 3.35rem;
+      right: 4.6rem;
     }
     .multiselect-btn {
-      right: 6.2rem;
+      right: 7.45rem;
     }
   }
 </style>

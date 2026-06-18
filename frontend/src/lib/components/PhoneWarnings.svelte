@@ -69,8 +69,17 @@
     return `${total} warning${total === 1 ? '' : 's'} — tap for details`;
   });
 
-  function generate() {
-    generateBus.request();
+  /// Chip tap: when there's nothing to view (no run yet) or the toolpath
+  /// is stale, the tap (re-)generates; otherwise it toggles the warnings
+  /// window. So a "Stale" chip is a one-tap re-Generate, and a chip
+  /// showing warnings opens the list — no separate Generate button needed.
+  function onChipClick() {
+    if (generating) return;
+    if (!hasRun || stale) {
+      if (canGenerate) generateBus.request();
+    } else {
+      open = !open;
+    }
   }
 </script>
 
@@ -78,10 +87,10 @@
   <button
     type="button"
     class="warn-chip {cls}"
-    onclick={() => (open = true)}
+    onclick={onChipClick}
     title={title}
     aria-label={title}
-    aria-haspopup="dialog"
+    aria-haspopup={!hasRun || stale ? undefined : 'dialog'}
   >
     <span class="warn-glyph" aria-hidden="true">{glyph}</span>
     <span class="warn-text">{text}</span>
@@ -91,30 +100,12 @@
 <FloatingPanel
   {open}
   onClose={() => (open = false)}
-  title={hasRun ? `Warnings (${total})` : 'Generate'}
-  ariaLabel="Generate and warnings"
+  title={`Warnings (${total})`}
+  ariaLabel="Warnings"
   initialWidth={420}
   initialHeight={460}
 >
   <div class="wpanel">
-    <button
-      type="button"
-      class="gen-btn"
-      disabled={!canGenerate || generating}
-      onclick={generate}
-    >
-      {#if generating}
-        Generating…
-      {:else if !hasRun}
-        Generate G-code
-      {:else}
-        Re-Generate
-      {/if}
-    </button>
-    {#if !canGenerate}
-      <p class="hint">Open a drawing and add an operation first.</p>
-    {/if}
-
     {#if hasRun}
       <div class="wlist">
         {#if total === 0}
@@ -194,22 +185,6 @@
     padding: 0.7rem;
     overflow: auto;
   }
-  .gen-btn {
-    flex: 0 0 auto;
-    min-height: 48px;
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
-    font-size: 0.95rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .gen-btn:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-  .hint,
   .empty {
     margin: 0;
     color: var(--text-muted);

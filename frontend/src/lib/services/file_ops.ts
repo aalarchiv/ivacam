@@ -8,7 +8,7 @@
 import { project } from '../state/project.svelte';
 import { workspace } from '../state/workspace.svelte';
 import { confirmStore } from '../state/confirm.svelte';
-import { isTauri } from '../api/env';
+import { isTauri, isAndroid } from '../api/env';
 import { isProjectPath } from './file-kind';
 export { isProjectPath } from './file-kind';
 import { defaultClient } from '../api/http';
@@ -144,6 +144,21 @@ function isContentUri(p: string): boolean {
   return p.startsWith('content://');
 }
 
+/// Extension filters for the native open dialog. Desktop gets the real filter
+/// set so the picker scopes to the right file types. Android gets an EMPTY
+/// filter (all files selectable): its SAF picker maps extension filters to
+/// MIME types and silently drops any extension with no registered MIME
+/// (.dxf, .ngc, .plt, the multi-dot project names), which otherwise greys
+/// those files out / shows "no items". We content-sniff the bytes after
+/// picking, so showing everything is safe. Empty array (not omitted) — the
+/// dialog plugin's Kotlin `filters` field is non-null and parseArgs throws if
+/// it's missing.
+function openFilters(
+  desktop: { name: string; extensions: string[] }[],
+): { name: string; extensions: string[] }[] {
+  return isAndroid() ? [] : desktop;
+}
+
 export async function openAny() {
   if (!(await confirmDiscardIfDirty('open another file'))) return;
   if (isTauri()) {
@@ -154,7 +169,7 @@ export async function openAny() {
       // `ivac-project.json` (project files are plain `.json`, covered here).
       const selected = await open({
         multiple: false,
-        filters: [{ name: 'Drawing or project', extensions: ['dxf', 'svg', 'json'] }],
+        filters: openFilters([{ name: 'Drawing or project', extensions: ['dxf', 'svg', 'json'] }]),
       });
       if (typeof selected !== 'string') return;
       if (isContentUri(selected)) await loadFromContentUri(selected, true);
@@ -178,7 +193,7 @@ export async function openFile() {
       const { open } = await import('@tauri-apps/plugin-dialog');
       const selected = await open({
         multiple: false,
-        filters: [{ name: 'CAD/CAM input', extensions: ['dxf', 'svg'] }],
+        filters: openFilters([{ name: 'CAD/CAM input', extensions: ['dxf', 'svg'] }]),
       });
       if (typeof selected !== 'string') return;
       if (isContentUri(selected)) await loadFromContentUri(selected, false);
@@ -245,12 +260,12 @@ export async function openProject() {
     const { readTextFile } = await import('@tauri-apps/plugin-fs');
     const selected = await open({
       multiple: false,
-      filters: [
+      filters: openFilters([
         {
           name: 'ivaCAM project',
           extensions: ['ivac-project.json', 'vc-project.json', 'json'],
         },
-      ],
+      ]),
     });
     if (typeof selected !== 'string') return;
     project.loading = true;

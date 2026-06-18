@@ -222,6 +222,81 @@ warning — accepted: it's harmless stderr noise, and the alternative
 (`bundleMediaFramework: true`) costs +14 MB for a media stack the app
 never uses.
 
+### Android (Tauri mobile)
+
+ivaCAM runs on Android as a native Tauri 2 app: the Svelte UI loads from
+the embedded `dist/` in the System WebView and calls the **native**
+`ivac-core` commands over Tauri IPC (not the wasm path — `ivac-core` is
+pure Rust with zero `*-sys`/C deps, so it cross-compiles to the Android
+ABIs with just `rustup target add` + the NDK linker).
+
+**One-time toolchain setup.** You need the Android SDK + NDK and JDK 21
+on top of the desktop prerequisites:
+
+```sh
+# 1. SDK via cmdline-tools (sdkmanager). Point ANDROID_HOME wherever you
+#    keep it; ~/Android/Sdk matches Android Studio's default.
+export ANDROID_HOME="$HOME/Android/Sdk"
+sdkmanager --install \
+    "platform-tools" \
+    "platforms;android-34" \
+    "build-tools;34.0.0" \
+    "ndk;27.2.12479018" \
+    "cmake;3.22.1"
+sdkmanager --licenses        # accept
+
+# 2. Env the Tauri/Gradle build reads:
+export NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+export JAVA_HOME="/usr/lib/jvm/java-21-openjdk-amd64"   # JDK 21 (Gradle needs it)
+
+# 3. Rust targets for the four Android ABIs:
+rustup target add \
+    aarch64-linux-android armv7-linux-androideabi \
+    i686-linux-android x86_64-linux-android
+```
+
+**Scaffold + build.** From the Tauri crate:
+
+```sh
+cd crates/ivac-tauri
+cargo tauri android init          # scaffolds gen/android (gradle, manifest, MainActivity)
+
+# Debug APK for a 64-bit ARM device/emulator:
+cargo tauri android build --debug --apk --target aarch64
+# → gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+#   (contains lib/arm64-v8a/libivac_tauri_lib.so — the native core)
+
+# Or live-reload onto a connected device / running emulator:
+cargo tauri android dev
+```
+
+`gen/android/` is **git-ignored** (`.gitignore` → `crates/ivac-tauri/gen`)
+while the port settles — `cargo tauri android init` regenerates it
+deterministically, so you re-scaffold rather than clone it. Once the
+Android build is validated on-device we'll commit it (Tauri's
+recommendation) so the build is reproducible without re-running `init`.
+
+Notes / gotchas:
+
+- **versionName ≥ 0.0.1.** Android's manifest merger rejects `0.0.0`, so
+  the manifests carry the real semver (currently `0.0.1`) — see the
+  `version` field in `tauri.conf.json` / `Cargo.toml`.
+- **JDK 21** is required by the Gradle plugin; JDK 17 may work but is
+  untested here. Expect deprecation warnings (source/target 8) — benign.
+- **`beforeBuildCommand` (`pnpm build`) still runs**, so the static
+  `dist/` is embedded in the APK. `ensure-wasm-fresh` also runs and
+  bundles the wasm pkg even though the native path doesn't use it on
+  Android — harmless, trimmed later.
+- **Desktop-only plugins** (`window-state`) and `tauri.conf.json`'s
+  `app.windows` are `#[cfg(desktop)]`-gated / ignored on mobile.
+- **WebGL/Three.js 3D-sim performance** in the Android System WebView is
+  the open risk — validate early; it may force a lower sim fidelity on
+  mobile.
+
+This is **build-verified, not yet runtime-verified** — the APK assembles
+and links the native core, but on-device IPC / UI / file access (SAF)
+validation is still pending hardware.
+
 ## 4. Verify
 
 ```sh

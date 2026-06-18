@@ -1012,6 +1012,8 @@
           <EntityCanvas2D
             onShowHelp={() => (mainTab = 'help')}
             onActivateSidebarPane={revealSidebarPane}
+            onOpenFileClick={() => openFile()}
+            onAddTextClick={() => (addTextOpen = true)}
           />
         </div>
         {#if Scene3D}

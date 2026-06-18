@@ -48,6 +48,8 @@
     type OSnapTargets,
   } from '../canvas/osnap';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
+  import CanvasLayersChip from './CanvasLayersChip.svelte';
+  import { layout } from '../state/layout.svelte';
   import { computeFootprint } from '../sim/driver';
   import {
     previewSegmentsFor,
@@ -64,8 +66,13 @@
     /// row is visible in the Operations panel without an extra
     /// click on the sidebar.
     onActivateSidebarPane?: (pane: 'stock' | 'layers' | 'text' | 'operations') => void;
+    /// Phone on-canvas affordances (7jug.15): the Layers chip's Add menu
+    /// routes drawing-open / add-text through the same App-owned flows the
+    /// sidebar used. Desktop leaves these undefined (the chip is narrow-only).
+    onOpenFileClick?: () => void;
+    onAddTextClick?: () => void;
   }
-  let { onShowHelp, onActivateSidebarPane }: Props = $props();
+  let { onShowHelp, onActivateSidebarPane, onOpenFileClick, onAddTextClick }: Props = $props();
 
   let canvas: HTMLCanvasElement;
   /// Stacked overlay canvas for state-bearing repaints (selection halos,
@@ -1973,6 +1980,12 @@
       title="Keyboard & mouse shortcuts (?)"
       aria-label="Show keyboard and mouse shortcuts">?</button
     >
+  {/if}
+  <!-- Phone: Layers + add-drawing/add-text fold onto the canvas as a
+       corner chip (7jug.15); no sidebar on narrow. Desktop keeps the
+       sidebar LayerList, so this is narrow-only. -->
+  {#if layout.isNarrow}
+    <CanvasLayersChip {onOpenFileClick} {onAddTextClick} />
   {/if}
 </div>
 

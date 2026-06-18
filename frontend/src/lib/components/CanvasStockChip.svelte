@@ -93,8 +93,8 @@
   /// the user set, or the auto-computed extents.
   const footprintLabel = $derived(
     project.data.stock.mode === 'manual'
-      ? `${project.data.stock.customX.toFixed(1)} × ${project.data.stock.customY.toFixed(1)} mm`
-      : `${computedLength.toFixed(1)} × ${computedWidth.toFixed(1)} mm`,
+      ? `${project.data.stock.customX.toFixed(3)} × ${project.data.stock.customY.toFixed(3)} mm`
+      : `${computedLength.toFixed(3)} × ${computedWidth.toFixed(3)} mm`,
   );
 
   function onWindowPointer(e: MouseEvent) {
@@ -155,10 +155,43 @@
         </div>
       </div>
 
-      <div class="readout">
-        <span class="grp-label">Size</span>
-        <span class="readout-val">{footprintLabel}</span>
-      </div>
+      <div class="grp-label">Size</div>
+      <label class="row">
+        <span class="rlabel">Width (X)</span>
+        <span class="field">
+          {#if project.data.stock.mode === 'auto'}
+            <input type="number" value={computedLength.toFixed(3)} disabled tabindex="-1" />
+          {:else}
+            <input
+              type="number"
+              step="0.5"
+              min="1"
+              value={project.data.stock.customX}
+              class:invalid={invalidKey === 'customX'}
+              onchange={(e) => onStockNumberChange('customX', e, { min: 1 })}
+            />
+          {/if}
+          <span class="unit">mm</span>
+        </span>
+      </label>
+      <label class="row">
+        <span class="rlabel">Length (Y)</span>
+        <span class="field">
+          {#if project.data.stock.mode === 'auto'}
+            <input type="number" value={computedWidth.toFixed(3)} disabled tabindex="-1" />
+          {:else}
+            <input
+              type="number"
+              step="0.5"
+              min="1"
+              value={project.data.stock.customY}
+              class:invalid={invalidKey === 'customY'}
+              onchange={(e) => onStockNumberChange('customY', e, { min: 1 })}
+            />
+          {/if}
+          <span class="unit">mm</span>
+        </span>
+      </label>
 
       <label class="row">
         <span class="rlabel">Thickness</span>
@@ -350,18 +383,6 @@
     height: 1.1rem;
   }
 
-  .readout {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-  }
-  .readout-val {
-    font-size: 0.8rem;
-    color: var(--text);
-    font-variant-numeric: tabular-nums;
-  }
-
   .row {
     display: flex;
     align-items: center;
@@ -396,6 +417,11 @@
   }
   .field input.invalid {
     border-color: var(--danger);
+  }
+  .field input[disabled] {
+    color: var(--text-muted);
+    background: color-mix(in srgb, var(--bg-input) 70%, transparent);
+    cursor: default;
   }
   .field .unit {
     font-size: 0.7rem;

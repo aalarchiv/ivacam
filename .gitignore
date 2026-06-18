@@ -59,3 +59,6 @@ refs/
 # Tempfiles + samples generated during demos.
 frontend/public/samples/*-rust.json
 frontend/public/samples/*-generated.json
+
+# Staged build artifacts handed to testers (APK / AppImage). Not tracked.
+dist-test/

@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop",
+  "description": "Desktop-only permissions. The window-state plugin is #[cfg(desktop)]-gated in lib.rs (mobile has no OS window to persist), and the core window APIs are a desktop concern, so these are scoped to the desktop platforms and never reach the Android/iOS ACL surface.",
+  "platforms": [
+    "linux",
+    "macOS",
+    "windows"
+  ],
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:window:default",
+    "window-state:default"
+  ]
+}

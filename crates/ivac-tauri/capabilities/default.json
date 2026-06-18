@@ -7,13 +7,11 @@
   ],
   "permissions": [
     "core:default",
-    "core:window:default",
     "dialog:default",
     "fs:default",
     "store:default",
     "log:default",
     "process:default",
-    "window-state:default",
     {
       "identifier": "fs:allow-read-text-file",
       "allow": [

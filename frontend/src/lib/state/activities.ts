@@ -9,10 +9,17 @@
 /// separate, not a toggle), so the activity order interleaves them at the
 /// front before the whole-screen tabs.
 
-export type MainTab = 'project' | 'machine' | 'tools' | 'settings' | 'help';
+export type MainTab = 'project' | 'machine' | 'tools' | 'settings' | 'help' | 'about';
 export type Pane = '2d' | '3d';
 
-export type Activity = 'project-2d' | 'project-3d' | 'machine' | 'tools' | 'settings' | 'help';
+export type Activity =
+  | 'project-2d'
+  | 'project-3d'
+  | 'machine'
+  | 'tools'
+  | 'settings'
+  | 'help'
+  | 'about';
 
 /// Swipe order, left → right. ViewPager semantics: no wrap (see
 /// `nextActivity` / `prevActivity`).
@@ -23,6 +30,7 @@ export const ACTIVITY_ORDER: readonly Activity[] = [
   'tools',
   'settings',
   'help',
+  'about',
 ] as const;
 
 /// Which `(mainTab, pane)` an activity maps onto. For the whole-screen
@@ -70,11 +78,13 @@ export function activityLabel(activity: Activity): string {
     case 'machine':
       return 'Machine';
     case 'tools':
-      return 'Tool library';
+      return 'Tool-Lib';
     case 'settings':
       return 'Settings';
     case 'help':
-      return 'Help / About';
+      return 'Help';
+    case 'about':
+      return 'About';
   }
 }
 
@@ -94,5 +104,7 @@ export function activityAbbrev(activity: Activity): string {
       return 'Set';
     case 'help':
       return '?';
+    case 'about':
+      return 'ⓘ';
   }
 }

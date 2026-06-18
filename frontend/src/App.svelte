@@ -36,9 +36,12 @@
   type AddTextDialogComp = typeof import('./lib/components/AddTextDialog.svelte').default;
   let AddTextDialog = $state<AddTextDialogComp | null>(null);
   let addTextDialogLoading = false;
-  type HelpAboutComp = typeof import('./lib/components/HelpAbout.svelte').default;
-  let HelpAbout = $state<HelpAboutComp | null>(null);
-  let helpAboutLoading = false;
+  // Help and About are now SEPARATE screens (About wants prominent space
+  // for the logo). ShortcutHelp is tiny → static import; AboutDialog pulls
+  // in the about markdown → keep it lazy.
+  type AboutDialogComp = typeof import('./lib/components/AboutDialog.svelte').default;
+  let AboutPanel = $state<AboutDialogComp | null>(null);
+  let aboutLoading = false;
   type ReportDialogComp = typeof import('./lib/components/ReportDialog.svelte').default;
   let ReportDialog = $state<ReportDialogComp | null>(null);
   let reportDialogLoading = false;
@@ -51,7 +54,7 @@
   /// Top-level main-window tab. Machine and Tool library are
   /// first-class tabs (not modals); their panels stay mounted once
   /// loaded so in-progress drafts survive tab switches.
-  let mainTab = $state<'project' | 'machine' | 'tools' | 'settings' | 'help'>('project');
+  let mainTab = $state<'project' | 'machine' | 'tools' | 'settings' | 'help' | 'about'>('project');
   let addTextOpen = $state(false);
   let reportOpen = $state(false);
   /// Build-time version stamp baked by vite.config.ts. Surfaces in
@@ -111,6 +114,7 @@
     exportSimulatedStockStl,
   } from './lib/services/file_ops';
   import PhoneWarnings from './lib/components/PhoneWarnings.svelte';
+  import ShortcutHelp from './lib/components/ShortcutHelp.svelte';
   import {
     sessionUi,
     loadWorkspaceAndMaybeReopen,
@@ -468,11 +472,11 @@
     }
   });
   $effect(() => {
-    if (mainTab === 'help' && !HelpAbout && !helpAboutLoading) {
-      helpAboutLoading = true;
-      void import('./lib/components/HelpAbout.svelte').then((m) => {
-        HelpAbout = m.default;
-        helpAboutLoading = false;
+    if (mainTab === 'about' && !AboutPanel && !aboutLoading) {
+      aboutLoading = true;
+      void import('./lib/components/AboutDialog.svelte').then((m) => {
+        AboutPanel = m.default;
+        aboutLoading = false;
       });
     }
   });
@@ -766,6 +770,10 @@
       <!-- Right: primary actions. ☰ panels button retired — Stock/Layers/
            Text are on-canvas chips and Operations is the bottom sheet. -->
       <div class="appbar-actions">
+        <!-- Inline primary actions — hidden on really narrow phones, where
+             they collapse into the ☰ overflow menu (see .wide-actions CSS
+             + AppBarOverflowMenu compact items). -->
+        <div class="wide-actions">
         <button type="button" class="ab-btn" onclick={() => openAny()} disabled={project.loading}>
           Open
         </button>
@@ -834,7 +842,19 @@
         >
           Report
         </button>
-        <AppBarOverflowMenu onOpenRecent={(path) => void openRecentProject(path)} />
+        </div>
+        <AppBarOverflowMenu
+          onOpenRecent={(path) => void openRecentProject(path)}
+          onOpen={() => openAny()}
+          onSaveProject={() => void saveProject()}
+          onSaveGcode={() => void exportGeneratedGcode(gcodeDialect)}
+          onSaveStl={() => void exportSimulatedStockStl()}
+          onReport={() => (reportOpen = true)}
+          canSave={!!project.transformedImport}
+          hasProgram={!!project.gen.generated}
+          loading={project.loading}
+          gcodeExt={gcodeDialect === 'hpgl' ? '.plt' : '.ngc'}
+        />
       </div>
     </header>
   {/if}
@@ -919,7 +939,14 @@
       class="main-tab"
       class:active={mainTab === 'help'}
       onclick={() => (mainTab = 'help')}
-      title="Keyboard shortcuts, usage help, version and license">Help/About</button
+      title="Keyboard &amp; mouse shortcuts and usage help">Help</button
+    >
+    <button
+      type="button"
+      class="main-tab"
+      class:active={mainTab === 'about'}
+      onclick={() => (mainTab = 'about')}
+      title="Version, license, acknowledgements">About</button
     >
   </nav>
 
@@ -1239,13 +1266,16 @@
   {:else if mainTab === 'settings'}
     <main class="tab-panel"><p class="tab-loading">Loading settings…</p></main>
   {/if}
-  {#if HelpAbout}
-    {@const HelpPanel = HelpAbout}
-    <main class="tab-panel" class:tab-hidden={mainTab !== 'help'}>
-      <HelpPanel />
+  <main class="tab-panel" class:tab-hidden={mainTab !== 'help'}>
+    <ShortcutHelp embedded onClose={() => {}} />
+  </main>
+  {#if AboutPanel}
+    {@const AboutComp = AboutPanel}
+    <main class="tab-panel" class:tab-hidden={mainTab !== 'about'}>
+      <AboutComp embedded onClose={() => {}} />
     </main>
-  {:else if mainTab === 'help'}
-    <main class="tab-panel"><p class="tab-loading">Loading help…</p></main>
+  {:else if mainTab === 'about'}
+    <main class="tab-panel"><p class="tab-loading">Loading about…</p></main>
   {/if}
 
   {#if AddTextDialog}
@@ -1351,6 +1381,18 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
+  }
+  /* Inline Open / Save / Report — hidden on really narrow phones, where
+     they move into the ☰ overflow menu (matching breakpoint there). */
+  .mobile-appbar .wide-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  @media (max-width: 430px) {
+    .mobile-appbar .wide-actions {
+      display: none;
+    }
   }
   /* Save dropdown. */
   .mobile-appbar .save-menu {

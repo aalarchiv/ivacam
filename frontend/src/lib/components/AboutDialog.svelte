@@ -144,9 +144,12 @@
 {#snippet shell()}
   <header>
     <h2 id="about-title">About ivaCAM</h2>
-    {#if !embedded}
-      <button type="button" class="dlg-close" onclick={onClose} aria-label="Close">×</button>
-    {/if}
+    <div class="header-right">
+      <img class="about-logo" src="/ivacam-logo.png" alt="ivaCAM logo" width="80" height="80" />
+      {#if !embedded}
+        <button type="button" class="dlg-close" onclick={onClose} aria-label="Close">×</button>
+      {/if}
+    </div>
   </header>
   <!-- Click delegate routes https links to the system browser — the
        embedded webview blocks external navigation, so plain anchors
@@ -249,6 +252,18 @@
   header h2 {
     margin: 0;
     font-size: 1.05rem;
+  }
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  /* Prominent ivaCAM logo, top-right of the About screen. */
+  .about-logo {
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
+    flex: 0 0 auto;
   }
   section {
     padding: 0.75rem 1.25rem;

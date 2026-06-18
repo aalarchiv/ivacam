@@ -12,8 +12,37 @@
     /// Open a recently-used project by path (App owns the dirty-check +
     /// path routing — same flow as the desktop RecentMenu).
     onOpenRecent: (path: string) => void;
+    /// Primary actions. On really narrow phones the inline Open / Save /
+    /// Report app-bar buttons don't fit, so they collapse INTO this menu
+    /// (above Undo) and the trigger becomes a ☰ burger. These render only
+    /// under the compact CSS breakpoint; on wider phones the inline
+    /// buttons are used and these stay hidden.
+    onOpen: () => void;
+    onSaveProject: () => void;
+    onSaveGcode: () => void;
+    onSaveStl: () => void;
+    onReport: () => void;
+    /// A project is loaded → Save is enabled.
+    canSave: boolean;
+    /// A program has been generated → G-code / STL export enabled.
+    hasProgram: boolean;
+    /// A load is in flight → disable Open.
+    loading: boolean;
+    /// G-code extension for the menu label (.ngc vs .plt).
+    gcodeExt: string;
   }
-  let { onOpenRecent }: Props = $props();
+  let {
+    onOpenRecent,
+    onOpen,
+    onSaveProject,
+    onSaveGcode,
+    onSaveStl,
+    onReport,
+    canSave,
+    hasProgram,
+    loading,
+    gcodeExt,
+  }: Props = $props();
 
   let open = $state(false);
 
@@ -52,14 +81,36 @@
     class="ab-btn"
     aria-haspopup="menu"
     aria-expanded={open}
-    aria-label="More actions"
+    aria-label="Menu"
     onclick={() => (open = !open)}
   >
-    ⋮
+    <span class="glyph-dots" aria-hidden="true">⋮</span>
+    <span class="glyph-burger" aria-hidden="true">☰</span>
   </button>
 
   {#if open}
     <div class="menu" role="menu" aria-label="More actions">
+      <!-- Compact-only: the primary actions, surfaced here when the app
+           bar is too narrow for inline buttons. Hidden above the
+           breakpoint (the inline buttons are used there instead). -->
+      <div class="compact-actions">
+        <button type="button" class="menu-item" role="menuitem" disabled={loading} onclick={() => run(onOpen)}>
+          <span>Open…</span>
+        </button>
+        <button type="button" class="menu-item" role="menuitem" disabled={!canSave} onclick={() => run(onSaveProject)}>
+          <span>Save project</span>
+        </button>
+        <button type="button" class="menu-item" role="menuitem" disabled={!hasProgram} onclick={() => run(onSaveGcode)}>
+          <span>Save G-code ({gcodeExt})</span>
+        </button>
+        <button type="button" class="menu-item" role="menuitem" disabled={!hasProgram} onclick={() => run(onSaveStl)}>
+          <span>Save carved STL</span>
+        </button>
+        <button type="button" class="menu-item" role="menuitem" onclick={() => run(onReport)}>
+          <span>Report</span>
+        </button>
+        <div class="menu-sep" role="separator"></div>
+      </div>
       <button
         type="button"
         class="menu-item"
@@ -144,6 +195,27 @@
     background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
     border-color: var(--accent);
     color: var(--text-strong);
+  }
+
+  /* Trigger glyph: ⋮ normally; ☰ on really narrow phones where the
+     primary actions collapse into this menu. The compact action items
+     mirror that breakpoint. */
+  .glyph-burger {
+    display: none;
+  }
+  .compact-actions {
+    display: none;
+  }
+  @media (max-width: 430px) {
+    .glyph-dots {
+      display: none;
+    }
+    .glyph-burger {
+      display: inline;
+    }
+    .compact-actions {
+      display: block;
+    }
   }
 
   .menu {

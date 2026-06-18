@@ -49,6 +49,19 @@ export function reportError(input: unknown) {
   project.setError(structured ?? raw);
 }
 
+/// Collapse multi-dot "extensions" (e.g. `ivac-machine.json`) to their
+/// final segment (`json`) and dedupe. Android's SAF picker maps the
+/// dialog's extension filters to MIME types and fails on multi-dot
+/// values; desktop is unaffected by the broader filter.
+function simpleExtensions(exts: string[]): string[] {
+  const out = new Set<string>();
+  for (const e of exts) {
+    const seg = e.split('.').pop();
+    if (seg) out.add(seg);
+  }
+  return [...out];
+}
+
 /// Friendly progress message based on the file's extension. Used by
 /// the loading overlay so the user knows what's happening for the
 /// 100–500 ms a big DXF takes to parse.
@@ -103,22 +116,48 @@ function hiddenOpenInput(): HTMLInputElement | null {
 /// Desktop opens a single native dialog spanning both filter sets; browser
 /// clicks one combined hidden input whose change handler routes the same
 /// way (see FileUpload).
+/// Android SAF: the dialog returns a `content://` URI, not a filesystem
+/// path, so the Rust `import_path` command can't open it. Read the bytes
+/// via plugin-fs (which understands SAF URIs), content-sniff the format
+/// (the URI carries no usable extension), and route through the
+/// content-based loaders, which write to a real temp file before
+/// importing. Used for both drawing and project opens.
+async function loadFromContentUri(uri: string, allowProject: boolean) {
+  const { readFile } = await import('@tauri-apps/plugin-fs');
+  const bytes = await readFile(uri);
+  const head = new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(0, 512)).trimStart();
+  const isProject = allowProject && head.startsWith('{');
+  const isSvg = /<svg|<\?xml/i.test(head);
+  const name = isProject ? 'import.json' : isSvg ? 'import.svg' : 'import.dxf';
+  const file = new File([bytes], name);
+  if (isProject) await loadProjectFile(file);
+  else await loadFile(file);
+}
+
+/// True for an Android SAF document URI returned by the file dialog.
+function isContentUri(p: string): boolean {
+  return p.startsWith('content://');
+}
+
 export async function openAny() {
   if (!(await confirmDiscardIfDirty('open another file'))) return;
   if (isTauri()) {
-    const { open } = await import('@tauri-apps/plugin-dialog');
-    const selected = await open({
-      multiple: false,
-      filters: [
-        {
-          name: 'Drawing or project',
-          extensions: ['dxf', 'svg', 'ivac-project.json', 'vc-project.json', 'json'],
-        },
-      ],
-    });
-    if (typeof selected !== 'string') return;
-    if (isProjectPath(selected)) await loadProjectPath(selected);
-    else await loadFromPath(selected);
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      // Single-segment extensions only: Android's SAF maps extensions to
+      // MIME types and chokes on multi-dot "extensions" like
+      // `ivac-project.json` (project files are plain `.json`, covered here).
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: 'Drawing or project', extensions: ['dxf', 'svg', 'json'] }],
+      });
+      if (typeof selected !== 'string') return;
+      if (isContentUri(selected)) await loadFromContentUri(selected, true);
+      else if (isProjectPath(selected)) await loadProjectPath(selected);
+      else await loadFromPath(selected);
+    } catch (e) {
+      reportError(e);
+    }
     return;
   }
   hiddenOpenInput()?.click();
@@ -130,12 +169,18 @@ export async function openAny() {
 export async function openFile() {
   if (!(await confirmDiscardIfDirty('open another drawing'))) return;
   if (isTauri()) {
-    const { open } = await import('@tauri-apps/plugin-dialog');
-    const selected = await open({
-      multiple: false,
-      filters: [{ name: 'CAD/CAM input', extensions: ['dxf', 'svg'] }],
-    });
-    if (typeof selected === 'string') await loadFromPath(selected);
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: 'CAD/CAM input', extensions: ['dxf', 'svg'] }],
+      });
+      if (typeof selected !== 'string') return;
+      if (isContentUri(selected)) await loadFromContentUri(selected, false);
+      else await loadFromPath(selected);
+    } catch (e) {
+      reportError(e);
+    }
     return;
   }
   hiddenFileInput()?.click();
@@ -356,19 +401,14 @@ export async function saveProject() {
   const base = project.transformedImport?.filename?.replace(/\.[^.]+$/, '') ?? 'project';
   const filename = `${base}.ivac-project.json`;
   if (isTauri()) {
-    const { save } = await import('@tauri-apps/plugin-dialog');
-    const { writeTextFile } = await import('@tauri-apps/plugin-fs');
-    const path = await save({
-      defaultPath: filename,
-      filters: [
-        {
-          name: 'ivaCAM project',
-          extensions: ['ivac-project.json', 'vc-project.json', 'json'],
-        },
-      ],
-    });
-    if (typeof path === 'string') {
-      try {
+    try {
+      const { save } = await import('@tauri-apps/plugin-dialog');
+      const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+      const path = await save({
+        defaultPath: filename,
+        filters: [{ name: 'ivaCAM project', extensions: ['json'] }],
+      });
+      if (typeof path === 'string') {
         await writeTextFile(path, snapshot);
         // The file now matches disk — clear dirty to match the
         // contract every load path upholds. Otherwise the quit-confirm
@@ -378,9 +418,9 @@ export async function saveProject() {
         // The project now lives in a saved file — clears hasUnsavedWork
         // so a later Open doesn't prompt on a just-saved project.
         project.savedToProject = true;
-      } catch (e) {
-        project.setError(`save: ${e instanceof Error ? e.message : String(e)}`);
       }
+    } catch (e) {
+      project.setError(`save: ${e instanceof Error ? e.message : String(e)}`);
     }
     return;
   }
@@ -590,11 +630,18 @@ async function pickAndReadJson(
   filters: Array<{ name: string; extensions: string[] }>,
 ): Promise<string | null> {
   if (isTauri()) {
-    const { open } = await import('@tauri-apps/plugin-dialog');
-    const { readTextFile } = await import('@tauri-apps/plugin-fs');
-    const selected = await open({ filters, multiple: false });
-    if (typeof selected !== 'string') return null;
-    return readTextFile(selected);
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const { readTextFile } = await import('@tauri-apps/plugin-fs');
+      // Flatten to single-segment extensions for Android SAF compatibility.
+      const safe = filters.map((f) => ({ ...f, extensions: simpleExtensions(f.extensions) }));
+      const selected = await open({ filters: safe, multiple: false });
+      if (typeof selected !== 'string') return null;
+      return await readTextFile(selected);
+    } catch (e) {
+      reportError(e);
+      return null;
+    }
   }
   return new Promise<string | null>((resolve) => {
     const input = document.createElement('input');
@@ -618,11 +665,16 @@ async function writeJson(
   filters: Array<{ name: string; extensions: string[] }>,
 ) {
   if (isTauri()) {
-    const { save } = await import('@tauri-apps/plugin-dialog');
-    const { writeTextFile } = await import('@tauri-apps/plugin-fs');
-    const path = await save({ defaultPath: defaultName, filters });
-    if (typeof path === 'string') {
-      await writeTextFile(path, body);
+    try {
+      const { save } = await import('@tauri-apps/plugin-dialog');
+      const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+      const safe = filters.map((f) => ({ ...f, extensions: simpleExtensions(f.extensions) }));
+      const path = await save({ defaultPath: defaultName, filters: safe });
+      if (typeof path === 'string') {
+        await writeTextFile(path, body);
+      }
+    } catch (e) {
+      reportError(e);
     }
     return;
   }

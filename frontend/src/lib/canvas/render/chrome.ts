@@ -1,4 +1,5 @@
 import type { ProjectFn } from './types';
+import { stockHandleScreenPositions, type WorldBox } from '../stock-gizmo';
 
 /// Static canvas chrome — grid, axes, machine work-area, stock outline.
 /// Pure painters: callers resolve theme colors and pass them in, so the
@@ -131,5 +132,56 @@ export function drawStock(
   ctx.strokeStyle = color;
   ctx.globalAlpha = 0.85;
   ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+  ctx.restore();
+}
+
+/// On-canvas stock gizmo handles (7jug.15, phone only). Draws the eight
+/// resize squares plus the centre move puck over the already-drawn stock
+/// outline. `box` is the stock footprint in world mm; the same
+/// `stock-gizmo` geometry the hit-tester uses places the handles, so what
+/// the user sees is exactly what they can grab. `activeKind` highlights
+/// the handle currently being dragged.
+export function drawStockGizmo(
+  ctx: CanvasRenderingContext2D,
+  box: WorldBox,
+  scale: number,
+  offX: number,
+  offY: number,
+  handlePx: number,
+  color: string,
+  accent: string,
+  fill: string,
+  activeKind: string | null,
+) {
+  if (box.maxX - box.minX <= 0 || box.maxY - box.minY <= 0) return;
+  const pos = stockHandleScreenPositions(box, { scale, offX, offY });
+  const r = handlePx * 0.5;
+  ctx.save();
+  ctx.lineWidth = 1.5;
+  for (const [kind, p] of Object.entries(pos)) {
+    const on = kind === activeKind;
+    if (kind === 'move') {
+      // Move puck: a filled circle with a plus, distinct from the square
+      // resize handles so its role reads at a glance.
+      ctx.globalAlpha = on ? 1 : 0.9;
+      ctx.fillStyle = on ? accent : color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r + 1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = fill;
+      ctx.beginPath();
+      ctx.moveTo(p.x - r * 0.6, p.y);
+      ctx.lineTo(p.x + r * 0.6, p.y);
+      ctx.moveTo(p.x, p.y - r * 0.6);
+      ctx.lineTo(p.x, p.y + r * 0.6);
+      ctx.stroke();
+    } else {
+      ctx.globalAlpha = on ? 1 : 0.9;
+      ctx.fillStyle = on ? accent : fill;
+      ctx.fillRect(p.x - r, p.y - r, handlePx, handlePx);
+      ctx.strokeStyle = color;
+      ctx.strokeRect(p.x - r, p.y - r, handlePx, handlePx);
+    }
+  }
   ctx.restore();
 }

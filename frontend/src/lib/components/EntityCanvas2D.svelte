@@ -31,7 +31,15 @@
   import { objectsContainedInBox } from '../canvas/box_select';
   import { resolveAci, hexToCss } from '../canvas/aci-color';
   import { drawSegment } from '../canvas/render/segment';
-  import { drawGrid, drawAxes, drawWorkArea, drawStock } from '../canvas/render/chrome';
+  import { drawGrid, drawAxes, drawWorkArea, drawStock, drawStockGizmo } from '../canvas/render/chrome';
+  import {
+    hitStockHandle,
+    dragStockBox,
+    boxToStock,
+    type StockHandleKind,
+    type StockResizeKind,
+    type WorldBox,
+  } from '../canvas/stock-gizmo';
   import { RegionPathCache, drawRegions } from '../canvas/render/regions';
   import { drawTextPreview } from '../canvas/render/text';
   import { drawImportedWireframe, drawEntityHalos } from '../canvas/render/entities';
@@ -505,6 +513,51 @@
     );
   }
 
+  // ---- Stock gizmo (phone on-canvas affordance, 7jug.15) --------------
+  /// Touch-friendly grab radius for the stock handles. Larger than the
+  /// 8px geometry tolerance because these are deliberate finger targets.
+  const STOCK_HANDLE_PX = 14;
+  const STOCK_HIT_PX = 22;
+  /// Smallest stock dimension a resize drag may produce (mm).
+  const STOCK_MIN_MM = 1;
+  /// Active stock-gizmo drag. `move` pans the offset (mode preserved);
+  /// resize kinds rewrite the box and switch to manual mode. `startBox`
+  /// is the world footprint at grab; `grab` is the world point first
+  /// touched; `startOffset` seeds the move delta.
+  let stockDrag = $state<{
+    kind: StockHandleKind;
+    pointerId: number;
+    startBox: WorldBox;
+    grab: { x: number; y: number };
+    startOffsetX: number;
+    startOffsetY: number;
+  } | null>(null);
+
+  /// Current stock footprint in world mm (same source the renderer uses).
+  function currentStockBox(): WorldBox {
+    return computeFootprint(
+      project.transformedImport,
+      project.data.stock,
+      project.data.machine.workArea,
+    );
+  }
+  /// Imported-geometry bbox centre (the manual-stock centring anchor), or
+  /// null when nothing is loaded.
+  function currentBboxCenter(): { x: number; y: number } | null {
+    const imp = project.transformedImport;
+    if (!imp) return null;
+    const { min_x, min_y, max_x, max_y } = imp.bbox;
+    return { x: (min_x + max_x) * 0.5, y: (min_y + max_y) * 0.5 };
+  }
+  /// Hit-test the stock gizmo handles at a canvas pixel. Narrow-only; the
+  /// desktop sidebar owns stock there. Returns the grabbed handle or null.
+  function stockHandleHit(cx: number, cy: number): StockHandleKind | null {
+    if (!layout.isNarrow || !lastTransform) return null;
+    const box = currentStockBox();
+    if (box.maxX - box.minX <= 0 || box.maxY - box.minY <= 0) return null;
+    return hitStockHandle(box, lastTransform, cx, cy, STOCK_HIT_PX);
+  }
+
   /// Convert canvas-pixel coords to data-space (mm) using the last
   /// emitted transform. Returns `null` when no transform is staged
   /// (project hasn't rendered yet).
@@ -561,6 +614,35 @@
         pinch.prevA = { ...a };
         pinch.prevB = { ...b };
       }
+      return;
+    }
+    // Live stock-gizmo drag (phone). Move pans the offset (mode kept);
+    // resize rewrites the box and switches to manual. Each gesture
+    // coalesces into one undo via the explicit setStock key.
+    if (stockDrag && e.pointerId === stockDrag.pointerId) {
+      const cur = pxToData(cx, cy);
+      if (cur) {
+        if (stockDrag.kind === 'move') {
+          project.setStock(
+            {
+              offsetX: stockDrag.startOffsetX + (cur.x - stockDrag.grab.x),
+              offsetY: stockDrag.startOffsetY + (cur.y - stockDrag.grab.y),
+            },
+            'setStock:gizmo-move',
+          );
+        } else {
+          const nextBox = dragStockBox(
+            stockDrag.kind as StockResizeKind,
+            stockDrag.startBox,
+            stockDrag.grab,
+            cur,
+            STOCK_MIN_MM,
+          );
+          project.setStock(boxToStock(nextBox, currentBboxCenter()), 'setStock:gizmo-resize');
+        }
+      }
+      canvas.style.cursor = 'grabbing';
+      e.preventDefault();
       return;
     }
     // A held finger that wanders past tap tolerance is a drag, not a
@@ -731,6 +813,15 @@
     if (pinch && (e.pointerId === pinch.idA || e.pointerId === pinch.idB)) {
       pinch = null;
       boxSelect = null;
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {}
+      return;
+    }
+    // End an active stock-gizmo drag.
+    if (stockDrag && e.pointerId === stockDrag.pointerId) {
+      stockDrag = null;
+      canvas.style.cursor = 'default';
       try {
         canvas.releasePointerCapture(e.pointerId);
       } catch {}
@@ -1163,6 +1254,33 @@
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
 
+    // Stock gizmo (phone, 7jug.15): grabbing a handle pre-empts
+    // pan / select / long-press. Only on the FIRST pointer — a second
+    // finger promotes to a pinch (handled below, which cancels the drag).
+    if (e.pointerType !== 'touch' || activePointers.size === 0) {
+      const handle = stockHandleHit(cx, cy);
+      if (handle) {
+        const grab = pxToData(cx, cy) ?? { x: 0, y: 0 };
+        stockDrag = {
+          kind: handle,
+          pointerId: e.pointerId,
+          startBox: currentStockBox(),
+          grab,
+          startOffsetX: project.data.stock.offsetX ?? 0,
+          startOffsetY: project.data.stock.offsetY ?? 0,
+        };
+        if (e.pointerType === 'touch') activePointers.set(e.pointerId, { x: cx, y: cy });
+        try {
+          canvas.setPointerCapture(e.pointerId);
+        } catch {
+          /* harmless */
+        }
+        canvas.style.cursor = 'grabbing';
+        e.preventDefault();
+        return;
+      }
+    }
+
     // Touch gesture tracking. A second finger promotes the
     // gesture to a pinch-zoom / two-finger pan; the first finger held
     // still becomes a long-press → context menu. Mouse / pen fall
@@ -1178,6 +1296,7 @@
         approachDrag = null;
         rasterDrag = null;
         textDrag = null;
+        stockDrag = null;
         const entries = [...activePointers.entries()];
         const first = entries[0];
         const second = entries[1];
@@ -1505,16 +1624,29 @@
       y: themeVar('--axis-y', '#226622'),
     });
     drawWorkArea(ctx, project2, project.data.machine.workArea, themeVar('--text-muted', '#888'));
-    drawStock(
-      ctx,
-      project2,
-      computeFootprint(
-        project.transformedImport,
-        project.data.stock,
-        project.data.machine.workArea,
-      ),
-      themeVar('--stock-edge', '#888'),
+    const stockBox = computeFootprint(
+      project.transformedImport,
+      project.data.stock,
+      project.data.machine.workArea,
     );
+    drawStock(ctx, project2, stockBox, themeVar('--stock-edge', '#888'));
+    // Phone: overlay grab handles so the stock rect is directly
+    // manipulable (move + resize) without a sidebar (7jug.15). Desktop
+    // edits stock via the StockPanel, so the gizmo is narrow-only.
+    if (layout.isNarrow) {
+      drawStockGizmo(
+        ctx,
+        stockBox,
+        scale,
+        offX,
+        offY,
+        STOCK_HANDLE_PX,
+        themeVar('--stock-edge', '#888'),
+        themeVar('--accent', '#2d6cdf'),
+        themeVar('--bg-elevated', '#222'),
+        stockDrag?.kind ?? null,
+      );
+    }
 
     // Imported-geometry chrome (regions + base wireframe) — only when a
     // DXF is loaded. A placement-only project skips straight to the text

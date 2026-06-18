@@ -660,7 +660,7 @@ export function setWorkOffsetCommand(patch: Partial<WorkOffset>): Command {
   };
 }
 
-export function setStockCommand(patch: Partial<StockConfig>): Command {
+export function setStockCommand(patch: Partial<StockConfig>, coalesceKey?: string): Command {
   let prevPatch: Partial<StockConfig> = {};
   return {
     label: 'Update stock',
@@ -678,7 +678,10 @@ export function setStockCommand(patch: Partial<StockConfig>): Command {
       t.stock = { ...t.stock, ...prevPatch };
       t.dirty = true;
     },
-    coalesce_key: coalesceKeyForStockPatch(patch),
+    // Single-field spinner edits derive their own key; a multi-field
+    // drag (the on-canvas gizmo patches size + offset together) passes an
+    // explicit key so the whole gesture coalesces into one undo entry.
+    coalesce_key: coalesceKey ?? coalesceKeyForStockPatch(patch),
   };
 }
 

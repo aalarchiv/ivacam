@@ -1017,9 +1017,9 @@ export class ProjectState {
     );
   }
 
-  setStock(patch: Partial<StockConfig>) {
+  setStock(patch: Partial<StockConfig>, coalesceKey?: string) {
     if (Object.keys(patch).length === 0) return;
-    this.history.exec(setStockCommand(patch), this.target());
+    this.history.exec(setStockCommand(patch, coalesceKey), this.target());
   }
 
   /// Undoable WorkOffset edit. Routes through the command bus so the

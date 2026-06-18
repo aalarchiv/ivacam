@@ -60,42 +60,6 @@
   const buildVersion =
     typeof __IVAC_BUILD_VERSION__ === 'string' ? __IVAC_BUILD_VERSION__ : 'unknown';
 
-  // ---- Phone app-bar warning chip (punch-list 7/11) -------------------
-  // The desktop GenerateBar owns the full warnings chip + panel; it's
-  // hidden on narrow, so the phone app bar carries a compact status chip
-  // (centre of the bar) that doubles as a re-Generate trigger. Same
-  // sim+pipeline aggregation the desktop chip uses.
-  const warnSim = $derived(project.gen.simDiagnostics?.warnings ?? []);
-  const warnPipe = $derived<PipelineWarning[]>(
-    (project.gen.generated as { warnings?: PipelineWarning[] } | null)?.warnings ?? [],
-  );
-  const warnStale = $derived(project.gen.simDiagnostics != null && project.data.dirty);
-  const warnCritical = $derived(
-    warnSim.filter((w) => simWarningSeverity(w) === 'critical').length +
-      countCriticalPipelineWarnings(warnPipe),
-  );
-  const warnTotal = $derived(warnSim.length + warnPipe.length);
-  /// Chip is meaningful once a program/sim run exists.
-  const warnChipShown = $derived(
-    project.gen.generated != null || project.gen.simDiagnostics != null,
-  );
-  const warnGlyph = $derived(
-    warnStale ? '↻' : warnCritical > 0 ? '⛔' : warnTotal > 0 ? '⚠' : '✓',
-  );
-  const warnClass = $derived(
-    warnStale ? 'stale' : warnCritical > 0 ? 'critical' : warnTotal > 0 ? 'warning' : 'clean',
-  );
-  const warnText = $derived.by(() => {
-    if (warnStale) return 'Stale';
-    if (warnTotal === 0) return 'OK';
-    return warnCritical > 0 ? `${warnTotal} (${warnCritical}!)` : `${warnTotal}`;
-  });
-  const warnTitle = $derived.by(() => {
-    if (warnStale) return 'Toolpath is stale — tap to re-Generate';
-    if (warnTotal === 0) return 'No warnings — tap to re-Generate';
-    return `${warnTotal} warning${warnTotal === 1 ? '' : 's'}${warnCritical > 0 ? ` (${warnCritical} critical)` : ''} — tap to re-Generate`;
-  });
-
   // Phone Save dropdown (punch-list 10): project / G-code / carved STL.
   let saveMenuOpen = $state(false);
   const gcodeDialect = $derived<'linuxcnc' | 'grbl' | 'hpgl'>(
@@ -146,8 +110,7 @@
     exportGeneratedGcode,
     exportSimulatedStockStl,
   } from './lib/services/file_ops';
-  import { simWarningSeverity } from './lib/sim/warnings';
-  import { countCriticalPipelineWarnings, type PipelineWarning } from './lib/api/pipeline-warnings';
+  import PhoneWarnings from './lib/components/PhoneWarnings.svelte';
   import {
     sessionUi,
     loadWorkspaceAndMaybeReopen,
@@ -790,20 +753,13 @@
         </button>
       </div>
 
-      <!-- Centre: warnings/stale status chip; tap re-Generates
-           (punch-list 7/11). -->
+      <!-- Centre: generate/warnings status chip. Tap opens a panel with a
+           Generate/Re-Generate button + the warnings list (the desktop
+           GenerateBar is hidden on phone). Shown whenever there's geometry
+           to generate, including the idle "Generate" state. -->
       <div class="appbar-center">
-        {#if warnChipShown}
-          <button
-            type="button"
-            class="warn-chip {warnClass}"
-            onclick={() => generateBus.request()}
-            title={warnTitle}
-            aria-label={warnTitle}
-          >
-            <span class="warn-glyph" aria-hidden="true">{warnGlyph}</span>
-            <span class="warn-text">{warnText}</span>
-          </button>
+        {#if project.geometryView != null}
+          <PhoneWarnings />
         {/if}
       </div>
 
@@ -1395,42 +1351,6 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
-  }
-  /* Warnings/stale status chip (centre). Tappable → re-Generate. */
-  .mobile-appbar .warn-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    min-height: 40px;
-    padding: 0 0.55rem;
-    border-radius: 1rem;
-    border: 1px solid var(--border);
-    background: var(--bg-elevated);
-    color: var(--text);
-    font-size: 0.82rem;
-    font-variant-numeric: tabular-nums;
-    cursor: pointer;
-    max-width: 100%;
-    white-space: nowrap;
-  }
-  .mobile-appbar .warn-chip .warn-glyph {
-    font-size: 0.95rem;
-    line-height: 1;
-  }
-  .mobile-appbar .warn-chip.stale {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-  .mobile-appbar .warn-chip.critical {
-    border-color: var(--danger, #d44);
-    color: var(--danger, #d44);
-  }
-  .mobile-appbar .warn-chip.warning {
-    border-color: var(--warning, #d49a00);
-    color: var(--warning, #d49a00);
-  }
-  .mobile-appbar .warn-chip.clean {
-    color: var(--text-muted);
   }
   /* Save dropdown. */
   .mobile-appbar .save-menu {

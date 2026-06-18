@@ -2473,14 +2473,16 @@
     color: var(--text-strong);
   }
 
-  /* Touch: the 1.6rem corner buttons read as "only the glyph is
-     tappable" on a phone because the button ≈ the symbol. Enlarge them to
-     a ~40px touch target and re-space the right-hand cluster so the whole
-     button is comfortably hittable (7jug punch-list). */
+  /* Touch: (1) enlarge the 1.6rem corner buttons to a ~40px target, and
+     (2) drop them BELOW the pull-to-refresh catch strip (top 28px of the
+     canvas) — that strip captured pointer events over the buttons, so a
+     tap at top:0.5rem hit the refresh zone instead of the button. Moving
+     them to top:2.4rem clears the strip so they're tappable again. */
   @media (pointer: coarse) {
     .fit-btn,
     .multiselect-btn,
     .help-btn {
+      top: 2.4rem;
       width: 2.5rem;
       height: 2.5rem;
       opacity: 0.85;

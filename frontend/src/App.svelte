@@ -12,6 +12,7 @@
   import OperationsList from './lib/components/OperationsList.svelte';
   import BottomSheet from './lib/components/BottomSheet.svelte';
   import PullToRefresh from './lib/components/PullToRefresh.svelte';
+  import GcodeSubtitles from './lib/components/GcodeSubtitles.svelte';
   import { bottomPanels } from './lib/state/bottom-panels.svelte';
   import { generateBus } from './lib/state/generate-bus.svelte';
   import StockPanel from './lib/components/StockPanel.svelte';
@@ -1020,6 +1021,11 @@
           {@const C = Scene3D}
           <div class:pane-hidden={activePane !== '3d'} class="pane">
             <C onActivateSidebarPane={revealSidebarPane} />
+            <!-- Phone experiment (7jug.17): G-code "subtitles" synced to
+                 the playhead, captioned over the running 3D sim. -->
+            {#if layout.isNarrow}
+              <GcodeSubtitles />
+            {/if}
           </div>
         {:else if activePane === '3d'}
           <p class="loading-3d">Loading 3D…</p>
@@ -1466,6 +1472,9 @@
   .pane {
     width: 100%;
     height: 100%;
+    /* Positioned ancestor for the phone G-code subtitles overlay (7jug.17)
+       and other absolutely-positioned pane children. */
+    position: relative;
   }
   .pane-hidden {
     display: none;

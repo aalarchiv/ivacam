@@ -150,6 +150,7 @@
   import { computeFootprint } from './lib/sim/driver';
   import { togglePane, revealPane, type SidebarPane } from './lib/state/sidebar-pane';
   import { resolveShortcut } from './lib/state/app-menu';
+  import { swipeHorizontal } from './lib/actions/swipe-horizontal';
   import { layout } from './lib/state/layout.svelte';
   import {
     ACTIVITY_ORDER,
@@ -748,7 +749,19 @@
     <header class="mobile-appbar">
       <!-- Fixed 3-slot nav: ◂ left, name centre, ▸ right — the chevrons
            never move regardless of screen-name length (punch-list 6). -->
-      <div class="activity-nav" aria-label="Screen">
+      <!-- Swipe/flick the top screen panel to move between screens. This is
+           the reliable phone path: the on-canvas EdgeSwipeNav zones sit on
+           the screen edges, which Android's system back gesture owns, so
+           those swipes never reach the WebView. The chevron buttons still
+           handle taps (a tap produces no horizontal travel). -->
+      <div
+        class="activity-nav"
+        aria-label="Screen"
+        use:swipeHorizontal={{
+          onLeft: () => goToActivity(nextActivity(currentActivity)),
+          onRight: () => goToActivity(prevActivity(currentActivity)),
+        }}
+      >
         <button
           type="button"
           class="ab-btn ab-chevron"
@@ -787,74 +800,74 @@
              they collapse into the ☰ overflow menu (see .wide-actions CSS
              + AppBarOverflowMenu compact items). -->
         <div class="wide-actions">
-        <button type="button" class="ab-btn" onclick={() => openAny()} disabled={project.loading}>
-          Open
-        </button>
-        <div class="save-menu">
+          <button type="button" class="ab-btn" onclick={() => openAny()} disabled={project.loading}>
+            Open
+          </button>
+          <div class="save-menu">
+            <button
+              type="button"
+              class="ab-btn"
+              aria-haspopup="menu"
+              aria-expanded={saveMenuOpen}
+              onclick={() => (saveMenuOpen = !saveMenuOpen)}
+              disabled={!project.transformedImport}
+            >
+              Save ▾
+            </button>
+            {#if saveMenuOpen}
+              <button
+                type="button"
+                class="save-backdrop"
+                aria-label="Close save menu"
+                onclick={closeSaveMenu}
+              ></button>
+              <div class="save-pop" role="menu" aria-label="Save options">
+                <button
+                  type="button"
+                  class="save-item"
+                  role="menuitem"
+                  onclick={() => {
+                    closeSaveMenu();
+                    void saveProject();
+                  }}
+                >
+                  Save project
+                </button>
+                <button
+                  type="button"
+                  class="save-item"
+                  role="menuitem"
+                  disabled={!project.gen.generated}
+                  onclick={() => {
+                    closeSaveMenu();
+                    void exportGeneratedGcode(gcodeDialect);
+                  }}
+                >
+                  Save G-code (.{gcodeDialect === 'hpgl' ? 'plt' : 'ngc'})
+                </button>
+                <button
+                  type="button"
+                  class="save-item"
+                  role="menuitem"
+                  disabled={!project.gen.generated}
+                  onclick={() => {
+                    closeSaveMenu();
+                    void exportSimulatedStockStl();
+                  }}
+                >
+                  Save carved STL
+                </button>
+              </div>
+            {/if}
+          </div>
           <button
             type="button"
             class="ab-btn"
-            aria-haspopup="menu"
-            aria-expanded={saveMenuOpen}
-            onclick={() => (saveMenuOpen = !saveMenuOpen)}
-            disabled={!project.transformedImport}
+            onclick={() => (reportOpen = true)}
+            aria-label="Project report"
           >
-            Save ▾
+            Report
           </button>
-          {#if saveMenuOpen}
-            <button
-              type="button"
-              class="save-backdrop"
-              aria-label="Close save menu"
-              onclick={closeSaveMenu}
-            ></button>
-            <div class="save-pop" role="menu" aria-label="Save options">
-              <button
-                type="button"
-                class="save-item"
-                role="menuitem"
-                onclick={() => {
-                  closeSaveMenu();
-                  void saveProject();
-                }}
-              >
-                Save project
-              </button>
-              <button
-                type="button"
-                class="save-item"
-                role="menuitem"
-                disabled={!project.gen.generated}
-                onclick={() => {
-                  closeSaveMenu();
-                  void exportGeneratedGcode(gcodeDialect);
-                }}
-              >
-                Save G-code (.{gcodeDialect === 'hpgl' ? 'plt' : 'ngc'})
-              </button>
-              <button
-                type="button"
-                class="save-item"
-                role="menuitem"
-                disabled={!project.gen.generated}
-                onclick={() => {
-                  closeSaveMenu();
-                  void exportSimulatedStockStl();
-                }}
-              >
-                Save carved STL
-              </button>
-            </div>
-          {/if}
-        </div>
-        <button
-          type="button"
-          class="ab-btn"
-          onclick={() => (reportOpen = true)}
-          aria-label="Project report"
-        >
-          Report
-        </button>
         </div>
         <AppBarOverflowMenu
           onOpenRecent={(path) => void openRecentProject(path)}

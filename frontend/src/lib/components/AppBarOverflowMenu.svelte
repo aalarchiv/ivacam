@@ -7,6 +7,7 @@
   /// (.12); 2D/3D and the whole-screen tabs are activities (.2).
   import { project } from '../state/project.svelte';
   import { workspace } from '../state/workspace.svelte';
+  import { isTauri } from '../api/env';
 
   interface Props {
     /// Open a recently-used project by path (App owns the dirty-check +
@@ -30,6 +31,8 @@
     loading: boolean;
     /// G-code extension for the menu label (.ngc vs .plt).
     gcodeExt: string;
+    /// Quit the app (Tauri only) — confirm-if-dirty handled by the caller.
+    onExit: () => void;
   }
   let {
     onOpenRecent,
@@ -42,6 +45,7 @@
     hasProgram,
     loading,
     gcodeExt,
+    onExit,
   }: Props = $props();
 
   let open = $state(false);
@@ -162,6 +166,13 @@
             <span class="recent-name">{r.filename}</span>
           </button>
         {/each}
+      {/if}
+
+      {#if isTauri()}
+        <div class="menu-sep" role="separator"></div>
+        <button type="button" class="menu-item" role="menuitem" onclick={() => run(onExit)}>
+          <span>Exit ivaCAM</span>
+        </button>
       {/if}
     </div>
   {/if}

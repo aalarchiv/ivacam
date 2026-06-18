@@ -72,6 +72,18 @@
     saveMenuOpen = false;
   }
 
+  /// Quit the app (phone has no window chrome to close it). Prompts to
+  /// save when there are unsaved changes, then exits the process.
+  async function exitApp() {
+    if (!(await confirmDiscardIfDirty('exit ivaCAM'))) return;
+    try {
+      const { exit } = await import('@tauri-apps/plugin-process');
+      await exit(0);
+    } catch (e) {
+      console.warn('exit failed:', e);
+    }
+  }
+
   /// Window title carries the build version so a screenshot pins the
   /// report to the exact binary. Format: "ivaCAM v<pkg>
   /// (<git-describe>)" — package version comes from
@@ -112,6 +124,7 @@
     saveProject,
     exportGeneratedGcode,
     exportSimulatedStockStl,
+    confirmDiscardIfDirty,
   } from './lib/services/file_ops';
   import PhoneWarnings from './lib/components/PhoneWarnings.svelte';
   import ShortcutHelp from './lib/components/ShortcutHelp.svelte';
@@ -854,6 +867,7 @@
           hasProgram={!!project.gen.generated}
           loading={project.loading}
           gcodeExt={gcodeDialect === 'hpgl' ? '.plt' : '.ngc'}
+          onExit={() => void exitApp()}
         />
       </div>
     </header>
@@ -1347,7 +1361,10 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    padding: 0.3rem 0.5rem;
+    /* Pad the top by the device status-bar inset (notch / Android status
+       bar) so the bar isn't hidden behind it. Needs viewport-fit=cover in
+       the viewport meta to expose env(). */
+    padding: calc(0.3rem + env(safe-area-inset-top, 0px)) 0.5rem 0.3rem;
     background: var(--bg-panel);
     border-bottom: 1px solid var(--border);
   }

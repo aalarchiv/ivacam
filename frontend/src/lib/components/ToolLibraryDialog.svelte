@@ -2147,6 +2147,45 @@
     padding: 0.6rem 0.7rem;
     overflow: auto;
     min-width: 0;
+    /* Bound the scroll container's height so its OWN horizontal
+       scrollbar always sits at the fixed bottom edge of the visible
+       body — reachable without first scrolling the (potentially long)
+       tool list vertically. `flex: 1` claims the space between the
+       sticky header/filters and the footer; the modal shell and the
+       embedded shell are both flex columns, so this works in both. The
+       wide `.table` (min-width: min-content) overflows horizontally
+       here and `overflow-x: auto` turns it into the pinned scroller. */
+    flex: 1;
+    min-height: 0;
+    /* Touch: allow horizontal panning of the wide rows (and vertical
+       scroll of the list) without the browser claiming the gesture. */
+    touch-action: pan-x pan-y;
+    /* Firefox: a thicker-than-thin scrollbar with themed colours. */
+    scrollbar-width: auto;
+    scrollbar-color: var(--text-muted) var(--bg-elevated);
+  }
+  /* WebKit/Blink: give the horizontal scrollbar a clearly grabbable
+     height with a contrasting thumb, so it reads as an interactive
+     control on both pointer and touch. Theme-driven, so it tracks
+     light/dark via the CSS vars. */
+  .body::-webkit-scrollbar {
+    height: 13px;
+    width: 13px;
+  }
+  .body::-webkit-scrollbar-track {
+    background: var(--bg-elevated);
+    border-radius: 7px;
+  }
+  .body::-webkit-scrollbar-thumb {
+    background: var(--text-muted);
+    border: 3px solid var(--bg-elevated);
+    border-radius: 7px;
+  }
+  .body::-webkit-scrollbar-thumb:hover {
+    background: var(--text);
+  }
+  .body::-webkit-scrollbar-corner {
+    background: var(--bg-elevated);
   }
   /* Tab-panel (embedded) shell — fills the main area; the body scrolls
      between the sticky header and footer. */
@@ -2156,10 +2195,6 @@
     flex: 1;
     min-height: 0;
     background: var(--bg-panel);
-  }
-  .embedded-shell .body {
-    flex: 1;
-    min-height: 0;
   }
   .table {
     display: grid;

@@ -24,8 +24,8 @@
   /// content shows on the right — the full stacked form overwhelms.
   /// Modal mode (unused since the tab landed) keeps the stacked list.
   const GROUPS = [
-    { id: 'appearance', label: 'Appearance' },
     { id: 'view', label: 'View' },
+    { id: 'appearance', label: 'Appearance' },
     { id: 'preview', label: 'Cutting preview' },
     { id: 'performance', label: 'Performance' },
     { id: 'safety', label: 'Sim safety' },
@@ -84,6 +84,35 @@
   {/if}
 
   <div class="body">
+    <section class:group-hidden={groupHidden('view')}>
+      <h3>View</h3>
+      <div class="grid">
+        <label
+          >3D preview style
+          <select
+            value={project.data.settings.previewMode}
+            onchange={(e) =>
+              update(
+                'previewMode',
+                (e.currentTarget as HTMLSelectElement).value as AppSettings['previewMode'],
+              )}
+          >
+            <option value="both">Both</option>
+            <option value="wireframe">Wireframe</option>
+            <option value="solid">Solid</option>
+          </select>
+        </label>
+        <label class="check">
+          <input
+            type="checkbox"
+            checked={project.data.settings.showStockBox}
+            onchange={(e) => update('showStockBox', (e.currentTarget as HTMLInputElement).checked)}
+          />
+          <span>Show stock outline in 3D</span>
+        </label>
+      </div>
+    </section>
+
     <section class:group-hidden={groupHidden('appearance')}>
       <h3>Appearance</h3>
       <div class="grid">
@@ -121,35 +150,6 @@
               type="button">Dark</button
             >
           </div>
-        </label>
-      </div>
-    </section>
-
-    <section class:group-hidden={groupHidden('view')}>
-      <h3>View</h3>
-      <div class="grid">
-        <label
-          >3D preview style
-          <select
-            value={project.data.settings.previewMode}
-            onchange={(e) =>
-              update(
-                'previewMode',
-                (e.currentTarget as HTMLSelectElement).value as AppSettings['previewMode'],
-              )}
-          >
-            <option value="both">Both</option>
-            <option value="wireframe">Wireframe</option>
-            <option value="solid">Solid</option>
-          </select>
-        </label>
-        <label class="check">
-          <input
-            type="checkbox"
-            checked={project.data.settings.showStockBox}
-            onchange={(e) => update('showStockBox', (e.currentTarget as HTMLInputElement).checked)}
-          />
-          <span>Show stock outline in 3D</span>
         </label>
       </div>
     </section>

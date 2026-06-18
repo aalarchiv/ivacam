@@ -93,7 +93,7 @@
   /// the user set, or the auto-computed extents.
   const footprintLabel = $derived(
     project.data.stock.mode === 'manual'
-      ? `${project.data.stock.customX} × ${project.data.stock.customY} mm`
+      ? `${project.data.stock.customX.toFixed(1)} × ${project.data.stock.customY.toFixed(1)} mm`
       : `${computedLength.toFixed(1)} × ${computedWidth.toFixed(1)} mm`,
   );
 

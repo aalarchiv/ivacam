@@ -623,11 +623,14 @@
     if (stockDrag && e.pointerId === stockDrag.pointerId) {
       const cur = pxToData(cx, cy);
       if (cur) {
+        // Round gizmo output to 0.01 mm so the stored stock dims stay
+        // clean numbers (a raw drag yields long float tails).
+        const r2 = (n: number) => Math.round(n * 100) / 100;
         if (stockDrag.kind === 'move') {
           project.setStock(
             {
-              offsetX: stockDrag.startOffsetX + (cur.x - stockDrag.grab.x),
-              offsetY: stockDrag.startOffsetY + (cur.y - stockDrag.grab.y),
+              offsetX: r2(stockDrag.startOffsetX + (cur.x - stockDrag.grab.x)),
+              offsetY: r2(stockDrag.startOffsetY + (cur.y - stockDrag.grab.y)),
             },
             'setStock:gizmo-move',
           );
@@ -639,7 +642,17 @@
             cur,
             STOCK_MIN_MM,
           );
-          project.setStock(boxToStock(nextBox, currentBboxCenter()), 'setStock:gizmo-resize');
+          const patch = boxToStock(nextBox, currentBboxCenter());
+          project.setStock(
+            {
+              mode: patch.mode,
+              customX: r2(patch.customX),
+              customY: r2(patch.customY),
+              offsetX: r2(patch.offsetX),
+              offsetY: r2(patch.offsetY),
+            },
+            'setStock:gizmo-resize',
+          );
         }
       }
       canvas.style.cursor = 'grabbing';
@@ -2458,5 +2471,28 @@
   .help-btn:focus-visible {
     opacity: 1;
     color: var(--text-strong);
+  }
+
+  /* Touch: the 1.6rem corner buttons read as "only the glyph is
+     tappable" on a phone because the button ≈ the symbol. Enlarge them to
+     a ~40px touch target and re-space the right-hand cluster so the whole
+     button is comfortably hittable (7jug punch-list). */
+  @media (pointer: coarse) {
+    .fit-btn,
+    .multiselect-btn,
+    .help-btn {
+      width: 2.5rem;
+      height: 2.5rem;
+      opacity: 0.85;
+    }
+    .help-btn {
+      right: 0.5rem;
+    }
+    .fit-btn {
+      right: 3.35rem;
+    }
+    .multiselect-btn {
+      right: 6.2rem;
+    }
   }
 </style>

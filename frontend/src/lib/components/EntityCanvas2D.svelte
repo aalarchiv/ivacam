@@ -57,6 +57,7 @@
   } from '../canvas/osnap';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
   import CanvasLayersChip from './CanvasLayersChip.svelte';
+  import CanvasStockChip from './CanvasStockChip.svelte';
   import { layout } from '../state/layout.svelte';
   import { computeFootprint } from '../sim/driver';
   import {
@@ -2113,11 +2114,15 @@
       aria-label="Show keyboard and mouse shortcuts">?</button
     >
   {/if}
-  <!-- Phone: Layers + add-drawing/add-text fold onto the canvas as a
-       corner chip (7jug.15); no sidebar on narrow. Desktop keeps the
-       sidebar LayerList, so this is narrow-only. -->
+  <!-- Phone: Stock/Layers/Text fold onto the canvas as corner chips
+       (7jug.15); no sidebar on narrow. Stock also has the drag gizmo on
+       the rect itself. Desktop keeps the sidebar panels, so this dock is
+       narrow-only. -->
   {#if layout.isNarrow}
-    <CanvasLayersChip {onOpenFileClick} {onAddTextClick} />
+    <div class="canvas-chip-dock">
+      <CanvasLayersChip {onOpenFileClick} {onAddTextClick} />
+      <CanvasStockChip />
+    </div>
   {/if}
 </div>
 
@@ -2351,6 +2356,18 @@
   /* Fit-to-view button — visual twin of Scene3D's .fit-btn, sits to
      the LEFT of the help-btn so both float in the same top-right
      cluster regardless of which pane the user is in. */
+  /* Phone chip dock — bottom-left flex row holding the Layers + Stock
+     chips so they sit side-by-side without overlapping. Each chip is a
+     relative box; its popover opens upward from here. */
+  .canvas-chip-dock {
+    position: absolute;
+    left: 0.5rem;
+    bottom: 0.5rem;
+    z-index: var(--z-floating);
+    display: flex;
+    gap: 0.4rem;
+    align-items: flex-end;
+  }
   .fit-btn {
     position: absolute;
     top: 0.5rem;

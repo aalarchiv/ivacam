@@ -160,13 +160,11 @@
 </div>
 
 <style>
-  /* Anchored bottom-left of the canvas host (the existing corner button
-     cluster lives top-right; keep this clear of it). */
+  /* Positioned by the parent .canvas-chip-dock (a flex row anchored
+     bottom-left of the canvas host); the chip itself is just a relative
+     box so its popover anchors to it. */
   .canvas-layers-chip {
-    position: absolute;
-    left: 0.5rem;
-    bottom: 0.5rem;
-    z-index: var(--z-floating);
+    position: relative;
   }
   .chip-trigger {
     display: inline-flex;

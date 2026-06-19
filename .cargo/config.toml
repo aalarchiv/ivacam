@@ -33,14 +33,19 @@ rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 # linker still defaults to 4 KB max-page-size, so force 16 KB here. Applied to
 # all Android ABIs (harmless on the 32-bit ones, which don't use 16 KB pages).
 # See https://developer.android.com/16kb-page-size (wiaconstructor-7i08).
+#
+# `strip=symbols` also: 16 KB libs are STORED uncompressed in the APK (so they
+# mmap page-aligned), which made the debug APK balloon to ~135 MB — almost all
+# of it debug symbols in the .so. Strip them on Android only (per-target, so
+# desktop keeps its backtraces); the lib still loads and stays 16 KB-aligned.
 [target.aarch64-linux-android]
-rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384", "-C", "strip=symbols"]
 
 [target.armv7-linux-androideabi]
-rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384", "-C", "strip=symbols"]
 
 [target.x86_64-linux-android]
-rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384", "-C", "strip=symbols"]
 
 [target.i686-linux-android]
-rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384", "-C", "strip=symbols"]

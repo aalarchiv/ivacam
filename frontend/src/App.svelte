@@ -1793,12 +1793,18 @@
   }
   /* Stock + Layers bottom-sheet body: stack the two panels and scroll the
      whole thing (the sheet body itself is overflow:hidden at a fixed open
-     height). */
+     height). Each panel must take its NATURAL height — LayerList's root is
+     `overflow:hidden` with no flex-grow, so without this it gets shrunk to
+     ~0 under the taller StockPanel and shows nothing. flex:0 0 auto stops
+     the shrink; the .sl-sheet scrolls instead. */
   .sl-sheet {
     display: flex;
     flex-direction: column;
     height: 100%;
     overflow-y: auto;
+  }
+  .sl-sheet > :global(*) {
+    flex: 0 0 auto;
   }
   .viewport {
     position: relative;

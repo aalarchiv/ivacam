@@ -43,14 +43,14 @@ let booted = false;
 for (let i = 0; i < 30; i++) {
   await sleep(500);
   try {
-    booted = await evalIn(ws, id++, `document.querySelectorAll('.main-tab').length === 5`);
+    booted = await evalIn(ws, id++, `document.querySelectorAll('.main-tab').length === 6`);
     if (booted) break;
   } catch { /* still loading */ }
 }
 console.log('boot:', booted ? 'OK' : 'FAILED');
 if (!booted) process.exit(1);
 
-for (const [idx, name] of [[2, 'tools'], [1, 'machine'], [3, 'settings'], [4, 'help'], [0, 'project']]) {
+for (const [idx, name] of [[2, 'tools'], [1, 'machine'], [3, 'settings'], [4, 'help'], [5, 'about'], [0, 'project']]) {
   await evalIn(ws, id++, `document.querySelectorAll('.main-tab')[${idx}].click(); true`);
   await sleep(1500);
   // Responsiveness probe: a frozen effect loop never answers this.

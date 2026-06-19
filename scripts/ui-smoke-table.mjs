@@ -47,7 +47,7 @@ await evalIn(ws, id++, `
   true
 `);
 await sleep(5000);
-const booted = await evalIn(ws, id++, `document.querySelectorAll('.main-tab').length === 5`);
+const booted = await evalIn(ws, id++, `document.querySelectorAll('.main-tab').length === 6`);
 console.log('boot:', booted ? 'OK' : 'FAILED');
 if (!booted) process.exit(1);
 

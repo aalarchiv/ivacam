@@ -5,6 +5,7 @@
 //! sinks (drained by the parent's `OffsetDiagnostics`).
 
 use super::{signed_area, PolylineOffset};
+use crate::cam::spatial::SegmentRayGrid;
 use crate::cam::VcObject;
 use crate::geometry::{Point2, Segment, SegmentKind};
 use cavalier_contours::polyline::{PlineSource, PlineSourceMut, PlineVertex, Polyline};
@@ -688,6 +689,18 @@ pub fn apply_overcut(offset: &mut PolylineOffset, boundary_segments: &[Segment],
         }
     };
 
+    // Spatial index over the boundary chords for the outward-ray probe
+    // below. Built once per offset and queried per reflex corner, it turns
+    // the per-corner all-segments scan into a ray-local cell walk while
+    // returning a superset the inline arithmetic below re-scores exactly —
+    // so the inserted dips are bit-identical to the brute-force version
+    // (see `SegmentRayGrid`). The corridor half-width is `perp_tol`, the
+    // same slack the endpoint test uses.
+    let boundary_chords: Vec<(Point2, Point2)> =
+        boundary_segments.iter().map(|s| (s.start, s.end)).collect();
+    let ray_grid = SegmentRayGrid::new(&boundary_chords, perp_tol);
+    let mut candidates: Vec<u32> = Vec::new();
+
     let mut emitted: Vec<(f64, f64, f64)> = Vec::with_capacity(n * 2);
 
     for i in 0..n {
@@ -762,7 +775,12 @@ pub fn apply_overcut(offset: &mut PolylineOffset, boundary_segments: &[Segment],
                 nearest = Some(along);
             }
         };
-        for seg in boundary_segments {
+        // Only the boundary segments whose footprint the outward ray can
+        // reach (a superset; the per-segment math below is identical to a
+        // full scan, so the resulting `nearest` is unchanged).
+        ray_grid.collect_candidates(cur, out, &mut candidates);
+        for &si in &candidates {
+            let seg = &boundary_segments[si as usize];
             // 1) Endpoint hits (unchanged behaviour — short segments hit
             //    here exactly like before).
             for p1 in [seg.start, seg.end] {

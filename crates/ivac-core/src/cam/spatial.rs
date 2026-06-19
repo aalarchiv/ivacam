@@ -250,6 +250,198 @@ impl SegmentNearestGrid {
     }
 }
 
+// ─── ray-vs-segment first-hit grid ──────────────────────────────────────
+
+/// Uniform 2D grid for outward-ray probes against a set of line segments,
+/// built for `cam::offsets::parallel::apply_overcut`'s reflex-corner walk.
+///
+/// `apply_overcut` casts a ray from each reflex corner of an offset
+/// polyline and finds the nearest boundary hit, where "hit" is the
+/// minimum over an exact per-segment test (endpoint projection within a
+/// `perp_tol` corridor, plus a Cramer ray-vs-edge intersection with a
+/// small `u`-slack). Brute force runs that test against every boundary
+/// segment — O(corners · boundary).
+///
+/// This index files each segment under every cell its bounding box —
+/// inflated by `margin` — overlaps, then [`collect_candidates`] walks the
+/// ray's cells (a DDA / Amanatides-Woo traversal) and returns the segments
+/// filed in them. The caller re-runs its *identical* per-segment
+/// arithmetic over that set, so the result is bit-identical to the
+/// brute-force scan: the returned set is a **superset** of every segment
+/// that brute force would find a passing candidate for (see
+/// [`collect_candidates`] for the coverage argument), and the minimum over
+/// a superset — computed with the same arithmetic — is the same value, as
+/// extra non-minimal candidates can never lower it.
+///
+/// Early "stop at the first hit" termination is deliberately *not* done
+/// here: it would couple the walk to the caller's running minimum and the
+/// `perp_tol` corridor in a way that's easy to get subtly wrong, and the
+/// asymptotic win already comes from visiting only the ray-local cells
+/// (~O(√boundary) per corner) rather than all segments.
+///
+/// [`collect_candidates`]: SegmentRayGrid::collect_candidates
+#[derive(Debug)]
+pub struct SegmentRayGrid {
+    cell: f64,
+    grid: HashMap<(i64, i64), Vec<u32>>,
+    min_cell: (i64, i64),
+    max_cell: (i64, i64),
+    n: usize,
+}
+
+impl SegmentRayGrid {
+    /// Build the grid over `segments` (each a `(start, end)` chord),
+    /// inflating every segment's footprint by `margin` so a ray that
+    /// passes within `margin` of an endpoint — or whose Cramer hit lies up
+    /// to `margin` past an edge end — still lands the segment in a cell the
+    /// ray crosses. `margin` should be the caller's `perp_tol` (the same
+    /// corridor half-width its endpoint test uses).
+    #[must_use]
+    pub fn new(segments: &[(Point2, Point2)], margin: f64) -> Self {
+        let n = segments.len();
+        if n == 0 {
+            return Self {
+                cell: 1.0,
+                grid: HashMap::new(),
+                min_cell: (0, 0),
+                max_cell: (0, 0),
+                n,
+            };
+        }
+        let (mut min_x, mut min_y, mut max_x, mut max_y) = (
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        );
+        for &(a, b) in segments {
+            for q in [a, b] {
+                min_x = min_x.min(q.x);
+                min_y = min_y.min(q.y);
+                max_x = max_x.max(q.x);
+                max_y = max_y.max(q.y);
+            }
+        }
+        let span = (max_x - min_x).max(max_y - min_y).max(1e-6);
+        let cell = auto_cell(span, n);
+        let m = margin.max(0.0);
+
+        let mut grid: HashMap<(i64, i64), Vec<u32>> = HashMap::new();
+        let (mut min_cell, mut max_cell) = ((i64::MAX, i64::MAX), (i64::MIN, i64::MIN));
+        for (i, &(a, b)) in segments.iter().enumerate() {
+            let cx0 = cell_floor(a.x.min(b.x) - m, cell);
+            let cx1 = cell_floor(a.x.max(b.x) + m, cell);
+            let cy0 = cell_floor(a.y.min(b.y) - m, cell);
+            let cy1 = cell_floor(a.y.max(b.y) + m, cell);
+            for cx in cx0..=cx1 {
+                for cy in cy0..=cy1 {
+                    grid.entry((cx, cy)).or_default().push(i as u32);
+                    min_cell = (min_cell.0.min(cx), min_cell.1.min(cy));
+                    max_cell = (max_cell.0.max(cx), max_cell.1.max(cy));
+                }
+            }
+        }
+        Self {
+            cell,
+            grid,
+            min_cell,
+            max_cell,
+            n,
+        }
+    }
+
+    /// Fill `out` (cleared first) with the de-duplicated indices of every
+    /// segment filed in a cell the ray `(origin, dir)` passes through,
+    /// walked from the origin until the ray leaves the grid's occupied
+    /// region. `dir` need not be unit-length (only the cells the ray
+    /// crosses matter, which are scale-invariant).
+    ///
+    /// Coverage (why the result is a superset of brute force's hits): any
+    /// segment brute force scores has a "foot" point ON the ray — the
+    /// projection foot for an endpoint candidate, or the intersection point
+    /// for a Cramer candidate — at the candidate's distance along the ray.
+    /// That foot lies within `margin` of the segment's true footprint
+    /// (≤ `perp_tol` laterally for an endpoint within the corridor; ≤ the
+    /// `u`-slack ⋅ edge-length ≤ `perp_tol` for a Cramer hit just past an
+    /// edge end), so the segment is filed in the foot's cell. The walk
+    /// visits every cell the ray crosses inside the occupied bbox, so it
+    /// visits the foot's cell and collects the segment.
+    pub fn collect_candidates(&self, origin: Point2, dir: (f64, f64), out: &mut Vec<u32>) {
+        out.clear();
+        if self.n == 0 || (dir.0 == 0.0 && dir.1 == 0.0) {
+            return;
+        }
+        let (dx, dy) = dir;
+        let mut cx = cell_floor(origin.x, self.cell);
+        let mut cy = cell_floor(origin.y, self.cell);
+
+        // Amanatides-Woo setup. `t_max_*` is the ray parameter at which the
+        // walk next crosses a cell boundary on that axis; `t_delta_*` is
+        // the parameter step between successive crossings. A zero
+        // direction component never crosses on that axis (t_max = ∞).
+        let (step_x, mut t_max_x, t_delta_x) = axis_setup(origin.x, dx, cx, self.cell);
+        let (step_y, mut t_max_y, t_delta_y) = axis_setup(origin.y, dy, cy, self.cell);
+
+        // Iteration backstop: the ray can cross at most width+height cell
+        // boundaries inside the bbox plus a small approach margin. If a
+        // float pathology blows past that, fall back to the full set — a
+        // safe (if slow) superset — rather than risk truncating early.
+        let width = (self.max_cell.0 - self.min_cell.0).max(0);
+        let height = (self.max_cell.1 - self.min_cell.1).max(0);
+        let cap = (width + height) * 2 + 64;
+        let mut iters: i64 = 0;
+
+        loop {
+            if let Some(list) = self.grid.get(&(cx, cy)) {
+                out.extend_from_slice(list);
+            }
+            iters += 1;
+            if iters > cap {
+                // Pathological walk — return everything (still a superset).
+                out.clear();
+                out.extend(0..self.n as u32);
+                return;
+            }
+            // Step to the next cell along the ray.
+            if t_max_x < t_max_y {
+                cx += step_x;
+                t_max_x += t_delta_x;
+            } else {
+                cy += step_y;
+                t_max_y += t_delta_y;
+            }
+            // The ray is straight, so once a coordinate passes the occupied
+            // bbox in the travel direction it can never re-enter — stop.
+            if (step_x > 0 && cx > self.max_cell.0)
+                || (step_x < 0 && cx < self.min_cell.0)
+                || (step_y > 0 && cy > self.max_cell.1)
+                || (step_y < 0 && cy < self.min_cell.1)
+                || (step_x == 0 && (cx < self.min_cell.0 || cx > self.max_cell.0))
+                || (step_y == 0 && (cy < self.min_cell.1 || cy > self.max_cell.1))
+            {
+                break;
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+    }
+}
+
+/// Per-axis Amanatides-Woo init: returns `(step, t_max, t_delta)` for the
+/// ray component `d` starting at world coord `o` in cell `c` (cell size
+/// `cell`). A zero component yields `(0, ∞, ∞)` — that axis never advances.
+fn axis_setup(o: f64, d: f64, c: i64, cell: f64) -> (i64, f64, f64) {
+    if d > 0.0 {
+        let next_boundary = (c + 1) as f64 * cell;
+        ((1), (next_boundary - o) / d, cell / d)
+    } else if d < 0.0 {
+        let boundary = c as f64 * cell;
+        ((-1), (boundary - o) / d, -cell / d)
+    } else {
+        (0, f64::INFINITY, f64::INFINITY)
+    }
+}
+
 // ─── point-in-polygon by scanline row buckets ──────────────────────────
 
 /// Even-odd point-in-polygon accelerator. Each polygon edge is filed
@@ -726,5 +918,131 @@ mod tests {
                 assert_eq!(idx.contains(p), reference, "region index mismatch at {p:?}");
             }
         }
+    }
+
+    // ── SegmentRayGrid: the outward-ray first-hit probe ──────────────────
+
+    /// The exact per-segment arithmetic `apply_overcut` runs over each
+    /// candidate boundary segment, computing the nearest `along` distance
+    /// of the ray `(origin, dir)` (dir unit) — replicated here verbatim so
+    /// the test can score the brute-force full scan and the grid's
+    /// candidate subset with the *identical* float ops. The grid is a
+    /// pure accelerator iff these two scores match exactly.
+    fn probe_nearest(
+        origin: Point2,
+        dir: (f64, f64),
+        perp_tol: f64,
+        segs: &[(Point2, Point2)],
+        indices: &[u32],
+    ) -> Option<f64> {
+        let mut nearest: Option<f64> = None;
+        let mut consider = |along: f64| {
+            if along <= 1e-6 {
+                return;
+            }
+            if nearest.map_or(true, |c| along < c) {
+                nearest = Some(along);
+            }
+        };
+        for &si in indices {
+            let (a, b) = segs[si as usize];
+            for p1 in [a, b] {
+                let dx = p1.x - origin.x;
+                let dy = p1.y - origin.y;
+                let along = dx * dir.0 + dy * dir.1;
+                if along <= 1e-6 {
+                    continue;
+                }
+                let perp = (dx * dir.1 - dy * dir.0).abs();
+                if perp <= perp_tol {
+                    consider(along);
+                }
+            }
+            let ex = b.x - a.x;
+            let ey = b.y - a.y;
+            let det = dir.0 * (-ey) - dir.1 * (-ex);
+            if det.abs() < 1e-12 {
+                continue;
+            }
+            let rhs0 = a.x - origin.x;
+            let rhs1 = a.y - origin.y;
+            let t = (rhs0 * (-ey) - rhs1 * (-ex)) / det;
+            let u = (dir.0 * rhs1 - dir.1 * rhs0) / det;
+            if (-1e-3..=1.0 + 1e-3).contains(&u) {
+                consider(t);
+            }
+        }
+        nearest
+    }
+
+    #[test]
+    fn ray_grid_matches_full_scan_exactly() {
+        let mut rng = Lcg(0x0bad_f00d_dead_beef);
+        for trial in 0..60 {
+            // A ring of short boundary chords around the origin patch, the
+            // shape of a real offset boundary.
+            let n = 8 + (trial % 80);
+            let span = 100.0;
+            let segs: Vec<(Point2, Point2)> = (0..n)
+                .map(|_| {
+                    let ax = rng.range(0.0, span);
+                    let ay = rng.range(0.0, span);
+                    (
+                        Point2::new(ax, ay),
+                        Point2::new(ax + rng.range(-3.0, 3.0), ay + rng.range(-3.0, 3.0)),
+                    )
+                })
+                .collect();
+            // perp_tol as apply_overcut derives it: 1e-3 × bbox diagonal.
+            let perp_tol = (span.hypot(span) * 1e-3).max(1e-3);
+            let all: Vec<u32> = (0..n as u32).collect();
+            let grid = SegmentRayGrid::new(&segs, perp_tol);
+
+            let mut cands = Vec::new();
+            for _ in 0..300 {
+                let origin =
+                    Point2::new(rng.range(-20.0, span + 20.0), rng.range(-20.0, span + 20.0));
+                // Random unit direction.
+                let ang = rng.range(0.0, std::f64::consts::TAU);
+                let dir = (ang.cos(), ang.sin());
+                grid.collect_candidates(origin, dir, &mut cands);
+                let by_grid = probe_nearest(origin, dir, perp_tol, &segs, &cands);
+                let by_scan = probe_nearest(origin, dir, perp_tol, &segs, &all);
+                assert_eq!(
+                    by_grid, by_scan,
+                    "ray-grid probe must equal full scan exactly: origin={origin:?} dir={dir:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ray_grid_candidates_are_a_superset_of_hit_segments() {
+        // Axis-aligned ray straight at a known wall: the wall segment must
+        // appear in the collected candidates.
+        let segs = vec![
+            (Point2::new(10.0, -5.0), Point2::new(10.0, 5.0)), // vertical wall at x=10
+            (Point2::new(-5.0, 20.0), Point2::new(5.0, 20.0)), // far horizontal wall
+        ];
+        let grid = SegmentRayGrid::new(&segs, 0.05);
+        let mut cands = Vec::new();
+        grid.collect_candidates(Point2::new(0.0, 0.0), (1.0, 0.0), &mut cands);
+        assert!(
+            cands.contains(&0),
+            "ray toward x=10 wall must collect it: {cands:?}"
+        );
+    }
+
+    #[test]
+    fn ray_grid_empty_and_zero_dir_are_safe() {
+        let grid = SegmentRayGrid::new(&[], 0.1);
+        let mut cands = vec![7, 8, 9];
+        grid.collect_candidates(Point2::new(0.0, 0.0), (1.0, 0.0), &mut cands);
+        assert!(cands.is_empty(), "empty grid yields no candidates");
+
+        let segs = vec![(Point2::new(1.0, 1.0), Point2::new(2.0, 2.0))];
+        let grid = SegmentRayGrid::new(&segs, 0.1);
+        grid.collect_candidates(Point2::new(0.0, 0.0), (0.0, 0.0), &mut cands);
+        assert!(cands.is_empty(), "zero direction yields no candidates");
     }
 }

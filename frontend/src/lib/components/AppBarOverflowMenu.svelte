@@ -98,16 +98,40 @@
            bar is too narrow for inline buttons. Hidden above the
            breakpoint (the inline buttons are used there instead). -->
       <div class="compact-actions">
-        <button type="button" class="menu-item" role="menuitem" disabled={loading} onclick={() => run(onOpen)}>
+        <button
+          type="button"
+          class="menu-item"
+          role="menuitem"
+          disabled={loading}
+          onclick={() => run(onOpen)}
+        >
           <span>Open…</span>
         </button>
-        <button type="button" class="menu-item" role="menuitem" disabled={!canSave} onclick={() => run(onSaveProject)}>
+        <button
+          type="button"
+          class="menu-item"
+          role="menuitem"
+          disabled={!canSave}
+          onclick={() => run(onSaveProject)}
+        >
           <span>Save project</span>
         </button>
-        <button type="button" class="menu-item" role="menuitem" disabled={!hasProgram} onclick={() => run(onSaveGcode)}>
+        <button
+          type="button"
+          class="menu-item"
+          role="menuitem"
+          disabled={!hasProgram}
+          onclick={() => run(onSaveGcode)}
+        >
           <span>Save G-code ({gcodeExt})</span>
         </button>
-        <button type="button" class="menu-item" role="menuitem" disabled={!hasProgram} onclick={() => run(onSaveStl)}>
+        <button
+          type="button"
+          class="menu-item"
+          role="menuitem"
+          disabled={!hasProgram}
+          onclick={() => run(onSaveStl)}
+        >
           <span>Save carved STL</span>
         </button>
         <button type="button" class="menu-item" role="menuitem" onclick={() => run(onReport)}>

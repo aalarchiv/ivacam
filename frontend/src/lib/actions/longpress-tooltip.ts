@@ -7,11 +7,7 @@
 /// fire the control. On mouse pointers it no-ops: the native hover tooltip
 /// already works, so we don't double up.
 
-import {
-  LONG_PRESS_MS,
-  withinTapTolerance,
-  type PointerPos,
-} from '../canvas/touch-gestures';
+import { LONG_PRESS_MS, withinTapTolerance, type PointerPos } from '../canvas/touch-gestures';
 
 /// Gap (px) between the anchor and the tooltip, and the viewport margin
 /// the tooltip is kept clear of.
@@ -91,9 +87,13 @@ export function longpressTooltip(node: HTMLElement, options: LongpressTooltipOpt
     document.body.appendChild(tip);
     const anchor = node.getBoundingClientRect();
     const t = tip.getBoundingClientRect();
-    const { top, left } = tooltipPosition(anchor, { width: t.width, height: t.height }, {
-      width: window.innerWidth,
-    });
+    const { top, left } = tooltipPosition(
+      anchor,
+      { width: t.width, height: t.height },
+      {
+        width: window.innerWidth,
+      },
+    );
     tip.style.top = `${top}px`;
     tip.style.left = `${left}px`;
   }

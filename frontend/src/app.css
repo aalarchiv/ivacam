@@ -421,11 +421,7 @@ body,
   ) {
     min-height: 44px;
   }
-  :where(
-    input:not([type='checkbox']):not([type='radio']):not([type='range']),
-    select,
-    textarea
-  ) {
+  :where(input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea) {
     min-height: 44px;
   }
   /* Shared button utilities — taller with a roomier hit area. */

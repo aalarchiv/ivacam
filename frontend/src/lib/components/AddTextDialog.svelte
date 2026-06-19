@@ -230,7 +230,7 @@
     // the margin so the text lands ON the stock near its origin corner
     // rather than centred.
     const fp = computeFootprint(
-      project.transformedImport,
+      project.stockSizingImport,
       project.data.stock,
       project.data.machine.workArea,
     );

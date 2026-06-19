@@ -238,7 +238,7 @@
   let mobilePanelOpen = $state(false);
   const stockDimsLabel = $derived.by<string>(() => {
     const cfg = project.data.stock;
-    const fp = computeFootprint(project.transformedImport, cfg, project.data.machine.workArea);
+    const fp = computeFootprint(project.stockSizingImport, cfg, project.data.machine.workArea);
     const x = Math.max(0, fp.maxX - fp.minX);
     const y = Math.max(0, fp.maxY - fp.minY);
     const z = Math.max(0, cfg.thickness);

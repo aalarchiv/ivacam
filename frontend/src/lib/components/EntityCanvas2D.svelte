@@ -536,7 +536,7 @@
   /// Current stock footprint in world mm (same source the renderer uses).
   function currentStockBox(): WorldBox {
     return computeFootprint(
-      project.transformedImport,
+      project.stockSizingImport,
       project.data.stock,
       project.data.machine.workArea,
     );
@@ -1617,6 +1617,22 @@
     return { scale: t.scale, offX: t.offX, offY: t.offY, project2: t.project2 };
   }
 
+  /// The bbox the viewport auto-fits to. STABLE on purpose: a text-only
+  /// project's `geometryView` is the synthetic stock outline, which is sized
+  /// to the text and MOVES with it — fitting the view to that would make the
+  /// canvas chase the text during a drag (a tiny finger move reads as a huge
+  /// jump). Prefer real imported geometry; else the work-area / placement
+  /// bed (stable); only fall back to the live geometryView bbox if neither
+  /// exists.
+  function viewportFitBBox(): BBox | null {
+    const imp = project.transformedImport;
+    if (imp && imp.segments.length > 0) return imp.bbox;
+    const fb = placementFallbackBBox();
+    if (fb) return fb;
+    const gv = project.geometryView;
+    return gv && gv.segments.length > 0 ? gv.bbox : null;
+  }
+
   /// Heavy static layer — repaints only on geometry / layout / theme /
   /// zoom / pan changes. State-bearing repaints (hover / selection /
   /// ghost tab / box-select / approach point) happen on the overlay
@@ -1630,23 +1646,15 @@
 
     const data = project.geometryView;
     const hasGeom = !!data && data.segments.length > 0;
-    // A placement-only project (raster images
-    // and/or text, no imported DXF) has no geometry — fall back to a
-    // bbox over the placements / bed so the grid + axes + draggable
-    // entities still render.
-    const fallbackBBox = hasGeom ? null : placementFallbackBBox();
-    if (!hasGeom && !fallbackBBox) {
+    const fitBBox = viewportFitBBox();
+    if (!fitBBox) {
       ctx.fillStyle = themeVar('--canvas-empty', '#555');
       ctx.font = '13px system-ui, sans-serif';
       ctx.fillText('Open a file to view geometry', 16, 24);
       return;
     }
 
-    const { scale, offX, offY, project2 } = computeTransform(
-      hasGeom ? data!.bbox : fallbackBBox!,
-      w,
-      h,
-    );
+    const { scale, offX, offY, project2 } = computeTransform(fitBBox, w, h);
 
     drawGrid(ctx, w, h, scale, offX, offY, {
       minor: themeVar('--grid-minor', '#1a1a1a'),
@@ -1658,7 +1666,7 @@
     });
     drawWorkArea(ctx, project2, project.data.machine.workArea, themeVar('--text-muted', '#888'));
     const stockBox = computeFootprint(
-      project.transformedImport,
+      project.stockSizingImport,
       project.data.stock,
       project.data.machine.workArea,
     );
@@ -1754,11 +1762,11 @@
 
     const data = project.geometryView;
     const hasGeom = !!data && data.segments.length > 0;
-    // Mirror drawBackground — fall back to the
-    // placement / bed bbox so a geometry-less project is draggable.
-    const fallbackBBox = hasGeom ? null : placementFallbackBBox();
-    if (!hasGeom && !fallbackBBox) return;
-    const { scale, project2 } = computeTransform(hasGeom ? data!.bbox : fallbackBBox!, w, h);
+    // Mirror drawBackground — same stable fit bbox so the overlay projection
+    // matches the bg layer (and doesn't chase a dragged text layer).
+    const fitBBox = viewportFitBBox();
+    if (!fitBBox) return;
+    const { scale, project2 } = computeTransform(fitBBox, w, h);
 
     const accent = themeVar('--accent', '#2d6cdf');
 

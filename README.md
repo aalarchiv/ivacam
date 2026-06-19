@@ -2,15 +2,14 @@
 
 **Turn DXF, SVG and HPGL drawings into G-code for CNC mills, lasers, plasma cutters and drag knives.**
 
-Free, open-source CAM for the hobby shop. One self-contained desktop app — no Python, no install hell — plus an optional self-hosted web service and a fully in-browser (WebAssembly) mode where your drawings never leave your machine.
-
-> Early release — v0.0.1, the first tagged build.
+Free, open-source CAM for the hobby shop. One self-contained app for desktop and Android — no Python, no install hell — plus an optional self-hosted web service and a fully in-browser (WebAssembly) mode where your drawings never leave your machine.
 
 ## Use it
 
 **Just want to cut something?** → [Quickstart](./docs/QUICKSTART.md)
 
 - **Desktop** (Linux / macOS / Windows): build the AppImage / `.msi` / `.app` — see [Build from source](#build-from-source).
+- **Android**: build a native APK (Tauri mobile) and install it on the device — see [Build from source](#build-from-source).
 - **Browser**: serve the static build and open the URL. Nothing to install; everything runs client-side.
 
 ## What it does
@@ -27,9 +26,10 @@ Free, open-source CAM for the hobby shop. One self-contained desktop app — no 
 cargo build --workspace                        # core + CLI + server
 cd frontend && pnpm install && pnpm dev        # web UI on :5173
 cargo tauri build --bundles appimage           # desktop bundle
+cargo tauri android build --apk                # Android APK
 ```
 
-Per-platform prerequisites and the full workflow: [docs/BUILDING.md](./docs/BUILDING.md) (Windows: [docs/BUILDING_WINDOWS.md](./docs/BUILDING_WINDOWS.md)).
+Per-platform prerequisites and the full workflow: [docs/BUILDING.md](./docs/BUILDING.md) (Windows: [docs/BUILDING_WINDOWS.md](./docs/BUILDING_WINDOWS.md), Android: [docs/BUILDING.md § Android](./docs/BUILDING.md)).
 
 ## Docs
 
@@ -39,7 +39,7 @@ Per-platform prerequisites and the full workflow: [docs/BUILDING.md](./docs/BUIL
 
 ## License
 
-GPL-3.0-or-later — see [`LICENSE`](./LICENSE). ivaCAM is original, standalone work by Soenke J. Peters; it is **not** a port or derivative of any other CAM program.
+GPL-3.0-or-later — see [`LICENSE`](./LICENSE).
 
 ## Acknowledgements
 

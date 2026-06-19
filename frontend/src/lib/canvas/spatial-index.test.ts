@@ -5,7 +5,7 @@
 /// the `null`-index fallback, and the empty-input edge cases.
 
 import { describe, expect, it } from 'vitest';
-import { buildHitIndex, queryHit, type SpatialSource } from './spatial-index';
+import { buildHitIndex, queryHit, queryHitObjects, type SpatialSource } from './spatial-index';
 
 function source(segments: SpatialSource['segments']): SpatialSource {
   let minX = Infinity;
@@ -145,5 +145,53 @@ describe('queryHit', () => {
     // Cursor on the line — the seg lives in many cells but the
     // result is still a single index, not a list.
     expect(queryHit(data, idx, 50, 50, 0.5, allLayers)).toBe(0);
+  });
+});
+
+describe('queryHitObjects (tap-cycling stack)', () => {
+  // Two overlapping objects near the origin: object 1 is a big segment,
+  // object 2 a short one passing slightly closer to (0,0). `objects[i]`
+  // gives the object id of segment i.
+  const data = source([
+    { start: { x: -10, y: 0.4 }, end: { x: 10, y: 0.4 }, layer: '0' }, // seg 0 → obj 1, dist 0.4
+    { start: { x: -1, y: 0.1 }, end: { x: 1, y: 0.1 }, layer: '0' }, // seg 1 → obj 2, dist 0.1
+  ]);
+  const objects = [1, 2];
+
+  it('returns distinct object ids nearest-first', () => {
+    const idx = buildHitIndex(data);
+    // Both within tol 1.0 at the origin; obj 2 (0.1) is closer than obj 1 (0.4).
+    expect(queryHitObjects(data, idx, objects, 0, 0, 1.0, allLayers)).toEqual([2, 1]);
+  });
+
+  it('drops objects outside tolerance', () => {
+    const idx = buildHitIndex(data);
+    // tol 0.2 only reaches obj 2.
+    expect(queryHitObjects(data, idx, objects, 0, 0, 0.2, allLayers)).toEqual([2]);
+  });
+
+  it('collapses multiple segments of one object to a single id', () => {
+    // Two segments, same object id — one entry, ranked by its nearest seg.
+    const d = source([
+      { start: { x: -10, y: 0.5 }, end: { x: 10, y: 0.5 }, layer: '0' }, // obj 5, dist 0.5
+      { start: { x: -10, y: 0.2 }, end: { x: 10, y: 0.2 }, layer: '0' }, // obj 5, dist 0.2
+    ]);
+    const idx = buildHitIndex(d);
+    expect(queryHitObjects(d, idx, [5, 5], 0, 0, 1.0, allLayers)).toEqual([5]);
+  });
+
+  it('honours layer visibility and skips id 0 / missing objects array', () => {
+    const idx = buildHitIndex(data);
+    expect(queryHitObjects(data, idx, objects, 0, 0, 1.0, () => false)).toEqual([]);
+    expect(queryHitObjects(data, idx, null, 0, 0, 1.0, allLayers)).toEqual([]);
+    // id 0 is synthetic/unknown and never offered as a candidate.
+    expect(queryHitObjects(data, idx, [0, 2], 0, 0, 1.0, allLayers)).toEqual([2]);
+  });
+
+  it('matches the index and the null-fallback paths', () => {
+    const idx = buildHitIndex(data);
+    const withIndex = queryHitObjects(data, idx, objects, 0, 0, 1.0, allLayers);
+    const linear = queryHitObjects(data, null, objects, 0, 0, 1.0, allLayers);
+    expect(withIndex).toEqual(linear);
   });
 });

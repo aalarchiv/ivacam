@@ -156,3 +156,69 @@ export function queryHit(
   }
   return bestIdx;
 }
+
+/// Like [`queryHit`], but returns the DISTINCT object ids of every segment
+/// within `tolData`, ordered nearest-first (an object's rank is its
+/// closest segment). `objects[i]` is the 1-based object id segment `i`
+/// belongs to — the `geometryView.objects` parallel array; a missing array
+/// or id `0` (synthetic / unknown) is skipped. Returns `[]` when nothing
+/// is in range.
+///
+/// Powers the canvas tap-cycling: a single nearest-hit pick can never
+/// reach a small object stacked under a larger one (or under a stock-gizmo
+/// handle), so repeated taps in the same spot step through this ordered
+/// stack. Not on the hover hot path (tap-only), so the extra sort over the
+/// in-tolerance candidates is fine.
+export function queryHitObjects(
+  data: SpatialSource | null | undefined,
+  index: HitIndex | null,
+  objects: ReadonlyArray<number> | null | undefined,
+  dataX: number,
+  dataY: number,
+  tolData: number,
+  isLayerVisible: (layer: string) => boolean,
+): number[] {
+  if (!data || data.segments.length === 0 || !objects) return [];
+  const segs = data.segments;
+  const hits: { id: number; dist: number }[] = [];
+  const consider = (i: number) => {
+    const s = segs[i];
+    if (!isLayerVisible(s.layer)) return;
+    const d = distanceToSegment(s.start, s.end, dataX, dataY);
+    if (d >= tolData) return;
+    const id = objects[i] ?? 0;
+    if (id !== 0) hits.push({ id, dist: d });
+  };
+  if (index) {
+    const { cellW, cellH, minX, minY, cols, rows, cells } = index;
+    const c0 = clamp(Math.floor((dataX - tolData - minX) / cellW), 0, cols - 1);
+    const c1 = clamp(Math.floor((dataX + tolData - minX) / cellW), 0, cols - 1);
+    const r0 = clamp(Math.floor((dataY - tolData - minY) / cellH), 0, rows - 1);
+    const r1 = clamp(Math.floor((dataY + tolData - minY) / cellH), 0, rows - 1);
+    const seen = new Set<number>();
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        const buf = cells[r * cols + c];
+        if (!buf) continue;
+        for (let k = 0; k < buf.length; k++) {
+          const i = buf[k];
+          if (seen.has(i)) continue;
+          seen.add(i);
+          consider(i);
+        }
+      }
+    }
+  } else {
+    for (let i = 0; i < segs.length; i++) consider(i);
+  }
+  // Nearest-first, then keep the first (closest) occurrence of each id.
+  hits.sort((a, b) => a.dist - b.dist);
+  const ordered: number[] = [];
+  const seenIds = new Set<number>();
+  for (const h of hits) {
+    if (seenIds.has(h.id)) continue;
+    seenIds.add(h.id);
+    ordered.push(h.id);
+  }
+  return ordered;
+}

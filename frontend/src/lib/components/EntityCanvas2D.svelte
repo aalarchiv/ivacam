@@ -9,6 +9,7 @@
   import {
     buildHitIndex as buildHitIndexPure,
     queryHit,
+    queryHitObjects,
     type HitIndex,
   } from '../canvas/spatial-index';
   import { fixtureAt } from '../canvas/fixture-hit';
@@ -512,6 +513,63 @@
         // user's visibleLayers set, but it must always be hittable.
         l === STOCK_OUTLINE_LAYER || project.data.visibleLayers.has(l),
     );
+  }
+
+  /// Ordered (nearest-first) distinct object ids whose geometry lies
+  /// within the hit tolerance of a canvas pixel — the candidate stack for
+  /// tap-cycling. Mirrors `pixelHit`'s coordinate + visibility setup.
+  function objectsUnderPoint(canvasX: number, canvasY: number): number[] {
+    const data = project.geometryView;
+    if (!data || !lastTransform) return [];
+    const { scale, offX, offY } = lastTransform;
+    const dataX = (canvasX - offX) / scale;
+    const dataY = (offY - canvasY) / scale;
+    const tolData = HIT_PIXEL_TOL / scale;
+    return queryHitObjects(
+      data,
+      hitIndex,
+      data.objects,
+      dataX,
+      dataY,
+      tolData,
+      (l) => l === STOCK_OUTLINE_LAYER || project.data.visibleLayers.has(l),
+    );
+  }
+
+  /// Tap-cycling (ivac-0rbu). On touch a small object stacked under a
+  /// larger one — or under a stock-gizmo handle's midpoint — can't be
+  /// reached by a single nearest-hit pick. Repeated PLAIN taps in (almost)
+  /// the same spot step through the stacked candidates: tap 1 selects the
+  /// topmost, tap 2 replaces it with the next under it, wrapping around.
+  /// Reset whenever the tap moves past `TAP_CYCLE_PX` or the candidate
+  /// stack changes (pan/zoom/edit all shift one of those). Works on the
+  /// mouse too, but only ever changes behaviour where ≥2 objects overlap
+  /// within the hit tolerance — single-object taps are unaffected.
+  const TAP_CYCLE_PX = 12;
+  let tapCycle: { cx: number; cy: number; ids: number[]; pos: number } | null = null;
+  function sameIdList(a: number[], b: number[]): boolean {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+  function cycledHitObjectId(canvasX: number, canvasY: number): number | null {
+    const ids = objectsUnderPoint(canvasX, canvasY);
+    if (ids.length === 0) {
+      tapCycle = null;
+      return null;
+    }
+    if (
+      ids.length > 1 &&
+      tapCycle &&
+      Math.hypot(canvasX - tapCycle.cx, canvasY - tapCycle.cy) <= TAP_CYCLE_PX &&
+      sameIdList(tapCycle.ids, ids)
+    ) {
+      const pos = (tapCycle.pos + 1) % ids.length;
+      tapCycle = { cx: canvasX, cy: canvasY, ids, pos };
+      return ids[pos];
+    }
+    tapCycle = { cx: canvasX, cy: canvasY, ids, pos: 0 };
+    return ids[0];
   }
 
   // ---- Stock gizmo (phone on-canvas affordance, 7jug.15) --------------
@@ -1461,12 +1519,24 @@
     // and object selection stay mutually exclusive.
     project.sel.selectedTextLayerId = null;
 
-    const idx = pixelHit(cx, cy);
-    // Map segment index → its 1-based object id (or null for empty
-    // space). The pure reducer in lib/canvas/entity-selection.ts
-    // resolves modifiers and emits the action list; we dispatch and
-    // arm the box-select store.
-    const hitObjectId = idx == null ? null : (project.geometryView?.objects?.[idx] ?? 0);
+    // Map the tap → its 1-based object id (or null for empty space). The
+    // pure reducer in lib/canvas/entity-selection.ts resolves modifiers
+    // and emits the action list; we dispatch and arm the box-select store.
+    //
+    // A PLAIN tap (no modifier / add-to-selection) cycles through stacked
+    // objects so a small one hidden under a larger one stays reachable
+    // (ivac-0rbu). Modifier / add-to-selection taps keep the single
+    // nearest hit and reset the cycle — multi-select and cycling don't
+    // compose.
+    const plainTap = !e.shiftKey && !e.ctrlKey && !e.metaKey && !addToSelection;
+    let hitObjectId: number | null;
+    if (plainTap) {
+      hitObjectId = cycledHitObjectId(cx, cy);
+    } else {
+      tapCycle = null;
+      const idx = pixelHit(cx, cy);
+      hitObjectId = idx == null ? null : (project.geometryView?.objects?.[idx] ?? 0);
+    }
     const actions = reduceCanvasClick(
       {
         hitObjectId,

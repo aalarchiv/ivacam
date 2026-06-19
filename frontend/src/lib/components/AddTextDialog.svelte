@@ -213,25 +213,28 @@
     // If the user had geometry selected when opening the dialog, anchor
     // the new text at the bottom-left (0,0) corner of the selection's
     // bbox — the canonical "place text relative to this part" flow.
-    // Falls back to centering on the stock footprint when nothing is
-    // selected.
     const origin = selectionOrigin(
       project.transformedImport?.object_meta ?? [],
       project.sel.selectedObjects,
     );
     if (origin) return origin;
-    // Center the new text on the effective stock footprint — same
-    // computation Scene3D / sim use, so the preview lands inside the
-    // visible workpiece regardless of whether a drawing is loaded.
+    const margin = Math.max(0, project.data.stock.margin);
+    // No drawing yet (text-only): anchor at machine home + margin. The
+    // text-only auto-stock then wraps the text (bbox + margin), so this
+    // keeps the workpiece near the origin instead of out at the work-area
+    // centre.
+    if (!project.transformedImport) {
+      return { x: margin, y: margin };
+    }
+    // Drawing present: bottom-left corner of the stock footprint, inset by
+    // the margin so the text lands ON the stock near its origin corner
+    // rather than centred.
     const fp = computeFootprint(
       project.transformedImport,
       project.data.stock,
       project.data.machine.workArea,
     );
-    return {
-      x: (fp.minX + fp.maxX) / 2,
-      y: (fp.minY + fp.maxY) / 2,
-    };
+    return { x: fp.minX + margin, y: fp.minY + margin };
   }
 
   function pickDefaultTool(s: TextStyle): number {

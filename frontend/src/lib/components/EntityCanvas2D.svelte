@@ -1930,9 +1930,15 @@
   /// rendered preview segments so the mostly-whitespace bbox doesn't
   /// steal clicks; topmost layer wins a tie. Drives both hover and
   /// click-select / drag.
+  /// Grabbing a text layer means landing within tolerance of a thin glyph
+  /// STROKE — fiddly with a fingertip. Give touch a much larger pixel
+  /// tolerance so the whole word is comfortably grabbable/movable, without
+  /// loosening geometry selection (which keeps HIT_PIXEL_TOL).
+  const TEXT_TOUCH_TOL = 24;
   function textHitAtData(x: number, y: number): TextLayer | null {
     if (!lastTransform || project.data.textLayers.length === 0) return null;
-    const tol = HIT_PIXEL_TOL / Math.max(Math.abs(lastTransform.scale), 1e-6);
+    const px = isTouchDevice ? TEXT_TOUCH_TOL : HIT_PIXEL_TOL;
+    const tol = px / Math.max(Math.abs(lastTransform.scale), 1e-6);
     const hit = nearestTextLayer(
       project.data.textLayers.map((l) => ({
         id: l.id,

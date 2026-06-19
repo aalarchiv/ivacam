@@ -62,8 +62,6 @@
     type OSnapTargets,
   } from '../canvas/osnap';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
-  import CanvasLayersChip from './CanvasLayersChip.svelte';
-  import CanvasStockChip from './CanvasStockChip.svelte';
   import { layout } from '../state/layout.svelte';
   import { computeFootprint } from '../sim/driver';
   import {
@@ -81,13 +79,8 @@
     /// row is visible in the Operations panel without an extra
     /// click on the sidebar.
     onActivateSidebarPane?: (pane: 'stock' | 'layers' | 'text' | 'operations') => void;
-    /// Phone on-canvas affordances (7jug.15): the Layers chip's Add menu
-    /// routes drawing-open / add-text through the same App-owned flows the
-    /// sidebar used. Desktop leaves these undefined (the chip is narrow-only).
-    onOpenFileClick?: () => void;
-    onAddTextClick?: () => void;
   }
-  let { onShowHelp, onActivateSidebarPane, onOpenFileClick, onAddTextClick }: Props = $props();
+  let { onShowHelp, onActivateSidebarPane }: Props = $props();
 
   let canvas: HTMLCanvasElement;
   /// Stacked overlay canvas for state-bearing repaints (selection halos,
@@ -2164,16 +2157,9 @@
       aria-label="Show keyboard and mouse shortcuts">?</button
     >
   {/if}
-  <!-- Phone: Stock/Layers/Text fold onto the canvas as corner chips
-       (7jug.15); no sidebar on narrow. Stock also has the drag gizmo on
-       the rect itself. Desktop keeps the sidebar panels, so this dock is
-       narrow-only. -->
-  {#if layout.isNarrow}
-    <div class="canvas-chip-dock">
-      <CanvasLayersChip {onOpenFileClick} {onAddTextClick} />
-      <CanvasStockChip />
-    </div>
-  {/if}
+  <!-- Phone Stock/Layers are now the 2D bottom-left "S+L" sheet
+       (wiaconstructor-yc25), not floating canvas chips. The stock drag
+       gizmo still lives on the rect itself. -->
 </div>
 
 <style>
@@ -2410,18 +2396,6 @@
   /* Fit-to-view button — visual twin of Scene3D's .fit-btn, sits to
      the LEFT of the help-btn so both float in the same top-right
      cluster regardless of which pane the user is in. */
-  /* Phone chip dock — bottom-left flex row holding the Layers + Stock
-     chips so they sit side-by-side without overlapping. Each chip is a
-     relative box; its popover opens upward from here. */
-  .canvas-chip-dock {
-    position: absolute;
-    left: 0.5rem;
-    bottom: 0.5rem;
-    z-index: var(--z-floating);
-    display: flex;
-    gap: 0.4rem;
-    align-items: flex-end;
-  }
   .fit-btn {
     position: absolute;
     top: 0.5rem;

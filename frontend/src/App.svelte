@@ -514,8 +514,10 @@
   // user opens the panel (it's collapsed by default).
   $effect(() => {
     // Load on the desktop toggle, or when the phone G-code bottom sheet is
-    // unfolded (7jug.11).
-    if ((gcodeOpen || bottomPanels.active === 'gcode') && !GcodePanel && !gcodePanelLoading) {
+    // unfolded (7jug.11). The left 'gcode' slot hosts Stock+Layers in 2D, so
+    // only the 3D case is a real G-code open — don't pull the assets in 2D.
+    const gcodeSheetOpen = bottomPanels.active === 'gcode' && activePane === '3d';
+    if ((gcodeOpen || gcodeSheetOpen) && !GcodePanel && !gcodePanelLoading) {
       gcodePanelLoading = true;
       void import('./lib/components/GcodePanel.svelte').then((m) => {
         GcodePanel = m.default;
@@ -942,7 +944,32 @@
        split reserves padding for their always-visible handles (see
        `.split.with-ops-sheet`). G-code only appears once a program exists. -->
   {#if showBottomPanels}
-    {#if project.gen.generated}
+    <!-- Left bottom slot is view-dependent: Stock + Layers in 2D (replaces
+         the floating canvas chips), G-code in 3D where it's meaningful. Both
+         share the 'gcode' slot key (left panel) + its persisted fold snap. -->
+    {#if activePane === '2d'}
+      <BottomSheet
+        key="gcode"
+        label="Stock & Layers"
+        code="S+L"
+        side="left"
+        savedSnap={gcodeSnap}
+        onPersistSnap={(s) => workspace.setPanels({ gcode_fold_snap: s })}
+      >
+        <div class="sl-sheet">
+          <StockPanel />
+          <LayerList
+            active={true}
+            onActivate={() => {}}
+            onOpenFileClick={() => openFile()}
+            onAddTextClick={() => (addTextOpen = true)}
+            reopenPrompt={sessionUi.reopenPrompt}
+            onReopenAccept={acceptReopen}
+            onReopenDismiss={dismissReopen}
+          />
+        </div>
+      </BottomSheet>
+    {:else if project.gen.generated}
       <BottomSheet
         key="gcode"
         label="G-code"
@@ -1173,8 +1200,6 @@
           <EntityCanvas2D
             onShowHelp={() => (mainTab = 'help')}
             onActivateSidebarPane={revealSidebarPane}
-            onOpenFileClick={() => openFile()}
-            onAddTextClick={() => (addTextOpen = true)}
           />
         </div>
         {#if Scene3D}
@@ -1765,6 +1790,15 @@
      the 44px handle strip (see footer.above-sheets) instead of behind it. */
   .split.narrow.with-ops-sheet {
     padding-bottom: calc(44px + 1.6rem);
+  }
+  /* Stock + Layers bottom-sheet body: stack the two panels and scroll the
+     whole thing (the sheet body itself is overflow:hidden at a fixed open
+     height). */
+  .sl-sheet {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow-y: auto;
   }
   .viewport {
     position: relative;

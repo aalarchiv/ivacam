@@ -17,8 +17,10 @@
     pipelineWarningSeverity,
     type PipelineWarning,
   } from '../api/pipeline-warnings';
+  import { computeFootprint } from '../sim/driver';
 
   let open = $state(false);
+  let copied = $state(false);
 
   const generating = $derived(
     project.gen.pipelineState === 'running' || project.gen.pipelineState === 'cancelling',
@@ -35,6 +37,40 @@
       countCriticalPipelineWarnings(pipeWarnings),
   );
   const total = $derived(simWarnings.length + pipeWarnings.length);
+
+  /// Plain-text dump of every current warning, for the clipboard.
+  function warningsText(): string {
+    const lines: string[] = [];
+    for (const w of simWarnings) lines.push(`[sim] ${w.kind}: ${simWarningSummary(w)}`);
+    for (const pw of pipeWarnings) lines.push(`[pipeline] ${pw.kind}: ${pw.message}`);
+    return lines.join('\n');
+  }
+  async function copyWarnings() {
+    try {
+      await navigator.clipboard.writeText(warningsText());
+      copied = true;
+      setTimeout(() => (copied = false), 1500);
+    } catch {
+      /* clipboard unavailable (insecure context / denied) — no-op */
+    }
+  }
+
+  /// The `stock_origin_outside_geometry_bbox` warning means the WCS zero
+  /// isn't on the stock/geometry — common when text is engraved inset from
+  /// the stock corner. Offer a one-tap fix: move the WCS origin to the stock
+  /// corner (where the operator zeros) and re-generate.
+  const wcsWarning = $derived(
+    pipeWarnings.find((w) => w.kind === 'stock_origin_outside_geometry_bbox') ?? null,
+  );
+  function fixWcsOrigin() {
+    const fp = computeFootprint(
+      project.stockSizingImport,
+      project.data.stock,
+      project.data.machine.workArea,
+    );
+    project.setWorkOffset({ x_mm: fp.minX, y_mm: fp.minY });
+    generateBus.request();
+  }
   /// Generate is meaningful once geometry OR text exists to run (text-only
   /// projects render to geometry in the backend pre-pass).
   const canGenerate = $derived(project.geometryView != null || project.data.textLayers.length > 0);
@@ -108,6 +144,18 @@
 >
   <div class="wpanel">
     {#if hasRun}
+      {#if total > 0}
+        <div class="wactions">
+          {#if wcsWarning}
+            <button type="button" class="wfix" onclick={fixWcsOrigin}>
+              Set zero to stock corner
+            </button>
+          {/if}
+          <button type="button" class="wcopy" onclick={copyWarnings}>
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+      {/if}
       <div class="wlist">
         {#if total === 0}
           <p class="empty">No warnings — sim and pipeline are clean.</p>
@@ -189,6 +237,29 @@
     gap: 0.6rem;
     padding: 0.7rem;
     overflow: auto;
+  }
+  .wactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    justify-content: flex-end;
+  }
+  .wcopy,
+  .wfix {
+    min-height: 36px;
+    padding: 0 0.7rem;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+  .wfix {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    color: var(--text-strong);
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+    margin-right: auto;
   }
   .empty {
     margin: 0;

@@ -9,7 +9,6 @@
     type ToolKind,
     type CoolantMode,
     type HolderShape,
-    type FormProfileSample,
   } from '../state/project.svelte';
   import { untrack } from 'svelte';
   import Modal from './Modal.svelte';
@@ -27,7 +26,7 @@
   import { workspace } from '../state/workspace.svelte';
   import { seedInventoryFromProject, syncStockedFromInventory } from '../state/tool_inventory';
   import { isAutoToolName, suggestToolName } from '../state/tool_naming';
-  import { dovetailProfile, tslotProfile } from '../state/tool_form_profiles';
+  import ToolFormProfileEditor from './ToolFormProfileEditor.svelte';
   import {
     applyToolTableView,
     EMPTY_TOOL_VIEW,
@@ -298,70 +297,6 @@
       if (wasAuto) next.name = suggestToolName(next);
       return next;
     });
-  }
-
-  // ─────────────────────────── form-profile editor ───────────────────
-  // The (z, r) sample table is the source of truth (stored on the
-  // tool). The dovetail inputs below are a transient generator that
-  // fills the table; they're keyed by tool id and not persisted —
-  // re-deriving them from the table would be ambiguous for cove/ogee.
-  let dovetailDraft = $state<Record<number, { diaMm: number; angleDeg: number; heightMm: number }>>(
-    {},
-  );
-  function dovetailParamsFor(id: number) {
-    return dovetailDraft[id] ?? { diaMm: 12.7, angleDeg: 14, heightMm: 9.5 };
-  }
-  function setDovetailParam(id: number, key: 'diaMm' | 'angleDeg' | 'heightMm', v: number) {
-    dovetailDraft = { ...dovetailDraft, [id]: { ...dovetailParamsFor(id), [key]: v } };
-  }
-  const round3 = (v: number) => Math.round(v * 1000) / 1000;
-  // A dovetail bit is widest at the bottom (z=0) and narrows upward as
-  // the angled flank rises toward the neck: r(z) = D/2 − z·tan(angle).
-  // Clamp the neck radius to ≥0 so an over-deep height can't invert it.
-  function generateDovetail(idx: number, id: number) {
-    updateField(idx, 'formProfileMm', dovetailProfile(dovetailParamsFor(id)));
-  }
-  // T-slot preset — the former dedicated kind, now a form-profile.
-  // A wide cutting disk at the tip (headDia) of height headThickness,
-  // then a narrow neck (neckDia) up to the top of the neck. Transient
-  // generator inputs, keyed by tool id like the dovetail ones.
-  let tslotDraft = $state<
-    Record<number, { headDiaMm: number; headThickMm: number; neckDiaMm: number; neckLenMm: number }>
-  >({});
-  function tslotParamsFor(id: number) {
-    return tslotDraft[id] ?? { headDiaMm: 12.7, headThickMm: 3, neckDiaMm: 6, neckLenMm: 6 };
-  }
-  function setTslotParam(
-    id: number,
-    key: 'headDiaMm' | 'headThickMm' | 'neckDiaMm' | 'neckLenMm',
-    v: number,
-  ) {
-    tslotDraft = { ...tslotDraft, [id]: { ...tslotParamsFor(id), [key]: v } };
-  }
-  function generateTslot(idx: number, id: number) {
-    updateField(idx, 'formProfileMm', tslotProfile(tslotParamsFor(id)));
-  }
-  function addProfileRow(idx: number, tool: ToolEntry) {
-    const rows = tool.formProfileMm ?? [];
-    const last = rows[rows.length - 1];
-    const next: FormProfileSample = last
-      ? { zMm: round3(last.zMm + 1), rMm: last.rMm }
-      : { zMm: 0, rMm: round3((tool.diameter ?? 0) / 2) };
-    updateField(idx, 'formProfileMm', [...rows, next]);
-  }
-  function updateProfileRow(
-    idx: number,
-    tool: ToolEntry,
-    row: number,
-    key: 'zMm' | 'rMm',
-    v: number,
-  ) {
-    const rows = (tool.formProfileMm ?? []).map((s, r) => (r === row ? { ...s, [key]: v } : s));
-    updateField(idx, 'formProfileMm', rows);
-  }
-  function removeProfileRow(idx: number, tool: ToolEntry, row: number) {
-    const rows = (tool.formProfileMm ?? []).filter((_, r) => r !== row);
-    updateField(idx, 'formProfileMm', rows);
   }
 
   /// Per-kind default fill-in on `kind` change. Pre-populates the
@@ -1610,202 +1545,11 @@
               </div>
             {/if}
             {#if attrApplies('formProfile', tool.kind)}
-              {@const dt = dovetailParamsFor(tool.id)}
-              {@const ts = tslotParamsFor(tool.id)}
-              {@const rows = tool.formProfileMm ?? []}
-              <div class="holder-row pass-overrides">
-                <span
-                  class="holder-label"
-                  title="Form / profile cutter cross-section (cove / ogee / dovetail / T-slot / custom). The (z, r) table — height above the tip vs radius — drives the simulator's cut shape. Needs ≥2 rows; otherwise the sim falls back to a tip→diameter taper. Use a preset below or edit rows directly."
-                  >Form profile</span
-                >
-              </div>
-              <div class="holder-row dovetail-gen">
-                <label>
-                  <span>Dovetail ⌀ (mm)</span>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={dt.diaMm}
-                    title="Widest cutting diameter (at the bottom face) of a dovetail bit."
-                    onchange={(e) =>
-                      setDovetailParam(
-                        tool.id,
-                        'diaMm',
-                        parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
-                      )}
-                  />
-                </label>
-                <label>
-                  <span>Angle (°)</span>
-                  <input
-                    type="number"
-                    step="1"
-                    min="0"
-                    max="89"
-                    value={dt.angleDeg}
-                    title="Flank angle from the tool axis. The radius narrows by tan(angle) per mm of rise. 7°–14° typical."
-                    onchange={(e) =>
-                      setDovetailParam(
-                        tool.id,
-                        'angleDeg',
-                        parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
-                      )}
-                  />
-                </label>
-                <label>
-                  <span>Cut height (mm)</span>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    value={dt.heightMm}
-                    title="Flute / cutting height — how tall the angled profile is from the bottom face up to the neck."
-                    onchange={(e) =>
-                      setDovetailParam(
-                        tool.id,
-                        'heightMm',
-                        parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
-                      )}
-                  />
-                </label>
-                <button
-                  type="button"
-                  class="profile-btn"
-                  title="Overwrite the sample table below with a 2-row dovetail profile generated from these inputs."
-                  onclick={() => generateDovetail(i, tool.id)}>Generate dovetail</button
-                >
-              </div>
-              <div class="holder-row dovetail-gen">
-                <label>
-                  <span>T-slot head ⌀ (mm)</span>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={ts.headDiaMm}
-                    title="Widest cutting-disk diameter at the tip of a T-slot / keyway cutter."
-                    onchange={(e) =>
-                      setTslotParam(
-                        tool.id,
-                        'headDiaMm',
-                        parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
-                      )}
-                  />
-                </label>
-                <label>
-                  <span>Head thick (mm)</span>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    value={ts.headThickMm}
-                    title="Height of the cutting disk (how tall the wide undercut head is)."
-                    onchange={(e) =>
-                      setTslotParam(
-                        tool.id,
-                        'headThickMm',
-                        parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
-                      )}
-                  />
-                </label>
-                <label>
-                  <span>Neck ⌀ (mm)</span>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={ts.neckDiaMm}
-                    title="Diameter of the narrow neck above the head — must be smaller than the head ⌀."
-                    onchange={(e) =>
-                      setTslotParam(
-                        tool.id,
-                        'neckDiaMm',
-                        parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
-                      )}
-                  />
-                </label>
-                <label>
-                  <span>Neck length (mm)</span>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    value={ts.neckLenMm}
-                    title="Length of the narrow neck above the head, up to where the shank begins."
-                    onchange={(e) =>
-                      setTslotParam(
-                        tool.id,
-                        'neckLenMm',
-                        parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
-                      )}
-                  />
-                </label>
-                <button
-                  type="button"
-                  class="profile-btn"
-                  title="Overwrite the sample table below with a 4-row T-slot profile (wide disk → narrow neck) generated from these inputs."
-                  onclick={() => generateTslot(i, tool.id)}>Generate T-slot</button
-                >
-              </div>
-              <div class="profile-table">
-                <div class="profile-table-head">
-                  <span>z above tip (mm)</span>
-                  <span>radius (mm)</span>
-                  <span></span>
-                </div>
-                {#each rows as row, r (r)}
-                  <div class="profile-row">
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      value={row.zMm}
-                      aria-label="z above tip (mm)"
-                      onchange={(e) =>
-                        updateProfileRow(
-                          i,
-                          tool,
-                          r,
-                          'zMm',
-                          parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
-                        )}
-                    />
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      value={row.rMm}
-                      aria-label="radius (mm)"
-                      onchange={(e) =>
-                        updateProfileRow(
-                          i,
-                          tool,
-                          r,
-                          'rMm',
-                          parseFloat((e.currentTarget as HTMLInputElement).value) || 0,
-                        )}
-                    />
-                    <button
-                      type="button"
-                      class="profile-btn del"
-                      title="Delete this sample row"
-                      onclick={() => removeProfileRow(i, tool, r)}>✕</button
-                    >
-                  </div>
-                {/each}
-                <div class="profile-actions">
-                  <button type="button" class="profile-btn" onclick={() => addProfileRow(i, tool)}
-                    >+ Add row</button
-                  >
-                  {#if rows.length < 2}
-                    <span class="profile-hint"
-                      >Add at least 2 rows (tip → top) for the sim to carve the real profile.</span
-                    >
-                  {/if}
-                </div>
-              </div>
+              <ToolFormProfileEditor
+                rows={tool.formProfileMm ?? []}
+                diameterMm={tool.diameter}
+                onChange={(next) => updateField(i, 'formProfileMm', next)}
+              />
             {/if}
             {#if attrApplies('wear', tool.kind)}
               <div class="holder-row pass-overrides">
@@ -2559,41 +2303,5 @@
     font-size: 0.72rem;
     cursor: pointer;
     align-self: flex-end;
-  }
-  .profile-btn.del {
-    padding: 0.2rem 0.4rem;
-    color: var(--text-muted);
-  }
-  .profile-table {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    margin-top: 0.3rem;
-  }
-  .profile-table-head,
-  .profile-row {
-    display: grid;
-    grid-template-columns: 8rem 8rem 2rem;
-    gap: 0.4rem;
-    align-items: center;
-  }
-  .profile-table-head span {
-    font-size: 0.62rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-muted);
-  }
-  .profile-row input {
-    width: 100%;
-  }
-  .profile-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    margin-top: 0.2rem;
-  }
-  .profile-hint {
-    font-size: 0.7rem;
-    color: var(--text-muted);
   }
 </style>

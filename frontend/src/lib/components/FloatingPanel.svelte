@@ -199,7 +199,10 @@
     border: 1px solid var(--border);
     border-radius: 6px;
     box-shadow: 0 6px 18px var(--shadow-modal);
-    z-index: var(--z-floating);
+    /* Sit above the on-canvas affordance buttons (fit / multiselect / help
+       in EntityCanvas2D + Scene3D), which use `--z-floating + 2` so taps
+       beat the gesture zones. The warnings panel must overlap them. */
+    z-index: calc(var(--z-floating) + 3);
     display: flex;
     flex-direction: column;
     overflow: hidden;

@@ -14,11 +14,8 @@
   import { generateBus } from '../state/generate-bus.svelte';
   import { exportGeneratedGcode, exportSimulatedStockStl } from '../services/file_ops';
   import type { SimWarning, TimeEstimate } from '../api/types';
-  import {
-    countCriticalPipelineWarnings,
-    pipelineWarningSeverity,
-    type PipelineWarning,
-  } from '../api/pipeline-warnings';
+  import { pipelineWarningSeverity, type PipelineWarning } from '../api/pipeline-warnings';
+  import { summarizeWarnings } from '../state/warnings-summary';
   import GenerateProgress from './GenerateProgress.svelte';
   import FloatingPanel from './FloatingPanel.svelte';
   import { workspace } from '../state/workspace.svelte';
@@ -177,17 +174,16 @@
     };
   });
 
-  let warnings = $derived(project.gen.simDiagnostics?.warnings ?? []);
-  // Surface pipeline-level warnings in the same panel as sim warnings.
-  // A Generate that raises, say, `op_source_empty` or `tool_too_large`
-  // flags the chip, so we render BOTH lists in one panel with a source
-  // tag per row rather than gating the panel on a non-null
-  // simDiagnostics.
-  let pipelineWarnings = $derived<PipelineWarning[]>(
-    (project.gen.generated as { warnings?: PipelineWarning[] } | null)?.warnings ?? [],
-  );
-  // Critical-count now spans BOTH sim warnings AND pipeline-level
-  // warnings (tool_too_large, op_order_suspect, frame_padding_below_tool_radius,
+  // Warning aggregation + severity lane is shared with the phone
+  // PhoneWarnings bar via state/warnings-summary.ts — the two copies had
+  // drifted (this desktop one treated a clean Generate as "not run yet").
+  // Surface pipeline-level warnings in the same panel as sim warnings: a
+  // Generate that raises, say, `op_source_empty` or `tool_too_large` flags
+  // the chip, so we render BOTH lists in one panel with a source tag per
+  // row rather than gating the panel on a non-null simDiagnostics.
+  //
+  // Critical-count spans BOTH sim warnings AND pipeline-level warnings
+  // (tool_too_large, op_order_suspect, frame_padding_below_tool_radius,
   // spindle_speed_clamped_above_max, stock_origin_outside_geometry_bbox, …).
   // The safety gate must count planning-time pipeline warnings, not just
   // sim post-mortem ones — otherwise a Pocket whose tool didn't fit emits
@@ -195,13 +191,21 @@
   // critical" setting does NOT prevent the broken gcode from shipping.
   // Both envelope checks are pipeline-side: the work-area half
   // (`out_of_work_area`) and the STOCK half (`out_of_stock`,
-  // warnings.rs::push_stock_warning), since the core `Project` carries
-  // a resolved stock box. Both ride in on
-  // `project.gen.generated.warnings` → `pipelineWarnings`, so the
-  // frontend does not synthesize either — doing so would double-count.
-  // `allPipelineWarnings` is just the pipeline's own findings.
-  let allPipelineWarnings = $derived<PipelineWarning[]>(pipelineWarnings);
-  let pipelineCriticalCount = $derived(countCriticalPipelineWarnings(allPipelineWarnings));
+  // warnings.rs::push_stock_warning), since the core `Project` carries a
+  // resolved stock box. Both ride in on `project.gen.generated.warnings`,
+  // so the frontend does not synthesize either — doing so would double-count.
+  const warningSummary = $derived(
+    summarizeWarnings({
+      simWarnings: project.gen.simDiagnostics?.warnings ?? [],
+      pipelineWarnings:
+        (project.gen.generated as { warnings?: PipelineWarning[] } | null)?.warnings ?? [],
+      hasGenerated: project.gen.generated != null,
+      hasSimDiagnostics: project.gen.simDiagnostics != null,
+      dirty: project.data.dirty,
+    }),
+  );
+  let warnings = $derived(warningSummary.sim);
+  let allPipelineWarnings = $derived(warningSummary.pipeline);
   // Tier-4 safety: count out-of-work-area moves from the last Generate.
   // `out_of_work_area` is intentionally NOT a critical kind (the default
   // envelope is often a placeholder), so it never blocks via the critical
@@ -210,11 +214,8 @@
   let workAreaViolationCount = $derived(
     allPipelineWarnings.filter((w) => w.kind === 'out_of_work_area').length,
   );
-  let criticalCount = $derived(
-    warnings.filter((w) => simWarningSeverity(w) === 'critical').length + pipelineCriticalCount,
-  );
-  let totalWarningCount = $derived(warnings.length + allPipelineWarnings.length);
-  let isClean = $derived(totalWarningCount === 0 && pipelineCriticalCount === 0);
+  let criticalCount = $derived(warningSummary.critical);
+  let totalWarningCount = $derived(warningSummary.total);
 
   async function run() {
     if (!project.geometryView) return;
@@ -363,22 +364,11 @@
     generateBus.request();
   }
 
-  /// Sim status goes STALE the moment the user edits anything that
-  /// would change gcode (project.data.dirty flips true on every op / tool /
-  /// stock / text mutation, and clears on the next successful Generate).
-  /// The chip reflects this so the user knows the previous sim verdict
-  /// stops matching what's on the canvas.
-  let simStale = $derived(project.gen.simDiagnostics != null && project.data.dirty);
-
+  // The chip presentation is driven by the shared severity lane
+  // (state/warnings-summary.ts). Color class maps 1:1 to the severity
+  // value; only the wording + glyph are desktop-specific.
   function chipClass(): string {
-    // Chip color reflects WORST of sim + pipeline warnings.
-    // "idle" only when there's no generate-side state AND no sim run
-    // yet (chip is hidden anyway in that case).
-    if (project.gen.simDiagnostics == null && pipelineWarnings.length === 0) return 'sim-chip idle';
-    if (simStale) return 'sim-chip stale';
-    if (criticalCount > 0) return 'sim-chip critical';
-    if (totalWarningCount > 0) return 'sim-chip warning';
-    return 'sim-chip clean';
+    return `sim-chip ${warningSummary.severity}`;
   }
 
   function chipLabel(): string {
@@ -387,23 +377,33 @@
     // diagnostic UI for a warning that was actually emitted by the CAM
     // pipeline. The panel that opens still tags each row with its source
     // (sim / pipeline) so attribution stays visible.
-    if (project.gen.simDiagnostics == null && pipelineWarnings.length === 0) {
-      return 'Warnings: not run yet — Generate first';
+    switch (warningSummary.severity) {
+      case 'idle':
+        return 'Warnings: not run yet — Generate first';
+      case 'stale':
+        return 'Warnings: stale — re-Generate';
+      case 'clean':
+        return 'No warnings';
+      case 'critical':
+        return `${totalWarningCount} warning${totalWarningCount === 1 ? '' : 's'} (${criticalCount} critical)`;
+      default:
+        return `${totalWarningCount} warning${totalWarningCount === 1 ? '' : 's'}`;
     }
-    if (simStale) return 'Warnings: stale — re-Generate';
-    if (isClean) return 'No warnings';
-    if (criticalCount > 0) {
-      return `${totalWarningCount} warning${totalWarningCount === 1 ? '' : 's'} (${criticalCount} critical)`;
-    }
-    return `${totalWarningCount} warning${totalWarningCount === 1 ? '' : 's'}`;
   }
 
   function chipGlyph(): string {
-    if (project.gen.simDiagnostics == null && pipelineWarnings.length === 0) return '🛡';
-    if (simStale) return '↻';
-    if (isClean) return '✓';
-    if (criticalCount > 0) return '⛔';
-    return '⚠';
+    switch (warningSummary.severity) {
+      case 'idle':
+        return '🛡';
+      case 'stale':
+        return '↻';
+      case 'clean':
+        return '✓';
+      case 'critical':
+        return '⛔';
+      default:
+        return '⚠';
+    }
   }
 
   const SIM_IDLE_HINT =
@@ -511,11 +511,11 @@
       </button>
     </span>
   {/if}
-  {#if project.gen.simDiagnostics == null && project.gen.generated == null}
+  {#if warningSummary.severity === 'idle'}
     <span class="sim-chip idle" title={SIM_IDLE_HINT}>
       🛡 {chipLabel()}
     </span>
-  {:else if project.gen.simDiagnostics != null || totalWarningCount > 0}
+  {:else}
     <button
       class={chipClass()}
       onclick={() => (warningPanelOpen = !warningPanelOpen)}

@@ -12,11 +12,8 @@
   import { generateBus } from '../state/generate-bus.svelte';
   import FloatingPanel from './FloatingPanel.svelte';
   import { simWarningSeverity, simWarningSummary } from '../sim/warnings';
-  import {
-    countCriticalPipelineWarnings,
-    pipelineWarningSeverity,
-    type PipelineWarning,
-  } from '../api/pipeline-warnings';
+  import { pipelineWarningSeverity, type PipelineWarning } from '../api/pipeline-warnings';
+  import { summarizeWarnings } from '../state/warnings-summary';
 
   let open = $state(false);
   let copied = $state(false);
@@ -24,18 +21,25 @@
   const generating = $derived(
     project.gen.pipelineState === 'running' || project.gen.pipelineState === 'cancelling',
   );
-  const simWarnings = $derived(project.gen.simDiagnostics?.warnings ?? []);
-  const pipeWarnings = $derived<PipelineWarning[]>(
-    (project.gen.generated as { warnings?: PipelineWarning[] } | null)?.warnings ?? [],
+  /// Aggregation + severity lane shared with the desktop GenerateBar (see
+  /// state/warnings-summary.ts). `summary.severity` drives the chip class
+  /// below; the raw arrays still drive the per-row list.
+  const summary = $derived(
+    summarizeWarnings({
+      simWarnings: project.gen.simDiagnostics?.warnings ?? [],
+      pipelineWarnings:
+        (project.gen.generated as { warnings?: PipelineWarning[] } | null)?.warnings ?? [],
+      hasGenerated: project.gen.generated != null,
+      hasSimDiagnostics: project.gen.simDiagnostics != null,
+      dirty: project.data.dirty,
+    }),
   );
-  /// Has a generate/sim run produced anything yet?
-  const hasRun = $derived(project.gen.generated != null || project.gen.simDiagnostics != null);
-  const stale = $derived(project.gen.simDiagnostics != null && project.data.dirty);
-  const critical = $derived(
-    simWarnings.filter((w) => simWarningSeverity(w) === 'critical').length +
-      countCriticalPipelineWarnings(pipeWarnings),
-  );
-  const total = $derived(simWarnings.length + pipeWarnings.length);
+  const simWarnings = $derived(summary.sim);
+  const pipeWarnings = $derived(summary.pipeline);
+  const hasRun = $derived(summary.hasRun);
+  const stale = $derived(summary.stale);
+  const critical = $derived(summary.critical);
+  const total = $derived(summary.total);
 
   /// Plain-text dump of every current warning, for the clipboard.
   function warningsText(): string {
@@ -77,14 +81,9 @@
     if (total > 0) return '⚠';
     return '✓';
   });
-  const cls = $derived.by(() => {
-    if (generating) return 'busy';
-    if (!hasRun) return 'idle';
-    if (stale) return 'stale';
-    if (critical > 0) return 'critical';
-    if (total > 0) return 'warning';
-    return 'clean';
-  });
+  // severity lanes (idle/stale/critical/warning/clean) map 1:1 to the
+  // chip CSS classes below; 'busy' is the only phone-specific extra.
+  const cls = $derived(generating ? 'busy' : summary.severity);
   const text = $derived.by(() => {
     if (generating) return '…';
     if (!hasRun) return 'Generate';

@@ -653,6 +653,10 @@ fn circumcircle(a: Point2, b: Point2, c: Point2) -> Option<(f64, f64, f64)> {
 
 #[cfg(test)]
 mod tests {
+    // A couple of asserts compare the indexed result to the brute-force
+    // routine for EXACT equality (the invariant under test); float_cmp is
+    // intentional there.
+    #![allow(clippy::float_cmp)]
     use super::*;
 
     fn approx(a: f64, b: f64, tol: f64) -> bool {

@@ -7,7 +7,7 @@
 //! The app entry point is [`run`]: on desktop `main.rs` calls it directly;
 //! on mobile (Android / iOS) the Tauri-generated glue calls it via the
 //! `mobile_entry_point` macro. Desktop-only concerns (window-state
-//! persistence, the Linux WebKit teardown) are `#[cfg]`-gated so the
+//! persistence, the Linux `WebKit` teardown) are `#[cfg]`-gated so the
 //! mobile `cdylib` compiles cleanly.
 
 mod commands;
@@ -115,6 +115,7 @@ pub fn run() {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_app() -> tauri::Result<()> {
     let log_plugin = tauri_plugin_log::Builder::new()
         .level(log::LevelFilter::Info)

@@ -55,6 +55,10 @@ pub(crate) fn spindle_on<P: PostProcessor>(
 /// mode dispatch. The previous code gated `spindle_on` behind
 /// `mode == Mill` only, which left laser cuts with NO `M3 S<power>` at
 /// all — the program ran the moves but the beam stayed off.
+// Drag and Plasma both no-op here, but for different documented reasons
+// (no spindle/beam vs. torch fires at the pierce point) — kept as separate
+// arms for clarity rather than merged.
+#[allow(clippy::match_same_arms)]
 fn cut_tool_on<P: PostProcessor>(post: &mut P, setup: &Setup, power_or_speed: u32) {
     match setup.machine.mode {
         MachineMode::Mill => {

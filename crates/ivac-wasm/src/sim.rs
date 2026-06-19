@@ -532,6 +532,10 @@ fn sweep_panic_to_js(panic: &Box<dyn std::any::Any + Send>) -> JsValue {
 
 #[cfg(test)]
 mod tests {
+    // Test fixtures spread plunges across a grid via small-index `as f64`
+    // arithmetic — the precision loss is irrelevant for these bounded
+    // indices.
+    #![allow(clippy::cast_precision_loss)]
     use super::*;
     use ivac_core::gcode::preview::{MoveKind, Pose3, ToolpathSegment};
     use ivac_core::project::{Coolant, SpindleDirection, ToolKind};

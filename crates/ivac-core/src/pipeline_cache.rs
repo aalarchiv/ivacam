@@ -309,19 +309,19 @@ pub fn op_cache_key_with_blobs(
             hash_serde(t, &mut h);
         }
     }
-    hash_serialized(&blobs.machine, &mut h);
+    hash_serialized(blobs.machine.as_ref(), &mut h);
     h.write_usize(selected_segments.len());
     for &seg in selected_segments {
         hash_segment(seg, &mut h);
     }
-    hash_serialized(&blobs.fixtures, &mut h);
+    hash_serialized(blobs.fixtures.as_ref(), &mut h);
     // The fixtures / text layers / relief sources / work offset blobs
     // were folded into `blobs` once per Generate — see GlobalKeyBlobs for
     // why each must still participate (text content, relief brightness
     // grids, and the work offset all change emitted gcode).
-    hash_serialized(&blobs.text_layers, &mut h);
-    hash_serialized(&blobs.relief_sources, &mut h);
-    hash_serialized(&blobs.work_offset, &mut h);
+    hash_serialized(blobs.text_layers.as_ref(), &mut h);
+    hash_serialized(blobs.relief_sources.as_ref(), &mut h);
+    hash_serialized(blobs.work_offset.as_ref(), &mut h);
     OpCacheKey(h.finish())
 }
 
@@ -337,7 +337,7 @@ pub fn op_cache_key_with_blobs(
 /// never are (see module docs); on a degenerate input we fold a sentinel
 /// rather than panic, so the key stays total.
 fn hash_serde<T: Serialize + ?Sized, H: Hasher>(v: &T, h: &mut H) {
-    hash_serialized(&serialize_for_hash(v), h);
+    hash_serialized(serialize_for_hash(v).as_ref(), h);
 }
 
 /// Serialize a wire type to the canonical JSON bytes [`hash_serde`]
@@ -353,7 +353,7 @@ fn serialize_for_hash<T: Serialize + ?Sized>(v: &T) -> Option<Vec<u8>> {
 /// hasher with EXACTLY the byte sequence [`hash_serde`] emits for the
 /// same value — `Some` hashes the bytes, `None` folds the same sentinel
 /// the serde-error path uses.
-fn hash_serialized<H: Hasher>(bytes: &Option<Vec<u8>>, h: &mut H) {
+fn hash_serialized<H: Hasher>(bytes: Option<&Vec<u8>>, h: &mut H) {
     match bytes {
         Some(b) => b.hash(h),
         None => 0xDEAD_BEEF_u32.hash(h),

@@ -20,6 +20,18 @@
 //!   Equivalence is exact because the parity flip is commutative and
 //!   every straddling edge lands in the probe's row bucket.
 
+// Pedantic lints that are idiomatic for this grid/geometry code and fire
+// only under the pre-release `-W clippy::pedantic` gate (the workspace
+// allows are overridden there): single-char x/y/r/cx/cy coordinate names,
+// a helper `const` placed next to the statement that uses it, and segment
+// indices cast to `u32` for the compact grid buckets (a CAM job never
+// holds >4 billion segments).
+#![allow(
+    clippy::many_single_char_names,
+    clippy::items_after_statements,
+    clippy::cast_possible_truncation
+)]
+
 use std::collections::HashMap;
 
 use crate::geometry::Point2;
@@ -231,7 +243,7 @@ impl SegmentNearestGrid {
             visit(cx, pcy + r, best_sq);
         }
         // Left and right columns (excluding the corners already done).
-        for cy in (pcy - r + 1)..=(pcy + r - 1) {
+        for cy in (pcy - r + 1)..(pcy + r) {
             visit(pcx - r, cy, best_sq);
             visit(pcx + r, cy, best_sq);
         }
@@ -448,6 +460,10 @@ impl PolygonRayIndexEps {
 
 #[cfg(test)]
 mod tests {
+    // These tests assert the indexed result equals the brute-force routine
+    // EXACTLY — exact float equality is the invariant under test, not a
+    // tolerance, so float_cmp is intentional here.
+    #![allow(clippy::float_cmp)]
     use super::*;
     use crate::geometry::{is_inside_polygon, point_in_polygon};
 

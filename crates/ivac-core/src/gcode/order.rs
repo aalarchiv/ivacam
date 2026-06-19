@@ -4,7 +4,10 @@
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    clippy::many_single_char_names
+    clippy::many_single_char_names,
+    // `min_x`/`min_cx`, `pcx`/`pcy` etc. — point vs cell-coordinate pairs
+    // that read clearly in this tight grid arithmetic.
+    clippy::similar_names
 )]
 
 use crate::cam::offsets::PolylineOffset;
@@ -262,7 +265,7 @@ fn scan_ring(
         scan_cell(cx, pcy - r, best);
         scan_cell(cx, pcy + r, best);
     }
-    for cy in (pcy - r + 1)..=(pcy + r - 1) {
+    for cy in (pcy - r + 1)..(pcy + r) {
         scan_cell(pcx - r, cy, best);
         scan_cell(pcx + r, cy, best);
     }

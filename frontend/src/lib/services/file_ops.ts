@@ -122,16 +122,24 @@ function hiddenOpenInput(): HTMLInputElement | null {
 /// (the URI carries no usable extension), and route through the
 /// content-based loaders, which write to a real temp file before
 /// importing. Used for both drawing and project opens.
-async function loadFromContentUri(uri: string, allowProject: boolean) {
+async function contentUriToFile(
+  uri: string,
+  allowProject: boolean,
+): Promise<{ file: File; isProject: boolean }> {
   const { readFile } = await import('@tauri-apps/plugin-fs');
   const bytes = await readFile(uri);
   const head = new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(0, 512)).trimStart();
   const isProject = allowProject && head.startsWith('{');
   const isSvg = /<svg|<\?xml/i.test(head);
   const name = isProject ? 'import.json' : isSvg ? 'import.svg' : 'import.dxf';
-  const file = new File([bytes], name);
-  if (isProject) await loadProjectFile(file);
-  else await loadFile(file);
+  return { file: new File([bytes], name), isProject };
+}
+
+/// Android SAF ADD path — read a `content://` drawing and APPEND it as a
+/// new layer (drawings only; projects never ADD).
+async function addDrawingFromContentUri(uri: string) {
+  const { file } = await contentUriToFile(uri, false);
+  await addDrawingFile(file);
 }
 
 /// True for an Android SAF document URI returned by the file dialog.
@@ -154,8 +162,62 @@ function openFilters(
   return isAndroid() ? [] : desktop;
 }
 
+/// True when the project already holds something a new drawing could
+/// either replace or join — a drawing, text, or ops. Drives the
+/// New/Add prompt: with an empty project the question is moot.
+function projectHasContent(): boolean {
+  return (
+    project.data.imports.length > 0 ||
+    project.data.textLayers.length > 0 ||
+    project.data.operations.length > 0
+  );
+}
+
+/// The general "Open" entry (File menu / toolbar) is intent-ambiguous for a
+/// DRAWING: the user might want a fresh project or to add the drawing to
+/// what's already there. When the project has content, ask; otherwise it's
+/// unambiguously a fresh open. ('new' replaces, 'add' appends, 'cancel'
+/// aborts.) The layer panel's "+ Add" skips this — it always adds.
+async function chooseDrawingOpenMode(): Promise<'new' | 'add' | 'cancel'> {
+  if (!projectHasContent()) return 'new';
+  const choice = await confirmStore.askChoice({
+    title: 'Open drawing',
+    body: 'Open this drawing as a new project, or add it to the current layers?',
+    primaryLabel: 'New project',
+    extraLabel: 'Add to layers',
+    cancelLabel: 'Cancel',
+    danger: false,
+  });
+  return choice === 'primary' ? 'new' : choice === 'extra' ? 'add' : 'cancel';
+}
+
+/// Shared post-pick router for a File opened via the general "Open"
+/// (browser hidden input + Android SAF, which both yield a File). Projects
+/// always replace; drawings ask New/Add when the project has content. The
+/// 'new' branch still runs the unsaved-work guard before discarding.
+async function routeOpenedFile(file: File, isProject: boolean): Promise<void> {
+  if (isProject) {
+    if (!(await confirmDiscardIfDirty('open another file'))) return;
+    await loadProjectFile(file);
+    return;
+  }
+  const mode = await chooseDrawingOpenMode();
+  if (mode === 'cancel') return;
+  if (mode === 'new') {
+    if (!(await confirmDiscardIfDirty('open another file'))) return;
+    await loadFile(file);
+  } else {
+    await addDrawingFile(file);
+  }
+}
+
+/// Browser hidden-input change handler for the unified Open input — called
+/// by FileUpload so the New/Add decision lives here, not in the component.
+export async function handleOpenPick(file: File): Promise<void> {
+  await routeOpenedFile(file, isProjectPath(file.name));
+}
+
 export async function openAny() {
-  if (!(await confirmDiscardIfDirty('open another file'))) return;
   if (isTauri()) {
     try {
       const { open } = await import('@tauri-apps/plugin-dialog');
@@ -167,9 +229,27 @@ export async function openAny() {
         filters: openFilters([{ name: 'Drawing or project', extensions: ['dxf', 'svg', 'json'] }]),
       });
       if (typeof selected !== 'string') return;
-      if (isContentUri(selected)) await loadFromContentUri(selected, true);
-      else if (isProjectPath(selected)) await loadProjectPath(selected);
-      else await loadFromPath(selected);
+      // Android SAF: sniff bytes to tell project from drawing, then route
+      // through the shared File path (replace project / ask New-or-Add).
+      if (isContentUri(selected)) {
+        const { file, isProject } = await contentUriToFile(selected, true);
+        await routeOpenedFile(file, isProject);
+        return;
+      }
+      // Desktop: path-based loaders (import_path), so route by extension.
+      if (isProjectPath(selected)) {
+        if (!(await confirmDiscardIfDirty('open another file'))) return;
+        await loadProjectPath(selected);
+        return;
+      }
+      const mode = await chooseDrawingOpenMode();
+      if (mode === 'cancel') return;
+      if (mode === 'new') {
+        if (!(await confirmDiscardIfDirty('open another file'))) return;
+        await loadFromPath(selected);
+      } else {
+        await addDrawingPath(selected);
+      }
     } catch (e) {
       reportError(e);
     }
@@ -178,11 +258,16 @@ export async function openAny() {
   hiddenOpenInput()?.click();
 }
 
-/// Desktop: native open dialog. Browser: programmatically click the
-/// hidden `<input type=file>` rendered by FileUpload so the picker
-/// fires inside the user-gesture window.
-export async function openFile() {
-  if (!(await confirmDiscardIfDirty('open another drawing'))) return;
+/// ADD a drawing to the current project — the layer panel's "+ Add ▸ Open
+/// drawing file" and its empty-state CTA. Always additive
+/// (project.addImported / addDrawingPath): overlays another drawing as a
+/// new layer WITHOUT clearing existing drawings, text, ops or stock, so
+/// text-then-drawing and multi-drawing workflows work. No discard prompt —
+/// nothing is destroyed. The first drawing into an empty project still
+/// auto-places/fits, because addImported routes the first import through
+/// setImported. (The File menu's Open is the intent-ambiguous entry that
+/// asks New-or-Add; this one's intent is explicit.)
+export async function addDrawing() {
   if (isTauri()) {
     try {
       const { open } = await import('@tauri-apps/plugin-dialog');
@@ -191,8 +276,8 @@ export async function openFile() {
         filters: openFilters([{ name: 'CAD/CAM input', extensions: ['dxf', 'svg'] }]),
       });
       if (typeof selected !== 'string') return;
-      if (isContentUri(selected)) await loadFromContentUri(selected, false);
-      else await loadFromPath(selected);
+      if (isContentUri(selected)) await addDrawingFromContentUri(selected);
+      else await addDrawingPath(selected);
     } catch (e) {
       reportError(e);
     }
@@ -381,6 +466,28 @@ export async function loadFile(file: File) {
     project.setImported(result);
     await project.convertImportedTextEntities();
     project.data.dirty = false;
+  } catch (e) {
+    reportError(e);
+  } finally {
+    project.loading = false;
+    project.loadingMessage = null;
+  }
+}
+
+/// Browser/wasm ADD path — import a drawing File and APPEND it as a new
+/// layer (`project.addImported`) instead of replacing. Mirrors `loadFile`
+/// minus the `clearProject`; no dirty reset because adding IS an edit.
+/// The first import into an empty project still auto-places (addImported
+/// delegates to setImported there).
+export async function addDrawingFile(file: File) {
+  const client = defaultClient();
+  project.loading = true;
+  project.loadingMessage = pathToLoadingMessage(file.name);
+  project.error = null;
+  try {
+    const result = await client.importFile(file);
+    project.addImported(result);
+    await project.convertImportedTextEntities();
   } catch (e) {
     reportError(e);
   } finally {

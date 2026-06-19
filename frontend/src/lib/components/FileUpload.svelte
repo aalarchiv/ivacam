@@ -19,12 +19,12 @@
   import { onMount } from 'svelte';
   import { wireFileAssociationOpen } from '../state/desktop';
   import {
-    loadFile,
+    addDrawingFile,
     loadFromPath,
     loadProjectFile,
     loadSample,
     loadSampleWithGenerate,
-    isProjectPath,
+    handleOpenPick,
   } from '../services/file_ops';
   import ErrorToast from './ErrorToast.svelte';
 
@@ -32,10 +32,12 @@
   let projectInput: HTMLInputElement;
   let openInput: HTMLInputElement;
 
+  /// Drawing-only input — fired exclusively by the layer panel's "+ Add ▸
+  /// Open drawing file", so it ADDS (appends a layer) rather than replaces.
   function onPick(e: Event) {
     const target = e.target as HTMLInputElement;
     const f = target.files?.[0];
-    if (f) void loadFile(f);
+    if (f) void addDrawingFile(f);
     target.value = '';
   }
   function onProjectPick(e: Event) {
@@ -44,12 +46,12 @@
     if (f) void loadProjectFile(f);
     target.value = '';
   }
-  /// Unified "Open" (7jug.14): route the picked file to the project or the
-  /// drawing loader by extension (.json → project, else drawing).
+  /// Unified "Open" (7jug.14): hand the picked file to file_ops, which
+  /// routes projects (replace) vs drawings (New/Add prompt) by extension.
   function onOpenPick(e: Event) {
     const target = e.target as HTMLInputElement;
     const f = target.files?.[0];
-    if (f) void (isProjectPath(f.name) ? loadProjectFile(f) : loadFile(f));
+    if (f) void handleOpenPick(f);
     target.value = '';
   }
 

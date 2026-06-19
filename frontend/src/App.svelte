@@ -135,7 +135,7 @@
   import { workspace } from './lib/state/workspace.svelte';
   import ConfirmPrompt from './lib/components/ConfirmPrompt.svelte';
   import {
-    openFile,
+    addDrawing,
     openAny,
     saveProject,
     exportGeneratedGcode,
@@ -1008,7 +1008,7 @@
             <LayerList
               active={slPane === 'layers'}
               onActivate={() => toggleSl('layers')}
-              onOpenFileClick={() => openFile()}
+              onAddDrawingClick={() => addDrawing()}
               onAddTextClick={() => (addTextOpen = true)}
               reopenPrompt={sessionUi.reopenPrompt}
               onReopenAccept={acceptReopen}
@@ -1368,7 +1368,7 @@
         <LayerList
           active={activeSidebarPane === 'layers'}
           onActivate={() => activateSidebarPane('layers')}
-          onOpenFileClick={() => openFile()}
+          onAddDrawingClick={() => addDrawing()}
           onAddTextClick={() => (addTextOpen = true)}
           reopenPrompt={sessionUi.reopenPrompt}
           onReopenAccept={acceptReopen}

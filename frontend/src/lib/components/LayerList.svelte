@@ -36,7 +36,7 @@
     /// asks the parent to activate (no internal collapsed state).
     active: boolean;
     onActivate: () => void;
-    onOpenFileClick?: () => void;
+    onAddDrawingClick?: () => void;
     /// Add Text entry point — phase B of the stock-first rework. When
     /// provided, the panel header sprouts an Add+ dropdown that offers
     /// both creation paths in one place.
@@ -52,7 +52,7 @@
   let {
     active,
     onActivate,
-    onOpenFileClick,
+    onAddDrawingClick,
     onAddTextClick,
     reopenPrompt = null,
     onReopenAccept,
@@ -71,7 +71,7 @@
   }
   function clickAddFile() {
     closeAddMenu();
-    onOpenFileClick?.();
+    onAddDrawingClick?.();
   }
   function clickAddText() {
     closeAddMenu();
@@ -207,7 +207,7 @@
       <span class="group-name">Layers</span>
       <span class="group-count">{usableLayers.length}</span>
     {/if}
-    {#if onOpenFileClick || onAddTextClick}
+    {#if onAddDrawingClick || onAddTextClick}
       <div class="add-menu" class:open={addMenuOpen}>
         <button
           type="button"
@@ -228,7 +228,7 @@
             onkeydown={onAddMenuKey}
             use:focusFirstAddMenuItem
           >
-            {#if onOpenFileClick}
+            {#if onAddDrawingClick}
               <button
                 type="button"
                 role="menuitem"
@@ -438,8 +438,8 @@
         <div class="empty-card">
           <p class="empty-title">No drawing yet</p>
           <p class="empty-sub">Import a DXF or SVG to see its layers here.</p>
-          {#if onOpenFileClick}
-            <button class="primary-cta" type="button" onclick={onOpenFileClick}>
+          {#if onAddDrawingClick}
+            <button class="primary-cta" type="button" onclick={onAddDrawingClick}>
               + Open file
             </button>
           {/if}

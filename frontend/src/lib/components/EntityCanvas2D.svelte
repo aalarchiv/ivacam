@@ -592,6 +592,26 @@
     startOffsetY: number;
   } | null>(null);
 
+  /// A stock-handle press that hasn't yet committed to a resize/move drag
+  /// (ivac-0rbu). The handle hit radius (22 px) is larger than the geometry
+  /// tolerance, so a handle sitting over a small object used to swallow the
+  /// tap entirely. Instead we DEFER: a press over a handle parks here; it
+  /// promotes to a real `stockDrag` only once the finger moves past the tap
+  /// tolerance, and a stationary tap-and-release falls through to normal
+  /// (cycling) object selection at the press point — so the object beneath
+  /// the handle is reachable while a drag still resizes. `cx0/cy0` is the
+  /// press pixel; the rest is everything needed to build the `stockDrag`.
+  let pendingStockGrab: {
+    kind: StockHandleKind;
+    pointerId: number;
+    cx0: number;
+    cy0: number;
+    startBox: WorldBox;
+    grab: { x: number; y: number };
+    startOffsetX: number;
+    startOffsetY: number;
+  } | null = null;
+
   /// Current stock footprint in world mm (same source the renderer uses).
   function currentStockBox(): WorldBox {
     return computeFootprint(
@@ -674,6 +694,25 @@
         pinch.prevB = { ...b };
       }
       return;
+    }
+    // Promote a parked stock-handle press to a real drag once the finger
+    // leaves the tap tolerance (ivac-0rbu) — below that it's still a
+    // candidate tap that should select the object under the handle.
+    if (
+      pendingStockGrab &&
+      e.pointerId === pendingStockGrab.pointerId &&
+      !withinTapTolerance({ x: pendingStockGrab.cx0, y: pendingStockGrab.cy0 }, { x: cx, y: cy })
+    ) {
+      stockDrag = {
+        kind: pendingStockGrab.kind,
+        pointerId: pendingStockGrab.pointerId,
+        startBox: pendingStockGrab.startBox,
+        grab: pendingStockGrab.grab,
+        startOffsetX: pendingStockGrab.startOffsetX,
+        startOffsetY: pendingStockGrab.startOffsetY,
+      };
+      pendingStockGrab = null;
+      canvas.style.cursor = 'grabbing';
     }
     // Live stock-gizmo drag (phone). Move pans the offset (mode kept);
     // resize rewrites the box and switches to manual. Each gesture
@@ -888,6 +927,30 @@
       try {
         canvas.releasePointerCapture(e.pointerId);
       } catch {}
+      return;
+    }
+    // A parked stock-handle press that never became a drag is a TAP
+    // (ivac-0rbu): release it and, only when geometry sits under the press
+    // point, fall through to normal object selection there — so the object
+    // under the handle gets selected (and tap-cycling can step through a
+    // stack). When nothing is under it we leave the selection untouched
+    // (a handle tap over empty stock stays a no-op, as before — we don't
+    // want it clearing the user's selection). A plain tap, so no
+    // box-select arming (the pointer is already up).
+    if (pendingStockGrab && e.pointerId === pendingStockGrab.pointerId) {
+      const { cx0, cy0 } = pendingStockGrab;
+      pendingStockGrab = null;
+      canvas.style.cursor = 'default';
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {}
+      if (pixelHit(cx0, cy0) != null) {
+        commitEntityTapSelection(cx0, cy0, {
+          shiftKey: e.shiftKey,
+          ctrlKey: e.ctrlKey,
+          metaKey: e.metaKey,
+        });
+      }
       return;
     }
     // End an active stock-gizmo drag.
@@ -1296,16 +1359,24 @@
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
 
-    // Stock gizmo (phone, 7jug.15): grabbing a handle pre-empts
+    // Stock gizmo (phone, 7jug.15): a handle press pre-empts
     // pan / select / long-press. Only on the FIRST pointer — a second
     // finger promotes to a pinch (handled below, which cancels the drag).
+    //
+    // ivac-0rbu: we DON'T start the resize on down. We park the press in
+    // `pendingStockGrab`; pointermove promotes it to a real `stockDrag`
+    // once the finger leaves the tap tolerance, and a stationary
+    // tap-and-release (pointerup) falls through to object selection — so a
+    // small object UNDER the handle is still reachable by tapping.
     if (e.pointerType !== 'touch' || activePointers.size === 0) {
       const handle = stockHandleHit(cx, cy);
       if (handle) {
         const grab = pxToData(cx, cy) ?? { x: 0, y: 0 };
-        stockDrag = {
+        pendingStockGrab = {
           kind: handle,
           pointerId: e.pointerId,
+          cx0: cx,
+          cy0: cy,
           startBox: currentStockBox(),
           grab,
           startOffsetX: project.data.stock.offsetX ?? 0,
@@ -1317,7 +1388,7 @@
         } catch {
           /* harmless */
         }
-        canvas.style.cursor = 'grabbing';
+        // Cursor stays a pointer until the press actually becomes a drag.
         e.preventDefault();
         return;
       }
@@ -1339,6 +1410,7 @@
         rasterDrag = null;
         textDrag = null;
         stockDrag = null;
+        pendingStockGrab = null;
         const entries = [...activePointers.entries()];
         const first = entries[0];
         const second = entries[1];
@@ -1514,6 +1586,30 @@
         break;
     }
 
+    commitEntityTapSelection(
+      cx,
+      cy,
+      { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey },
+      { armBoxSelectPointerId: e.pointerId },
+    );
+  }
+
+  /// Resolve an entity tap at canvas pixel `(cx, cy)` into selection side
+  /// effects: deselect any active text layer, map the tap → object id (a
+  /// plain tap cycles through stacked objects — ivac-0rbu), run the pure
+  /// `reduceCanvasClick` reducer, and dispatch its actions.
+  ///
+  /// `armBoxSelectPointerId` is the pointer to capture when an empty-space
+  /// plain tap arms a box-select — supplied on the pointer-DOWN path. The
+  /// deferred stock-handle TAP path (pointer-up) passes `undefined` so a
+  /// tap that misses geometry just clears the selection without arming a
+  /// box-select against an already-lifted pointer.
+  function commitEntityTapSelection(
+    cx: number,
+    cy: number,
+    mods: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
+    opts?: { armBoxSelectPointerId?: number },
+  ) {
     // A left-click on geometry / empty space (not consumed by a
     // text-stroke hit above) deselects any active text layer, so text
     // and object selection stay mutually exclusive.
@@ -1528,7 +1624,7 @@
     // (ivac-0rbu). Modifier / add-to-selection taps keep the single
     // nearest hit and reset the cycle — multi-select and cycling don't
     // compose.
-    const plainTap = !e.shiftKey && !e.ctrlKey && !e.metaKey && !addToSelection;
+    const plainTap = !mods.shiftKey && !mods.ctrlKey && !mods.metaKey && !addToSelection;
     let hitObjectId: number | null;
     if (plainTap) {
       hitObjectId = cycledHitObjectId(cx, cy);
@@ -1540,11 +1636,11 @@
     const actions = reduceCanvasClick(
       {
         hitObjectId,
-        shiftKey: e.shiftKey,
+        shiftKey: mods.shiftKey,
         // The "add to selection" toggle stands in for ctrl on a
         // keyboardless touch device — a plain tap then toggles.
-        ctrlKey: e.ctrlKey || addToSelection,
-        metaKey: e.metaKey,
+        ctrlKey: mods.ctrlKey || addToSelection,
+        metaKey: mods.metaKey,
       },
       objectToOps,
     );
@@ -1566,6 +1662,7 @@
           if (project.sel.selectedOpId !== action.opId) project.sel.selectedOpId = action.opId;
           break;
         case 'arm-box-select':
+          if (opts?.armBoxSelectPointerId == null) break;
           boxSelect = {
             startX: cx,
             startY: cy,
@@ -1578,7 +1675,7 @@
           // the canvas edge — otherwise box-select would freeze at the
           // last point inside the canvas.
           try {
-            canvas.setPointerCapture(e.pointerId);
+            canvas.setPointerCapture(opts.armBoxSelectPointerId);
           } catch {
             /* not all browsers / older versions; harmless */
           }

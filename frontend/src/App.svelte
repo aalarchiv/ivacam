@@ -155,6 +155,7 @@
     openRecentProject,
     wireSourceWatch,
     wireCloseConfirm,
+    confirmExitApp,
     unwireSession,
     onDragEnter,
     onDragOver,
@@ -338,7 +339,26 @@
     void wireSourceWatch();
     void wireCloseConfirm();
     void loadWorkspaceAndMaybeReopen();
-    return () => unwireSession();
+
+    // Android system-back (ivac-h0ai). MainActivity intercepts the system
+    // back gesture and dispatches this DOM event instead of finishing the
+    // activity — on web/desktop it simply never fires. From any non-first
+    // screen, back returns to the first activity; on the first screen it
+    // confirms before quitting the process.
+    const onAndroidBack = () => {
+      const first = ACTIVITY_ORDER[0];
+      if (currentActivity !== first) {
+        goToActivity(first);
+        return;
+      }
+      void confirmExitApp();
+    };
+    window.addEventListener('android-back', onAndroidBack);
+
+    return () => {
+      window.removeEventListener('android-back', onAndroidBack);
+      unwireSession();
+    };
   });
 
   // Auto-dismiss the reopen banner once a project / drawing is loaded by

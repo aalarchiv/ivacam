@@ -220,6 +220,47 @@ export async function wireCloseConfirm(): Promise<void> {
   });
 }
 
+/// Android system-back exit (ivac-h0ai). Unlike the deliberate Exit menu
+/// item — which only prompts when there's unsaved work (confirmDiscardIfDirty)
+/// — an accidental edge-swipe on the first screen should always confirm
+/// before quitting. Mirrors the desktop close-confirm three-way above, but
+/// quits the process directly (no Tauri window to close on mobile). Resolves
+/// without exiting if the user cancels or a save fails.
+export async function confirmExitApp(): Promise<void> {
+  if (project.hasUnsavedWork) {
+    const choice = await confirmStore.askChoice({
+      title: 'Quit ivaCAM?',
+      body: 'You have unsaved changes. Save before you quit?',
+      primaryLabel: 'Save & quit',
+      extraLabel: 'Discard & quit',
+      cancelLabel: 'Keep editing',
+      danger: false,
+      extraDanger: true,
+    });
+    if (choice === 'cancel') return;
+    if (choice === 'primary') {
+      await saveProject();
+      // Save cancelled or failed → keep the app open rather than lose work.
+      if (project.hasUnsavedWork) return;
+    }
+  } else {
+    const ok = await confirmStore.ask({
+      title: 'Quit ivaCAM?',
+      body: 'Are you sure you want to quit?',
+      primaryLabel: 'Quit',
+      cancelLabel: 'Cancel',
+      danger: false,
+    });
+    if (!ok) return;
+  }
+  try {
+    const { exit } = await import('@tauri-apps/plugin-process');
+    await exit(0);
+  } catch (e) {
+    console.warn('exit failed:', e);
+  }
+}
+
 /// onMount-cleanup counterpart to the two wire* calls above.
 export function unwireSession(): void {
   unlistenSourceWatch?.();

@@ -10,7 +10,7 @@ import android.os.Bundle
 // PluginManager.startActivityForResultLauncher stays uninitialized and every
 // file dialog fails natively with "lateinit property
 // startActivityForResultLauncher has not been initialized" — swallowed by the
-// dialog plugin's Rust layer into a silent null (wiaconstructor-0gu0).
+// dialog plugin's Rust layer into a silent null (ivac-0gu0).
 //
 // Register it ourselves, AFTER super.onCreate() (ComponentActivity sets up its
 // ActivityResultRegistry there) and BEFORE the activity reaches STARTED (still

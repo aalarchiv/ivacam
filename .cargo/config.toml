@@ -32,7 +32,7 @@ rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 # "lib/arm64-v8a/libivac_tauri_lib.so: LOAD segment mismatch". NDK r27's
 # linker still defaults to 4 KB max-page-size, so force 16 KB here. Applied to
 # all Android ABIs (harmless on the 32-bit ones, which don't use 16 KB pages).
-# See https://developer.android.com/16kb-page-size (wiaconstructor-7i08).
+# See https://developer.android.com/16kb-page-size (ivac-7i08).
 #
 # `strip=symbols` also: 16 KB libs are STORED uncompressed in the APK (so they
 # mmap page-aligned), which made the debug APK balloon to ~135 MB — almost all

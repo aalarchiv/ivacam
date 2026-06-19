@@ -2172,7 +2172,7 @@
     >
   {/if}
   <!-- Phone Stock/Layers are now the 2D bottom-left "S+L" sheet
-       (wiaconstructor-yc25), not floating canvas chips. The stock drag
+       (ivac-yc25), not floating canvas chips. The stock drag
        gizmo still lives on the rect itself. -->
 </div>
 

@@ -592,7 +592,7 @@ impl ToolProfile {
             // affects chip evacuation direction, not the carved
             // surface; the simulator still flags the missing split
             // model in the warnings stream. Follow-up:
-            // wiaconstructor-tcmp.
+            // ivac-tcmp.
             ToolKind::Compression => ToolProfile::Compression { r },
             // Thread mill — the thread is cut on a side wall by
             // helical interpolation, which a 2.5D heightmap can't model.
@@ -609,7 +609,7 @@ impl ToolProfile {
             // emit a debug eprintln; otherwise carve at the appropriate
             // radius for each Z slice via the `segments` sample list.
             // The UI for entering form profiles is a follow-up
-            // (wiaconstructor-tfrm); the sim path is ready for it.
+            // (ivac-tfrm); the sim path is ready for it.
             ToolKind::FormProfile => {
                 // When the tool library carries a user-entered
                 // cross-section (≥2 samples), carve the real profile —
@@ -627,7 +627,7 @@ impl ToolProfile {
                 eprintln!(
                     "ToolKind::FormProfile has no profile samples; using the \
                      tip_diameter+diameter 2-segment taper fallback. Enter a \
-                     profile in the tool library (wiaconstructor-1wit)."
+                     profile in the tool library (ivac-1wit)."
                 );
                 // Fallback: derive a minimal 2-sample profile from
                 // (tip_diameter, diameter, flute_length_mm). Tip flat at

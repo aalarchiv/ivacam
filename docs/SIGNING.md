@@ -42,10 +42,10 @@ takes days to a few weeks, so start it early.
 
 > ⚠️ **One-way door.** Pushing public exposes all source and the full
 > commit history. The pre-public audit
-> (`wiaconstructor-p11u.1`) found no secrets in the tree or history, bd
+> (`ivac-p11u.1`) found no secrets in the tree or history, bd
 > issue text is not tracked, and `refs/` is ignored — so it's safe on
 > that front. Be aware that dev-history narration in code comments
-> (issue `wiaconstructor-62t0`, deferred) and commit messages also
+> (issue `ivac-62t0`, deferred) and commit messages also
 > becomes public.
 
 `gh` is not installed on this machine; create the repo via the web UI or
@@ -53,7 +53,7 @@ install the CLI (`sudo apt install gh && gh auth login`).
 
 ```sh
 # After creating an EMPTY public repo named e.g. "ivacam" on GitHub:
-cd /home/soenke/wiaconstructor
+cd /path/to/ivacam
 git remote add origin https://github.com/<you>/ivacam.git
 git push -u origin main
 ```

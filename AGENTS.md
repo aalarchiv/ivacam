@@ -84,4 +84,4 @@ exist.
 **IF A REMOTE IS LATER ADDED:** restore the push step
 (`git pull --rebase && git push`) between steps 4 and 5. Until then,
 treat local commits as authoritative.
-<!-- END BEADS INTEGRATION (block edited locally — wiaconstructor-uqvd / ci5i; bd init may regenerate, re-apply the no-remote workflow if so) -->
+<!-- END BEADS INTEGRATION (block edited locally — ivac-uqvd / ci5i; bd init may regenerate, re-apply the no-remote workflow if so) -->

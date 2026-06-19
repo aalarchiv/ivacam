@@ -39,7 +39,7 @@ doesn't exist.
    items via `bd close <id>` / `bd update <id> --claim`
 4. **Commit locally** — Every logical change should land as its own
    commit on `main`. NEVER stop with uncommitted work in the working
-   tree (that's the failure mode wiaconstructor-5kcj documented).
+   tree (that's the failure mode ivac-5kcj documented).
 5. **Verify** — `git status` shows clean working tree; `bd list
    --status=in_progress` is empty or accurately reflects active work
 6. **Hand off** — Provide a brief context summary for the next session
@@ -60,7 +60,7 @@ those binaries are on `$PATH`. Fail-fast — only ship when every gate
 reports green. This is the local stand-in for CI, not a per-commit
 hook (the routine session-completion "run quality gates" step above
 is the lighter check).
-<!-- END BEADS INTEGRATION (block edited locally — wiaconstructor-uqvd; bd init may regenerate, re-apply the no-remote workflow if so) -->
+<!-- END BEADS INTEGRATION (block edited locally — ivac-uqvd; bd init may regenerate, re-apply the no-remote workflow if so) -->
 
 
 ## Build & Test

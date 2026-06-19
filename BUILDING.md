@@ -165,7 +165,7 @@ from the domain root, no COOP/COEP needed, HTTPS optional).
 Known limitations of this mode (track before leaning on it as the
 headline trial path):
 
-- **Generate runs in a Web Worker** (`wiaconstructor-5ue0`) — the CAM
+- **Generate runs in a Web Worker** (`ivac-5ue0`) — the CAM
   pipeline runs off the UI thread, so a heavy generate doesn't freeze
   the tab, and aborting a run cancels it for real (the worker
   is terminated and respawned). Falls back to the main-thread client
@@ -174,9 +174,9 @@ headline trial path):
   every frame). To keep it smooth there, `?api=wasm` mode auto-caps the
   sim heightfield to a coarser grid (`WASM_TRIAL_SIM_CELL_CAP`, ~250k
   cells) — a lower-res carve *preview*, deliberately traded for
-  zero-latency scrubbing (`wiaconstructor-5v1b`). Server / Tauri keep
+  zero-latency scrubbing (`ivac-5v1b`). Server / Tauri keep
   full sim fidelity.
-- **Touch is supported** (`wiaconstructor-bwt7`) — the 2D canvas does
+- **Touch is supported** (`ivac-bwt7`) — the 2D canvas does
   pinch-zoom, two-finger pan, tap- and box-select, and a long-press
   opens the context menu; the 3D view uses OrbitControls (one-finger
   rotate, two-finger pan/zoom) with the same long-press menu. A

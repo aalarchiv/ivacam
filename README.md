@@ -39,10 +39,10 @@ Per-platform prerequisites and the full workflow: [docs/BUILDING.md](./docs/BUIL
 
 ## License
 
-GPL-3.0-or-later — see [`LICENSE`](./LICENSE).
+GPL-3.0-or-later — see [`LICENSE`](./LICENSE). ivaCAM inherits this licence from its partial derivation of viaConstructor (GPLv3); see Acknowledgements.
 
 ## Acknowledgements
 
 Stands on excellent open-source libraries — [`dxf-rs`](https://github.com/IxMilia/dxf-rs), [`cavalier_contours`](https://github.com/jbuckmccready/cavalier_contours), `clipper2-rust`, [`usvg`](https://github.com/linebender/resvg), [Svelte](https://svelte.dev/), [Three.js](https://threejs.org/) and [Tauri](https://tauri.app/).
 
-[viaConstructor](https://github.com/multigcs/viaconstructor) and Estlcam inspired the scope and feature set — no code from either is used.
+ivaCAM's CAM core is in part a Rust port of [viaConstructor](https://github.com/multigcs/viaconstructor)'s geometry and toolpath routines (`calc.py`, `machine_cmd.py`, `setupdefaults.py`), and is distributed under the GPL accordingly. [Estlcam](https://www.estlcam.de/) inspired parts of the feature set and terminology, but is closed-source and contributes no code.

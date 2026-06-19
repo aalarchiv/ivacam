@@ -1,16 +1,22 @@
 # Windows code signing via SignPath Foundation
 
-ivaCAM signs its Windows installers with a **free** OV code-signing
-certificate from [SignPath Foundation](https://signpath.org/), which
-gives qualifying open-source projects signing infrastructure at no cost.
-Signing is what stops Microsoft Defender SmartScreen from scaring testers
-off the installer.
+> **Status: planned, not yet set up.** This is a TODO / runbook for a
+> future release — nothing here is active yet. ivaCAM does **not**
+> currently sign its Windows installers; testers will hit a SmartScreen
+> warning until this is configured. Track it as the plan for when the
+> project goes public and a remote is added.
 
-This is a runbook. Several steps are **one-time, external, and yours to
-do** (creating the GitHub repo, applying to SignPath, pasting tokens into
-GitHub settings) — they need your accounts and can't be scripted. The CI
-wiring (`.github/workflows/release-desktop.yml`) is already in place and
-stays inert until you switch it on at the end.
+The plan: sign ivaCAM's Windows installers with a **free** OV
+code-signing certificate from [SignPath Foundation](https://signpath.org/),
+which gives qualifying open-source projects signing infrastructure at no
+cost. Signing is what stops Microsoft Defender SmartScreen from scaring
+testers off the installer.
+
+This is a runbook for that setup. Several steps are **one-time, external,
+and yours to do** (creating the GitHub repo, applying to SignPath, pasting
+tokens into GitHub settings) — they need your accounts and can't be
+scripted. The CI wiring (`.github/workflows/release-desktop.yml`) is
+already in place and stays inert until you switch it on at the end.
 
 ## How it fits together
 
@@ -137,7 +143,7 @@ Or right-click the `.exe`/`.msi` → **Properties → Digital Signatures**.
 
 ---
 
-See [`BUILDING_WINDOWS.md`](../BUILDING_WINDOWS.md) for building the
+See [`BUILDING_WINDOWS.md`](./BUILDING_WINDOWS.md) for building the
 installers themselves (native or cross-compiled). The cross-compiled
 build **cannot** be signed this way — signing runs in CI against the
 native `windows-latest` artifacts.

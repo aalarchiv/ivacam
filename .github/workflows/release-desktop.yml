@@ -2,7 +2,7 @@ name: Release desktop bundles
 
 # DORMANT: this repo is local-only (no git remote), so — like ci.yml —
 # this workflow never fires. It's kept ready for when a remote is added;
-# until then QUICKSTART.md's "no release pipeline is hooked up yet" holds
+# until then no prebuilt binaries are published (see docs/QUICKSTART.md)
 # and AppImages are produced locally via `cargo tauri build`.
 #
 # Triggered on a `v*` tag push (e.g. v0.1.0). Builds Tauri 2 bundles for

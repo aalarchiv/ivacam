@@ -55,7 +55,7 @@ export default [
       // reactive (Svelte 5 re-runs $effect on a reassigned $state field),
       // so SvelteMap/SvelteSet would only add proxy overhead. The 39
       // baseline sites were all builders, pure helpers, or replace-not-
-      // mutate state writes. See ARCHITECTURE.md "State convention".
+      // mutate state writes. See docs/ARCHITECTURE.md "State convention".
       'svelte/prefer-svelte-reactivity': 'off',
       // Pointer-capture release/acquire genuinely needs a silent
       // try/catch: the call throws if the pointer is no longer captured,

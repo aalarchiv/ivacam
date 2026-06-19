@@ -1,79 +1,48 @@
 # ivaCAM
 
-A CAM tool that converts DXF, SVG, HPGL and other vector formats into G-code for
-CNC milling, laser cutting and drag-knife cutting.
+**Turn DXF, SVG and HPGL drawings into G-code for CNC mills, lasers, plasma cutters and drag knives.**
 
-This project is a Rust + web rewrite of the original Python
-[viaConstructor](https://github.com/multigcs/viaconstructor) by Oliver Dippel
-and contributors. It targets a single-binary desktop app (via
-[Tauri](https://tauri.app/)) plus an optional self-hosted web service and a
-fully client-side WebAssembly mode.
+Free, open-source CAM for the hobby shop. One self-contained desktop app — no Python, no install hell — plus an optional self-hosted web service and a fully in-browser (WebAssembly) mode where your drawings never leave your machine.
 
-## Status
+> Early release — v0.0.1, the first tagged build.
 
-Early release (v0.0.1, first tagged build). The Rust core (DXF + SVG import, CAM math, gcode emit), HTTP +
-Tauri + WASM transports, and the Svelte frontend (2D entity canvas + 3D
-toolpath preview, schema-driven setup tree, tab placement, theme
-toggle, project save/load) are all in place. See the issue tracker
-(`bd ready`) for current work.
+## Use it
 
-## I just want to use it
+**Just want to cut something?** → [Quickstart](./docs/QUICKSTART.md)
 
-If you're here to _run_ ivaCAM and turn a drawing into G-code,
-read [`QUICKSTART.md`](./QUICKSTART.md) — the rest of this README
-covers what the project is and how to build it from source.
+- **Desktop** (Linux / macOS / Windows): build the AppImage / `.msi` / `.app` — see [Build from source](#build-from-source).
+- **Browser**: serve the static build and open the URL. Nothing to install; everything runs client-side.
 
-## Why a rewrite
+## What it does
 
-- Native Wayland support: the original uses a Qt4-era OpenGL widget and
-  immediate-mode GL that fail to acquire surfaces under Wayland compositors.
-  A WebGL2 / Three.js renderer fixes this once and runs everywhere.
-- No Python on the user's machine: the upstream ships per-platform prebuilt
-  `.so` files pinned to specific CPython ABIs, which is brittle. A Rust core
-  produces one static binary per OS.
-- Cross-platform: web (browser-only via WASM), self-hosted server, and desktop
-  (Linux / macOS / Windows / mobile webview) from a single codebase.
+- **Import**: DXF, SVG, HPGL/PLT.
+- **Operations**: profile, pocket, drill (canned cycles), V-carve, engrave/text, chamfer, thread, dovetail, T-slot — with tabs, lead-in/out, and tool offsets.
+- **Machines**: mill, laser, plasma (pierce + dwell), drag knife — each with its own post-processor.
+- **Preview**: 2D drawing canvas plus a live 3D toolpath and material-removal simulation.
+- **Shop setup**: per-tool library, reusable machine profiles, project save/load.
 
-## Architecture
-
-```
-ivac-core      Rust library: DXF/SVG/... import, CAM math, gcode generation
-ivac-cli       Rust binary: headless converter (file in → gcode out)
-ivac-server    Rust binary: axum HTTP server exposing the JSON contract
-ivac-tauri     Rust binary: desktop shell (Tauri 2 + WebKitGTK/WebView2/WKWebView)
-ivac-wasm      Rust cdylib: browser bindings via wasm-bindgen
-frontend/      TypeScript / Svelte / Vite web frontend (Three.js renderer)
-```
-
-A single OpenAPI contract describes the operations (`/import`, `/generate`,
-`/defaults`, …). The frontend speaks to whichever transport is available:
-HTTP for server mode, Tauri commands for desktop, in-process WASM for
-browser-only.
-
-See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the layer map, data flow,
-and the patterns to follow (and anti-patterns to avoid) when contributing.
-
-## Building from source
-
-See [`BUILDING.md`](./BUILDING.md) for prerequisites per platform and the
-full clone → cargo → tauri workflow. Short version:
+## Build from source
 
 ```sh
-cargo build --workspace          # core + CLI + server
-cd frontend && pnpm install && pnpm dev     # web UI on :5173
-cd crates/ivac-tauri && cargo tauri build   # desktop bundle
+cargo build --workspace                        # core + CLI + server
+cd frontend && pnpm install && pnpm dev        # web UI on :5173
+cargo tauri build --bundles appimage           # desktop bundle
 ```
+
+Per-platform prerequisites and the full workflow: [docs/BUILDING.md](./docs/BUILDING.md) (Windows: [docs/BUILDING_WINDOWS.md](./docs/BUILDING_WINDOWS.md)).
+
+## Docs
+
+- [Quickstart](./docs/QUICKSTART.md) — drawing → G-code in 5 minutes
+- [Building](./docs/BUILDING.md) — build & package every transport
+- [Architecture](./docs/ARCHITECTURE.md) · [Contributing](./docs/CONTRIBUTING.md) — for hacking on it
 
 ## License
 
-GPL-3.0-or-later. See `LICENSE`. This project is a derivative work of
-viaConstructor (also GPL-3.0-or-later); upstream copyright notices are
-preserved in any files ported from the original.
+GPL-3.0-or-later — see [`LICENSE`](./LICENSE). ivaCAM is original, standalone work by Soenke J. Peters; it is **not** a port or derivative of any other CAM program.
 
 ## Acknowledgements
 
-- Oliver Dippel / `multigcs` and contributors — original viaConstructor
-- Brett Forsgren / `IxMilia` — `dxf-rs` crate (DXF parser)
-- Jed Buckley / `jbuckmccready` — `cavalier_contours` (polyline-with-arcs offsetting)
-- Angus Johnson — Clipper2; `clipper2-rust` is a pure-Rust port (BSL-1.0)
-- The `linebender` team — `usvg` (SVG canonicalisation)
+Stands on excellent open-source libraries — [`dxf-rs`](https://github.com/IxMilia/dxf-rs), [`cavalier_contours`](https://github.com/jbuckmccready/cavalier_contours), `clipper2-rust`, [`usvg`](https://github.com/linebender/resvg), [Svelte](https://svelte.dev/), [Three.js](https://threejs.org/) and [Tauri](https://tauri.app/).
+
+[viaConstructor](https://github.com/multigcs/viaconstructor) and Estlcam inspired the scope and feature set — no code from either is used.

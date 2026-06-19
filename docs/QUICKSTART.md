@@ -2,7 +2,7 @@
 
 A 5-minute tour for people who already know CNC milling, laser cutting,
 or plasma cutting and want to turn a 2D drawing into G-code. If you're
-trying to _build_ the app or contribute code, see [`README.md`](./README.md)
+trying to _build_ the app or contribute code, see [`README.md`](../README.md)
 and [`BUILDING.md`](./BUILDING.md) instead.
 
 ## 1. Install
@@ -183,7 +183,7 @@ reused across projects.
 - Architecture and contributor patterns: [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 - Build and packaging: [`BUILDING.md`](./BUILDING.md).
 - Open issues + planned work: run `bd ready` in the repo, or browse the
-  [`.beads/`](./.beads/) directory.
+  [`.beads/`](../.beads/) directory.
 
 Found a bug or a missing feature? File it: `bd create --title="..."
 --description="..." --type=bug` from the project root.

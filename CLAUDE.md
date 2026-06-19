@@ -66,7 +66,7 @@ is the lighter check).
 ## Build & Test
 
 Full setup + per-transport build instructions live in
-[`BUILDING.md`](./BUILDING.md). Quick reference:
+[`BUILDING.md`](./docs/BUILDING.md). Quick reference:
 
 ```bash
 # Rust workspace (ivac-core + transports)
@@ -83,12 +83,12 @@ pnpm dev                       # dev server on http://localhost:5173
 
 # Desktop bundle (Tauri 2)
 cargo tauri build --bundles appimage
-scripts/strip-appimage-media.sh   # drop bundled GStreamer core (see BUILDING.md)
+scripts/strip-appimage-media.sh   # drop bundled GStreamer core (see docs/BUILDING.md)
 ```
 
 ## Architecture Overview
 
-See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full picture (crate
+See [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full picture (crate
 layout, data flow, the schema seam, key patterns, and anti-patterns).
 In short: `ivac-core` holds all CAM/geometry/sim math; the `ivac-cli` /
 `-server` / `-tauri` / `-wasm` crates are thin transports over it; the
@@ -99,7 +99,7 @@ through a generated TypeScript client (`schema/openapi.yaml` →
 ## Conventions & Patterns
 
 See the "Key patterns" and "Anti-patterns" sections of
-[`ARCHITECTURE.md`](./ARCHITECTURE.md), and [`CONTRIBUTING.md`](./CONTRIBUTING.md)
+[`ARCHITECTURE.md`](./docs/ARCHITECTURE.md), and [`CONTRIBUTING.md`](./docs/CONTRIBUTING.md)
 for the end-to-end recipes (new op kind, new post-processor). Highlights:
 
 - Frontend state lives in `$state`-class slices under

@@ -41,15 +41,15 @@ const BUILD_VERSION = gitVersion();
 const PKG_VERSION = pkgVersion();
 const BUILD_DATE = new Date().toISOString();
 
-/// Compile-time About copy. Reads the repo-root `ABOUT.md`, substitutes
-/// the `%%…%%` build-identity tokens, and exposes the finished markdown as
+/// Compile-time About copy. Reads `docs/ABOUT.md`, substitutes the
+/// `%%…%%` build-identity tokens, and exposes the finished markdown as
 /// `import aboutMd from 'virtual:about'`. Keeps the prose authorable as a
 /// plain `.md` (the tokens render literally on GitHub) while the version is
 /// filled in at build — no markdown tooling, just `fs` + the helpers above.
 function aboutMdPlugin() {
   const VIRTUAL = 'virtual:about';
   const RESOLVED = '\0' + VIRTUAL;
-  const aboutPath = fileURLToPath(new URL('../ABOUT.md', import.meta.url));
+  const aboutPath = fileURLToPath(new URL('../docs/ABOUT.md', import.meta.url));
   return {
     name: 'ivac-about-md',
     resolveId(id: string) {

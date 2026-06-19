@@ -19,8 +19,8 @@
   }
   let { onClose, embedded = false }: Props = $props();
 
-  /// Prose (tagline, license, acknowledgements) authored in the repo-root
-  /// ABOUT.md and substituted + inlined at build time by the
+  /// Prose (tagline, license, acknowledgements) authored in
+  /// docs/ABOUT.md and substituted + inlined at build time by the
   /// `ivac-about-md` Vite plugin (`virtual:about`). Trusted, compiled-in
   /// content — safe for `{@html}`; markdown-lite escapes raw HTML first.
   const aboutHtml = renderMarkdown(aboutMd);

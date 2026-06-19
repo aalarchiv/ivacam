@@ -13,7 +13,7 @@
 # there), giving a version-consistent stack and a smaller AppImage.
 # Hosts that genuinely lack the plugin packages may still see the
 # warning — accepted trade-off vs. shipping a +14 MB media framework
-# the app never uses (see BUILDING.md).
+# the app never uses (see docs/BUILDING.md).
 #
 # Usage: scripts/strip-appimage-media.sh
 #   (run after `cargo tauri build --bundles appimage`)

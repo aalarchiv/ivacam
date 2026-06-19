@@ -1,5 +1,5 @@
 /// Minimal Markdown → HTML for TRUSTED, compiled-in copy — currently just
-/// the About dialog's `ABOUT.md` (see `virtual:about` in vite.config.ts).
+/// the About dialog's `docs/ABOUT.md` (see `virtual:about` in vite.config.ts).
 /// It exists so that prose can live in a `.md` without pulling in a full
 /// markdown library.
 ///

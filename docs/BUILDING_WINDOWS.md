@@ -32,8 +32,9 @@ native (or VM, [§6](#6-building-from-a-windows-vm)) build that you've
 actually launched.
 
 For **code signing** (so testers don't hit a SmartScreen wall), see
-[`docs/SIGNING.md`](./docs/SIGNING.md) — ivaCAM uses a free SignPath
-Foundation certificate, applied in CI against the native Windows build.
+[`SIGNING.md`](./SIGNING.md) — a planned (not yet configured) setup to
+sign the native Windows build in CI with a free SignPath Foundation
+certificate.
 
 Either way the codebase is already portable: the only Linux-specific
 Rust (`crates/ivac-tauri/src/main.rs` — the WebKit-child SIGKILL and the
@@ -50,7 +51,7 @@ dance.
 | Git | any | `winget install Git.Git` | Enable long paths — see [§8](#8-troubleshooting). |
 | Visual Studio 2022 **Build Tools** | 2022 | see below | Must include the **Desktop development with C++** workload (gives `link.exe`, MSVC, the Windows SDK). |
 | WebView2 Runtime | current | `winget install Microsoft.EdgeWebView2Runtime` | Preinstalled on Windows 11; required on Windows 10. |
-| Rust (rustup) | pinned by [`rust-toolchain.toml`](./rust-toolchain.toml) (1.88.0) | `winget install Rustlang.Rustup` | Installs the **MSVC** host toolchain by default. The repo's toolchain file is picked up automatically on first `cargo` run. |
+| Rust (rustup) | pinned by [`rust-toolchain.toml`](../rust-toolchain.toml) (1.88.0) | `winget install Rustlang.Rustup` | Installs the **MSVC** host toolchain by default. The repo's toolchain file is picked up automatically on first `cargo` run. |
 | Node.js | ≥ 20 LTS | `winget install OpenJS.NodeJS.LTS` | Drives Vite + svelte-check only. |
 | pnpm | ≥ 10 | `npm install -g pnpm` | Required (the frontend uses a `link:` dep npm can't resolve). |
 | Tauri CLI | 2.x | `cargo install tauri-cli --version "^2" --locked` | After Rust is installed. |

@@ -31,7 +31,7 @@ declare const __IVAC_BUILD_DATE__: string;
 /// git-describe build version.
 declare const __IVAC_PKG_VERSION__: string;
 
-/// Compile-time About copy: repo-root `ABOUT.md` with the `%%VERSION%%`,
+/// Compile-time About copy: `docs/ABOUT.md` with the `%%VERSION%%`,
 /// `%%PKG_VERSION%%`, and `%%DATE%%` tokens substituted, exposed as a
 /// virtual module by the `ivac-about-md` plugin in `vite.config.ts`.
 declare module 'virtual:about' {

@@ -8,7 +8,7 @@ the desktop bundle is produced by Tauri 2.
 
 | Tool        | Version          | Notes                                          |
 |-------------|------------------|------------------------------------------------|
-| Rust        | pinned in [`rust-toolchain.toml`](./rust-toolchain.toml) | rustup picks up the pin automatically the first time you run cargo in this repo. |
+| Rust        | pinned in [`rust-toolchain.toml`](../rust-toolchain.toml) | rustup picks up the pin automatically the first time you run cargo in this repo. |
 | Node.js     | ≥ 20             | Any LTS works; we use it only to drive Vite + svelte-check. |
 | pnpm        | ≥ 10             | Required. The frontend pulls in the local `ivac-wasm` package via pnpm's `link:` protocol, which npm can't resolve; lockfile is `frontend/pnpm-lock.yaml`. |
 | Tauri CLI   | 2.x              | Install via `cargo install tauri-cli --version "^2" --locked` once you're set up for desktop builds. |
@@ -157,8 +157,8 @@ local convenience).
 
 Copy-paste server configs (with the `.wasm` MIME type, immutable asset
 caching, and an `index.html` fallback already set) live in
-[`deploy/`](./deploy/): [`Caddyfile`](./deploy/Caddyfile),
-[`nginx.conf`](./deploy/nginx.conf), and a [`README`](./deploy/README.md)
+[`deploy/`](../deploy/): [`Caddyfile`](../deploy/Caddyfile),
+[`nginx.conf`](../deploy/nginx.conf), and a [`README`](../deploy/README.md)
 covering the hard requirements (serve `.wasm` as `application/wasm`, serve
 from the domain root, no COOP/COEP needed, HTTPS optional).
 

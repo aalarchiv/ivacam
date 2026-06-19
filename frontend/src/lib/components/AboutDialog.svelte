@@ -11,7 +11,6 @@
   import aboutMd from 'virtual:about';
   import { renderMarkdown } from './markdown-lite';
   import { onExternalLinkClick } from '../services/external-links';
-  import { runtimeDiagnostics, type RuntimeDiagnostics } from '../services/diagnostics';
 
   interface Props {
     onClose: () => void;
@@ -40,57 +39,6 @@
     // unambiguous when pasted into issues across timezones.
     return `${d.toLocaleString()} (${buildDateIso})`;
   })();
-
-  /// Runtime diagnostics readout — debugging aid for the Android file-dialog
-  /// blocker (wiaconstructor-0gu0). Shows which transport is live, whether
-  /// the Tauri bridge is injected, and the last surfaced error, so a tester
-  /// can read device state off the screen without a cable. Re-snapshotted on
-  /// demand (the latched last-error updates after a failed file op).
-  let diag = $state<RuntimeDiagnostics>(runtimeDiagnostics());
-  function refreshDiag() {
-    diag = runtimeDiagnostics();
-  }
-
-  /// Directly invoke the native file picker and show the raw outcome
-  /// (selected URI/path, "cancelled", or the rejection message). Bypasses
-  /// the file_ops routing so we can tell a silent plugin failure apart from
-  /// a routing/transport problem — hypothesis #2 in wiaconstructor-0gu0.
-  let pickerProbe = $state<string>('');
-  async function testFilePicker() {
-    pickerProbe = 'opening…';
-    try {
-      const { open } = await import('@tauri-apps/plugin-dialog');
-      const selected = await open({ multiple: false });
-      pickerProbe =
-        typeof selected === 'string' ? `selected: ${selected}` : 'dialog returned (cancelled/none)';
-    } catch (e) {
-      pickerProbe = `error: ${e instanceof Error ? e.message : String(e)}`;
-    }
-    refreshDiag();
-  }
-
-  let diagCopyState = $state<'idle' | 'copied'>('idle');
-  async function copyDiag() {
-    const text = [
-      `isTauri: ${diag.isTauri}`,
-      `__TAURI_INTERNALS__: ${diag.hasTauriInternals}`,
-      `__TAURI__: ${diag.hasGlobalTauri}`,
-      `transport: ${diag.transport}`,
-      `build: ${buildVersion}`,
-      `userAgent: ${diag.userAgent}`,
-      `lastError: ${diag.lastError ? `[${diag.lastError.at}] ${diag.lastError.message}` : 'none'}`,
-      `pickerProbe: ${pickerProbe || 'not run'}`,
-    ].join('\n');
-    try {
-      await navigator.clipboard.writeText(text);
-      diagCopyState = 'copied';
-      setTimeout(() => {
-        diagCopyState = 'idle';
-      }, 1500);
-    } catch {
-      /* clipboard unavailable — the block is user-selectable for manual copy */
-    }
-  }
 
   let copyState = $state<'idle' | 'copied'>('idle');
   async function copyBuildId() {
@@ -241,43 +189,6 @@
       Include the build identifier above when filing issues - it pins the report to the exact binary
       you tested.
     </p>
-  </section>
-
-  <section>
-    <h3>Runtime diagnostics</h3>
-    <p class="hint">
-      Transport + file-bridge state for debugging file dialogs on this device. Tap “Test file
-      picker” to invoke the native dialog directly and capture its raw result.
-    </p>
-    <dl class="diag">
-      <dt>isTauri</dt>
-      <dd><code class:bad={!diag.isTauri}>{diag.isTauri}</code></dd>
-      <dt>__TAURI_INTERNALS__</dt>
-      <dd><code class:bad={!diag.hasTauriInternals}>{diag.hasTauriInternals}</code></dd>
-      <dt>__TAURI__</dt>
-      <dd><code>{diag.hasGlobalTauri}</code></dd>
-      <dt>transport</dt>
-      <dd><code>{diag.transport}</code></dd>
-      <dt>userAgent</dt>
-      <dd><code class="ua">{diag.userAgent}</code></dd>
-      <dt>last error</dt>
-      <dd>
-        {#if diag.lastError}
-          <code class="bad">[{diag.lastError.at}] {diag.lastError.message}</code>
-        {:else}
-          <code>none</code>
-        {/if}
-      </dd>
-      <dt>picker probe</dt>
-      <dd><code class:bad={pickerProbe.startsWith('error:')}>{pickerProbe || 'not run'}</code></dd>
-    </dl>
-    <div class="diag-actions">
-      <button type="button" class="copy-btn" onclick={testFilePicker}>Test file picker</button>
-      <button type="button" class="copy-btn" onclick={refreshDiag}>Refresh</button>
-      <button type="button" class="copy-btn" onclick={copyDiag}>
-        {diagCopyState === 'copied' ? 'Copied' : 'Copy diagnostics'}
-      </button>
-    </div>
   </section>
 
   <section>
@@ -435,40 +346,6 @@
     color: var(--text-muted);
     font-size: 0.78rem;
     user-select: text;
-  }
-  dl.diag {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 0.2rem 0.75rem;
-    margin: 0.4rem 0 0.6rem 0;
-  }
-  dl.diag dt {
-    font-weight: 600;
-    color: var(--text-muted);
-    font-size: 0.78rem;
-    align-self: start;
-  }
-  dl.diag dd {
-    margin: 0;
-    min-width: 0;
-  }
-  dl.diag code {
-    font-family: ui-monospace, Menlo, monospace;
-    font-size: 0.78rem;
-    user-select: text;
-    overflow-wrap: anywhere;
-  }
-  dl.diag code.bad {
-    color: var(--danger, #e0564a);
-  }
-  dl.diag code.ua {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-  }
-  .diag-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
   }
   .copy-btn {
     background: color-mix(in srgb, var(--accent) 18%, transparent);

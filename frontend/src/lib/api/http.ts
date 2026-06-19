@@ -312,11 +312,8 @@ export function resolveApiChoice(opts: {
 
 /// Resolve which transport this runtime will use, gathering the live
 /// signals (Tauri injection, `?api=` query, build mode) that feed
-/// `resolveApiChoice`. Exported separately from `defaultClient` so the
-/// About panel's runtime diagnostics can show WHICH transport is active —
-/// and therefore why file ops route the way they do — without
-/// constructing a client. Pure read of `window`; safe to call anywhere.
-export function currentApiChoice(): ApiChoice {
+/// `resolveApiChoice`. Pure read of `window`; safe to call anywhere.
+function currentApiChoice(): ApiChoice {
   const hasWindow = typeof window !== 'undefined';
   const w = hasWindow ? (window as unknown as Record<string, unknown>) : undefined;
   const hasTauri = !!w && typeof w.__TAURI_INTERNALS__ !== 'undefined';

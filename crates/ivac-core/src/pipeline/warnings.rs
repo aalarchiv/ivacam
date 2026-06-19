@@ -32,9 +32,24 @@ pub(super) fn push_wcs_origin_warning(project: &Project, warnings: &mut Vec<Pipe
     if project.segments.is_empty() {
         return;
     }
-    let bbox = crate::geometry::BBox::from_segments(&project.segments);
+    let mut bbox = crate::geometry::BBox::from_segments(&project.segments);
     if !bbox.is_finite() {
         return;
+    }
+    // Stock-corner zeroing is legitimate: the sim heightmap spans the STOCK
+    // footprint, so a WCS origin that lands inside the stock — even if it's
+    // outside the tighter geometry bbox, e.g. text engraved inset from the
+    // stock corner by a margin — is NOT a misalignment. Fold the stock box
+    // into the tested region so that case doesn't trip a false warning.
+    if let Some(stock) = &project.stock {
+        bbox.extend_point(crate::geometry::Point2 {
+            x: stock.origin[0],
+            y: stock.origin[1],
+        });
+        bbox.extend_point(crate::geometry::Point2 {
+            x: stock.origin[0] + stock.width_mm,
+            y: stock.origin[1] + stock.height_mm,
+        });
     }
     // The "gcode origin" in geometry coordinates is the WCS origin
     // expressed in the geometry frame: project.work_offset gives the

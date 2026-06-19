@@ -114,15 +114,19 @@
         {:else}
           {#each simWarnings as w, i (`sim-${i}`)}
             <div class="row sev-{simWarningSeverity(w)}">
-              <span class="src">sim</span>
-              <span class="kind">{w.kind}</span>
+              <div class="row-head">
+                <span class="src">sim</span>
+                <span class="kind">{w.kind}</span>
+              </div>
               <span class="msg">{simWarningSummary(w)}</span>
             </div>
           {/each}
           {#each pipeWarnings as pw, i (`pipe-${i}`)}
             <div class="row sev-{pipelineWarningSeverity(pw)}">
-              <span class="src pipe">pipeline</span>
-              <span class="kind">{pw.kind}</span>
+              <div class="row-head">
+                <span class="src pipe">pipeline</span>
+                <span class="kind">{pw.kind}</span>
+              </div>
               <span class="msg">{pw.message}</span>
             </div>
           {/each}
@@ -196,16 +200,22 @@
     flex-direction: column;
     gap: 0.35rem;
   }
+  /* Stacked: a header line (source · name) then the message below — a
+     two-column name|text split is too cramped on a phone. */
   .row {
-    display: grid;
-    grid-template-columns: auto auto 1fr;
-    gap: 0.4rem;
-    align-items: baseline;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
     padding: 0.4rem 0.5rem;
     border-left: 3px solid var(--border);
     border-radius: 4px;
     background: var(--bg-panel);
     font-size: 0.8rem;
+  }
+  .row-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
   }
   .row.sev-critical {
     border-left-color: var(--danger, #d44);

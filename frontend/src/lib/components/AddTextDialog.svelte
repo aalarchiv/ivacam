@@ -368,12 +368,32 @@
             bytes_b64,
           };
       const isMultiline = trimmed.includes('\n');
+      // The origin is the FIRST line's baseline, so for multiline the extra
+      // lines hang BELOW it — pushing the block partly under the stock
+      // origin. Anchor the whole block's bottom-left at the requested point
+      // instead (using the just-rendered preview's bbox), so every line sits
+      // on the stock. Single-line keeps the baseline anchor. X shift is ~0
+      // for the usual left alignment.
+      let originX = d.posX;
+      let originY = d.posY;
+      if (isMultiline && previewSegments && previewSegments.length > 0) {
+        let minX = Infinity;
+        let minY = Infinity;
+        for (const s of previewSegments) {
+          minX = Math.min(minX, s.start.x, s.end.x);
+          minY = Math.min(minY, s.start.y, s.end.y);
+        }
+        if (Number.isFinite(minX) && Number.isFinite(minY)) {
+          originX += d.posX - minX;
+          originY += d.posY - minY;
+        }
+      }
       const layerSeed: Omit<TextLayer, 'id' | 'name'> = {
         kind: isMultiline ? 'MTEXT' : 'TEXT',
         text: trimmed,
         fontSource,
         sizeMm: d.sizeMm,
-        origin: { x: d.posX, y: d.posY },
+        origin: { x: originX, y: originY },
         rotationDeg: 0,
         letterSpacingMm: 0,
         lineSpacingMm: 0,

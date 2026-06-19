@@ -195,6 +195,11 @@ interface ProjectStateView {
   /// op can cut the workpiece edge. Optional — falls back to
   /// `transformedImport` (so existing tests / callers without it work).
   geometryView?: ImportResponse | null;
+  /// `transformedImport` with its bbox expanded to enclose editable text
+  /// layers — used for AUTO-stock sizing so a text-only project sizes to its
+  /// text, not the work area. NO stock outline (that would loop). Optional;
+  /// falls back to `transformedImport`.
+  stockSizingImport?: ImportResponse | null;
   machine: MachineSettings;
   tools: FrontToolEntry[];
   operations: OpEntry[];
@@ -775,7 +780,14 @@ function buildWorkOffset(w: WorkOffset): WireWorkOffset | null {
 function buildStock(state: ProjectStateView): WireStock | null {
   const stock = state.stock;
   if (!stock) return null;
-  const fp = computeFootprint(state.transformedImport, stock, state.machine.workArea);
+  // Size against the text-inclusive bbox (falls back to transformedImport)
+  // so the wire stock matches the on-canvas auto-stock outline for text-only
+  // / text-overflowing projects.
+  const fp = computeFootprint(
+    state.stockSizingImport ?? state.transformedImport,
+    stock,
+    state.machine.workArea,
+  );
   return {
     origin: [fp.minX, fp.minY],
     width_mm: fp.maxX - fp.minX,
@@ -814,11 +826,14 @@ export function buildProject(state: ProjectStateView): WireProject | null {
   // so an op targeting the stock edge is cut. Falls back to the raw
   // import for callers/tests that don't supply geometryView.
   const imp = state.geometryView ?? state.transformedImport;
-  if (!imp) return null;
+  // Text-only is valid: no imported segments, but the backend renders the
+  // text_layers in a pre-pass. Only bail when there's truly nothing.
+  const hasText = (state.textLayers?.length ?? 0) > 0;
+  if (!imp && !hasText) return null;
   const workOffset = state.workOffset ? buildWorkOffset(state.workOffset) : null;
   const stock = buildStock(state);
   return {
-    segments: imp.segments,
+    segments: imp?.segments ?? [],
     machine: buildMachine(state.machine),
     tools: state.tools.map(buildTool),
     operations: state.operations.map((op) => buildOp(op, state.machine)),

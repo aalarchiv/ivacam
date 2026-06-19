@@ -233,6 +233,7 @@
       const opProject = buildProject({
         transformedImport: project.transformedImport,
         geometryView: project.geometryView,
+        stockSizingImport: project.stockSizingImport,
         machine: project.data.machine,
         tools: project.data.tools,
         operations: project.data.operations,
@@ -423,7 +424,8 @@
   {:else}
     <button
       onclick={run}
-      disabled={!project.geometryView || project.gen.generating}
+      disabled={(!project.geometryView && project.data.textLayers.length === 0) ||
+        project.gen.generating}
       class:stale={project.data.dirty && project.gen.generated != null}
       title={project.data.dirty && project.gen.generated != null
         ? 'The visible toolpath is stale — the project has changed since the last Generate. Click to refresh.'

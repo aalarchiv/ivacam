@@ -10,7 +10,7 @@ import type {
 } from '../api/types';
 import { History } from './history';
 import { computeUnsavedWork } from './unsaved';
-import { invalidatePreview } from './text_preview.svelte';
+import { invalidatePreview, previewSegmentsFor, previewVersion } from './text_preview.svelte';
 import { GeneratedState, type PipelineNoteEvent } from './generated.svelte';
 import { SelectionState, type PickMode, type SelectionMode } from './selection.svelte';
 
@@ -252,6 +252,54 @@ export class ProjectState {
     return combineImports(this.data.imports);
   });
 
+  /// Raw geometry for AUTO-STOCK sizing — `transformedImport` with its bbox
+  /// expanded to enclose the editable text layers too. Text is rendered by
+  /// the backend at pipeline time, so it never lands in `transformedImport`;
+  /// without this, auto-stock for a text-only (or text-overflowing) project
+  /// can't see the text and falls back to the whole work area. `null` when
+  /// there's no geometry AND no rendered text yet. Carries NO stock outline
+  /// (that would loop: outline ← footprint ← bbox ← outline) — only the raw
+  /// bbox matters here, which is all `computeFootprint` reads. Reactive on
+  /// the text-preview cache so it tightens as glyphs finish rendering.
+  stockSizingImport = $derived.by<ImportResponse | null>(() => {
+    const base = this.transformedImport;
+    if (this.data.textLayers.length === 0) return base; // unchanged path
+    void previewVersion.v;
+    let box = base ? { ...base.bbox } : null;
+    for (const layer of this.data.textLayers) {
+      const segs = previewSegmentsFor(layer.id, layer.origin);
+      if (!segs || segs.length === 0) continue;
+      for (const s of segs) {
+        const mnx = Math.min(s.start.x, s.end.x);
+        const mxx = Math.max(s.start.x, s.end.x);
+        const mny = Math.min(s.start.y, s.end.y);
+        const mxy = Math.max(s.start.y, s.end.y);
+        if (!box) box = { min_x: mnx, min_y: mny, max_x: mxx, max_y: mxy };
+        else {
+          box.min_x = Math.min(box.min_x, mnx);
+          box.min_y = Math.min(box.min_y, mny);
+          box.max_x = Math.max(box.max_x, mxx);
+          box.max_y = Math.max(box.max_y, mxy);
+        }
+      }
+    }
+    if (!box) return base;
+    if (base) return { ...base, bbox: box };
+    // Text-only: a minimal synthetic carrying just the bbox. computeFootprint
+    // reads only `.bbox`; empty segments keep every other path untouched.
+    return {
+      bbox: box,
+      filename: 'text',
+      format: 'text',
+      layers: [],
+      segments: [],
+      objects: [],
+      object_meta: [],
+      unit_scale: 1,
+      warnings: [],
+    } as ImportResponse;
+  });
+
   /// Geometry the canvas selects + the wire payload sends —
   /// `transformedImport` plus a synthetic, selectable stock-outline
   /// object when the stock is shown, so an op (chamfer/profile/…) can
@@ -264,7 +312,15 @@ export class ProjectState {
   geometryView = $derived.by<ImportResponse | null>(() => {
     const base = this.transformedImport;
     if (!this.data.stock.visible) return base;
-    const fp = computeFootprint(base, this.data.stock, this.data.machine.workArea);
+    // Size the footprint from the text-inclusive bbox so a text-only project
+    // gets a fitting auto-stock (and a non-null geometryView, which unblocks
+    // Generate). The outline still augments the RAW `base` so the canvas
+    // doesn't double-draw text (text stays a separate textLayers entity).
+    const fp = computeFootprint(
+      this.stockSizingImport,
+      this.data.stock,
+      this.data.machine.workArea,
+    );
     return augmentWithStockOutline(base, fp);
   });
 

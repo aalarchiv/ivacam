@@ -1208,9 +1208,7 @@
       <div class="empty-card">
         <div class="empty-glyph">⌗</div>
         <div class="empty-title">No drawing loaded</div>
-        <div class="empty-sub">
-          Open a DXF / SVG, drop a file onto the window, or pick a sample.
-        </div>
+        <div class="empty-sub">Open a DXF / SVG, drop a file onto the window, or add text.</div>
       </div>
     </div>
   {/if}

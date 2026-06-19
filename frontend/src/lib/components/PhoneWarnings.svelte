@@ -35,8 +35,9 @@
       countCriticalPipelineWarnings(pipeWarnings),
   );
   const total = $derived(simWarnings.length + pipeWarnings.length);
-  /// Generate is meaningful once geometry/ops exist to run.
-  const canGenerate = $derived(project.geometryView != null);
+  /// Generate is meaningful once geometry OR text exists to run (text-only
+  /// projects render to geometry in the backend pre-pass).
+  const canGenerate = $derived(project.geometryView != null || project.data.textLayers.length > 0);
 
   const glyph = $derived.by(() => {
     if (generating) return '⏳';
@@ -88,7 +89,7 @@
     type="button"
     class="warn-chip {cls}"
     onclick={onChipClick}
-    title={title}
+    {title}
     aria-label={title}
     aria-haspopup={!hasRun || stale ? undefined : 'dialog'}
   >

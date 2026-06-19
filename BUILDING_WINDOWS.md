@@ -52,7 +52,7 @@ dance.
 | WebView2 Runtime | current | `winget install Microsoft.EdgeWebView2Runtime` | Preinstalled on Windows 11; required on Windows 10. |
 | Rust (rustup) | pinned by [`rust-toolchain.toml`](./rust-toolchain.toml) (1.88.0) | `winget install Rustlang.Rustup` | Installs the **MSVC** host toolchain by default. The repo's toolchain file is picked up automatically on first `cargo` run. |
 | Node.js | ≥ 20 LTS | `winget install OpenJS.NodeJS.LTS` | Drives Vite + svelte-check only. |
-| pnpm | ≥ 9 | `npm install -g pnpm` | Required (the frontend uses a `link:` dep npm can't resolve). |
+| pnpm | ≥ 10 | `npm install -g pnpm` | Required (the frontend uses a `link:` dep npm can't resolve). |
 | Tauri CLI | 2.x | `cargo install tauri-cli --version "^2" --locked` | After Rust is installed. |
 | sccache | ≥ 0.15 | `cargo install sccache --locked` | **Required** — `.cargo/config.toml` sets it as `rustc-wrapper` on every platform. Install it, or delete the `[build]` block from `.cargo/config.toml` to opt out. |
 
@@ -119,10 +119,10 @@ WiX + NSIS); subsequent builds are fast thanks to sccache.
 Because `tauri.conf.json` sets `"targets": "all"`, a Windows build emits
 **both** installer formats under `target\release\bundle\`:
 
-| Format | Path (version is `0.0.0` until bumped) |
-|--------|----------------------------------------|
-| MSI (WiX) | `target\release\bundle\msi\ivaCAM_0.0.0_x64_en-US.msi` |
-| NSIS `.exe` | `target\release\bundle\nsis\ivaCAM_0.0.0_x64-setup.exe` |
+| Format | Path (`<ver>` is the version in `tauri.conf.json`) |
+|--------|----------------------------------------------------|
+| MSI (WiX) | `target\release\bundle\msi\ivaCAM_<ver>_x64_en-US.msi` |
+| NSIS `.exe` | `target\release\bundle\nsis\ivaCAM_<ver>_x64-setup.exe` |
 
 The standalone executable (un-bundled) is
 `target\release\ivac-tauri.exe`.
@@ -143,7 +143,7 @@ cd frontend; pnpm check; cd ..
 # titled "ivaCAM" with the same UI as `pnpm dev`.
 ```
 
-The `.dxf` / `.svg` / `.ngc` / `.vc-project.json` file associations
+The `.dxf` / `.svg` / `.ngc` / `.ivac-project.json` file associations
 declared in `tauri.conf.json` register on install; double-clicking such a
 file should open it in ivaCAM.
 
@@ -167,7 +167,7 @@ Windows lane.
 
 Verified working on this repo from an Ubuntu host (clang/LLD 20.1.8,
 rustc 1.88.0, `cargo-xwin` 0.19.2, NSIS 3.10) — it produced a valid
-`ivac-desktop.exe` and a `ivaCAM_0.0.0_x64-setup.exe` NSIS installer
+`ivac-desktop.exe` and a `ivaCAM_<ver>_x64-setup.exe` NSIS installer
 without touching a Windows machine. See the caveats in
 [§Native vs. cross](#native-windows-vs-cross-compiling-from-linux)
 before you rely on it — chiefly: **no MSI, no signing, and the artifact
@@ -212,7 +212,7 @@ tauri, wry, windows-*, …); re-links are a few minutes.
 export XWIN_ACCEPT_LICENSE=1
 cargo tauri build --runner cargo-xwin \
       --target x86_64-pc-windows-msvc --bundles nsis
-# → target/x86_64-pc-windows-msvc/release/bundle/nsis/ivaCAM_0.0.0_x64-setup.exe
+# → target/x86_64-pc-windows-msvc/release/bundle/nsis/ivaCAM_<ver>_x64-setup.exe
 ```
 
 If you omit `--bundles nsis`, Tauri will *try* MSI first, log

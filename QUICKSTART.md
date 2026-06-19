@@ -12,9 +12,9 @@ desktop bundle includes the rendering engine and CAM math; nothing else
 needs to be installed.
 
 - **Linux**: download the `.AppImage` for your release, `chmod +x` it,
-  and run it. (No release pipeline is hooked up yet — until then, follow
-  [`BUILDING.md`](./BUILDING.md) to produce one locally with
-  `cargo tauri build --bundles appimage`.)
+  and run it. (No prebuilt binaries are published yet — the repo has no
+  remote — so follow [`BUILDING.md`](./BUILDING.md) to produce one
+  locally with `cargo tauri build --bundles appimage`.)
 - **macOS / Windows**: same pattern with the platform-native bundle.
 - **Browser-only**: the WASM build runs entirely client-side; everything
   in this guide applies, just hosted from a static site.

@@ -54,7 +54,7 @@ PRs.
 
 - Rust: pinned via `rust-toolchain.toml` (currently 1.88.0)
 - Node: LTS 20+
-- pnpm 10+ (lockfile committed)
+- pnpm ≥ 10 (lockfile committed)
 - `wasm-pack` 0.14+ (for the WASM crate; `cargo install wasm-pack --locked`)
 - `tauri-cli` 2.x (for desktop bundles; `cargo install tauri-cli --version "^2" --locked`)
 - `cargo-deny` 0.19+ (for the licenses / advisories check)
@@ -66,7 +66,7 @@ cargo test                      # all Rust crates
 cargo clippy --all-targets -- -D warnings
 cargo fmt --all -- --check
 cd frontend && pnpm install && pnpm test && pnpm build
-cargo xtask test-all            # end-to-end (runs both)
+cargo xtask ci                  # end-to-end (fmt + clippy + tests + frontend)
 ```
 
 Pre-commit hooks (rustfmt, clippy, eslint, prettier, schema-check) are

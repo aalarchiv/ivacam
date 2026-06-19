@@ -123,7 +123,7 @@
       `Backend error:\n\n\`\`\`json\n${JSON.stringify(structured, null, 2)}\n\`\`\``,
     );
     const title = encodeURIComponent(`Internal error: ${structured.message.slice(0, 80)}`);
-    const url = `https://github.com/ivacam/ivacam/issues/new?title=${title}&body=${body}`;
+    const url = `https://github.com/aalarchiv/ivacam/issues/new?title=${title}&body=${body}`;
     if (typeof window !== 'undefined') {
       try {
         window.open(url, '_blank', 'noopener');

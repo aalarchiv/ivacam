@@ -41,7 +41,7 @@ takes days to a few weeks, so start it early.
 ## Step 1 — Put the repo on GitHub (public) · *you*
 
 > ⚠️ **One-way door.** Pushing public exposes all source and the full
-> commit history (currently 758 commits). The pre-public audit
+> commit history. The pre-public audit
 > (`wiaconstructor-p11u.1`) found no secrets in the tree or history, bd
 > issue text is not tracked, and `refs/` is ignored — so it's safe on
 > that front. Be aware that dev-history narration in code comments
@@ -111,8 +111,8 @@ submitted to SignPath and no installer is attached to public Releases.
 
 ## Step 5 — Cut a signed release · *you*
 
-1. **Bump the version** — `tauri.conf.json` is still `0.0.0`. Set it to
-   e.g. `0.1.0` (or `0.1.0-beta.1`); it shows in the installer filename
+1. **Bump the version** — set `tauri.conf.json` to your release version
+   (e.g. `0.1.0` or `0.1.0-beta.1`); it shows in the installer filename
    and the app.
 2. Tag and push:
    ```sh

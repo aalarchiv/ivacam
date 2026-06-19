@@ -72,6 +72,13 @@
     saveMenuOpen = false;
   }
 
+  // Phone screen-name dropdown: tap the centre title to jump to any screen
+  // (in addition to the ◂ ▸ chevrons and the top-panel swipe).
+  let screenMenuOpen = $state(false);
+  function closeScreenMenu() {
+    screenMenuOpen = false;
+  }
+
   /// Quit the app (phone has no window chrome to close it). Prompts to
   /// save when there are unsaved changes, then exits the process.
   async function exitApp() {
@@ -771,7 +778,42 @@
         >
           ◂
         </button>
-        <span class="activity-title">{activityLabel(currentActivity)}</span>
+        <div class="screen-menu">
+          <button
+            type="button"
+            class="activity-title"
+            aria-haspopup="menu"
+            aria-expanded={screenMenuOpen}
+            onclick={() => (screenMenuOpen = !screenMenuOpen)}
+          >
+            {activityLabel(currentActivity)} ▾
+          </button>
+          {#if screenMenuOpen}
+            <button
+              type="button"
+              class="screen-backdrop"
+              aria-label="Close screen menu"
+              onclick={closeScreenMenu}
+            ></button>
+            <div class="screen-pop" role="menu" aria-label="Go to screen">
+              {#each ACTIVITY_ORDER as a (a)}
+                <button
+                  type="button"
+                  class="screen-item"
+                  role="menuitem"
+                  aria-current={a === currentActivity}
+                  class:active={a === currentActivity}
+                  onclick={() => {
+                    closeScreenMenu();
+                    goToActivity(a);
+                  }}
+                >
+                  {activityLabel(a)}
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
         <button
           type="button"
           class="ab-btn ab-chevron"
@@ -1320,7 +1362,10 @@
       {modalStatusHint}
     {:else}
       <span class="status-info">{statusInfoText}</span>
-      {#if statusShortcutHints}
+      <!-- Phone: the keyboard/mouse shortcut hints are irrelevant on touch
+           and overflowed the narrow footer (already crowded by the bottom
+           panels). Show only the essential info there. -->
+      {#if statusShortcutHints && !layout.isNarrow}
         <span class="status-sep">·</span>
         <span class="status-shortcuts">{statusShortcutHints}</span>
       {/if}
@@ -1390,7 +1435,13 @@
     align-items: center;
     width: 9.5rem;
   }
+  /* Middle grid cell: relative anchor for the screen dropdown. */
+  .mobile-appbar .screen-menu {
+    position: relative;
+    min-width: 0;
+  }
   .mobile-appbar .activity-title {
+    width: 100%;
     text-align: center;
     font-weight: 600;
     font-size: 0.9rem;
@@ -1398,6 +1449,52 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    background: none;
+    border: none;
+    padding: 0.2rem 0;
+    cursor: pointer;
+  }
+  .mobile-appbar .screen-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-dropdown);
+    background: none;
+    border: none;
+    cursor: default;
+  }
+  .mobile-appbar .screen-pop {
+    position: absolute;
+    top: calc(100% + 0.3rem);
+    left: 0;
+    z-index: calc(var(--z-dropdown) + 1);
+    min-width: 9rem;
+    padding: 0.3rem;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 6px 22px rgb(0 0 0 / 35%);
+  }
+  .mobile-appbar .screen-item {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 44px;
+    padding: 0 0.6rem;
+    background: none;
+    border: none;
+    border-radius: 5px;
+    color: var(--text);
+    font-size: 0.88rem;
+    text-align: left;
+    cursor: pointer;
+  }
+  .mobile-appbar .screen-item:hover {
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+    color: var(--text-strong);
+  }
+  .mobile-appbar .screen-item.active {
+    color: var(--text-strong);
+    font-weight: 600;
   }
   /* Centre column holds the status chip, centred between nav and actions. */
   .mobile-appbar .appbar-center {

@@ -8,6 +8,7 @@
   /// to apply immediately, and there's no "Cancel" button — Escape or the
   /// close button just dismisses the dialog.
   import { project, type AppSettings } from '../state/project.svelte';
+  import { layout } from '../state/layout.svelte';
   import Modal from './Modal.svelte';
 
   interface Props {
@@ -34,8 +35,11 @@
   ] as const;
   type GroupId = (typeof GROUPS)[number]['id'];
   let activeGroup = $state<GroupId>('appearance');
+  /// On a phone the side-nav + single-group layout squishes; show every
+  /// group in one scrolling column instead (the nav is hidden via CSS).
+  /// Only the desktop tab keeps the nav-filtered single-group view.
   function groupHidden(id: GroupId): boolean {
-    return embedded && activeGroup !== id;
+    return embedded && !layout.isNarrow && activeGroup !== id;
   }
 
   function update<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
@@ -562,7 +566,7 @@
 {/snippet}
 
 {#if embedded}
-  <section class="embedded-shell">
+  <section class="embedded-shell" class:narrow={layout.isNarrow}>
     <nav class="group-nav" aria-label="Setting groups">
       {#each GROUPS as g (g.id)}
         <button
@@ -718,6 +722,17 @@
     flex: 1;
     min-height: 0;
     background: var(--bg-panel);
+  }
+  /* Phone: one scrolling column with every group shown — the side-nav +
+     single-group split is too cramped and cut content off. */
+  .embedded-shell.narrow {
+    flex-direction: column;
+  }
+  .embedded-shell.narrow .group-nav {
+    display: none;
+  }
+  .embedded-shell.narrow .group-content {
+    max-width: none;
   }
   .group-nav {
     display: flex;

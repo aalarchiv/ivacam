@@ -2008,10 +2008,10 @@
         <span>Tap an object to select it</span>
         <span class="firstrun-arrow">→</span>
         <span class="firstrun-step">2</span>
-        <span>Long-press for new operation</span>
+        <span>⧉ then tap to multi-select</span>
         <span class="firstrun-arrow">→</span>
         <span class="firstrun-step">3</span>
-        <span>⧉ then tap to multi-select</span>
+        <span>Long-press for new operation</span>
       {:else}
         <span class="firstrun-step">1</span>
         <span>Click an object to select it</span>

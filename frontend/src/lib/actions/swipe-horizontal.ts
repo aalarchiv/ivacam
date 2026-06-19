@@ -44,31 +44,38 @@ export function swipeHorizontal(node: HTMLElement, opts: SwipeOpts) {
   let startT = 0;
   let pid: number | null = null;
 
+  // The up/cancel listeners live on `window`, not `node`: the top panel is
+  // narrow, so a swipe that travels right (→ previous screen) lifts the
+  // finger OFF the element's edge and a node-bound `pointerup` never fires —
+  // which is why only forward swipes used to register. Tracking the release
+  // globally catches it wherever the finger lands.
+  function up(e: PointerEvent) {
+    if (e.pointerId !== pid) return;
+    pid = null;
+    window.removeEventListener('pointerup', up);
+    window.removeEventListener('pointercancel', up);
+    const dir = swipeDirection(e.clientX - startX, e.clientY - startY, e.timeStamp - startT);
+    if (dir === 'left') o.onLeft();
+    else if (dir === 'right') o.onRight();
+  }
   function down(e: PointerEvent) {
     pid = e.pointerId;
     startX = e.clientX;
     startY = e.clientY;
     startT = e.timeStamp;
-  }
-  function up(e: PointerEvent) {
-    if (e.pointerId !== pid) return;
-    pid = null;
-    const dir = swipeDirection(e.clientX - startX, e.clientY - startY, e.timeStamp - startT);
-    if (dir === 'left') o.onLeft();
-    else if (dir === 'right') o.onRight();
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   }
 
   node.addEventListener('pointerdown', down);
-  node.addEventListener('pointerup', up);
-  node.addEventListener('pointercancel', up);
   return {
     update(next: SwipeOpts) {
       o = next;
     },
     destroy() {
       node.removeEventListener('pointerdown', down);
-      node.removeEventListener('pointerup', up);
-      node.removeEventListener('pointercancel', up);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
     },
   };
 }

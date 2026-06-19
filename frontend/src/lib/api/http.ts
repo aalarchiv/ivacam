@@ -23,11 +23,17 @@ import type {
  * the legacy `<label> returned <status>: <detail>` form.
  */
 async function throwHttpError(label: string, res: Response): Promise<never> {
-  let detail: unknown;
+  // Read the body exactly ONCE. The previous form called res.json() and,
+  // on failure, res.text() on the same Response — but res.json() has
+  // already consumed the stream, so the fallback threw "Body has already
+  // been consumed", masking the real error (e.g. an unreachable server or
+  // a non-JSON error page). Read text, then opportunistically parse JSON.
+  const raw = await res.text();
+  let detail: unknown = raw;
   try {
-    detail = await res.json();
+    detail = JSON.parse(raw);
   } catch {
-    detail = await res.text();
+    // Not JSON — keep the raw text as the detail.
   }
   if (looksLikeStructuredError(detail)) {
     // Stringify so tryParseStructuredError(e.message) — which expects a

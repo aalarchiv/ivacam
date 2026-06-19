@@ -112,6 +112,31 @@ describe('HttpWiacClient.computeHelixRadius', () => {
     const parsed = tryParseStructuredError((captured as Error).message);
     expect(parsed).toEqual(ivac);
   });
+
+  // Regression: a NON-JSON error body (e.g. an unreachable-server proxy
+  // page or a plain-text 502) must surface the real status + text, not
+  // throw "Response.text: Body has already been consumed" from reading the
+  // body twice (res.json() then res.text() on the same Response).
+  it('handles a non-JSON error body without double-consuming the response', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      new Response('502 Bad Gateway', {
+        status: 502,
+        headers: { 'content-type': 'text/plain' },
+      }),
+    );
+    const client = new HttpWiacClient('http://example.test');
+    let captured: unknown;
+    try {
+      await client.computeHelixRadius({ segments: [], object_ids: [], tool_diameter_mm: 6 });
+    } catch (e) {
+      captured = e;
+    }
+    expect(captured).toBeInstanceOf(Error);
+    const msg = (captured as Error).message;
+    expect(msg).not.toMatch(/already been consumed/);
+    expect(msg).toContain('502');
+    expect(msg).toContain('Bad Gateway');
+  });
 });
 
 describe('resolveApiChoice (transport selection)', () => {

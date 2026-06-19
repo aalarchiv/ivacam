@@ -2266,7 +2266,7 @@ export interface components {
             tip_diameter?: number | null;
             /**
              * Format: double
-             * @description V-Carve / Stufenfase lead-in ramp angle, degrees from horizontal. Controls how steeply the cutter walks into the material at the start of each cut to avoid a vertical plunge at the R≈0 medial-axis endpoint (V-bits have effectively zero safe plunge depth). This was originally hardcoded to 10° (Vectric / Estlcam default) inside [`crate::cam::vcarve_emit::ratchet_emit`]; this field lets shops dial it per-tool — harder materials want shallower (5–8°), softer materials tolerate steeper (15°+). Values outside (0°, 90°) are clamped at synth time. `None` ⇒ inherit the 10° default.
+             * @description V-Carve / Stufenfase lead-in ramp angle, degrees from horizontal. Controls how steeply the cutter walks into the material at the start of each cut to avoid a vertical plunge at the R≈0 medial-axis endpoint (V-bits have effectively zero safe plunge depth). [`crate::cam::vcarve_emit::ratchet_emit`] defaults to 10° (Vectric / Estlcam default); this field lets shops dial it per-tool — harder materials want shallower (5–8°), softer materials tolerate steeper (15°+). Values outside (0°, 90°) are clamped at synth time. `None` ⇒ inherit the 10° default.
              */
             vcarve_lead_in_angle_deg?: number | null;
             /**
@@ -2288,7 +2288,7 @@ export interface components {
             whirl_osc_mm?: number | null;
             /**
              * Format: double
-             * @description Whirl stepover override. When `whirl` is `true`, this is the **stride along the toolpath per full revolution of the spiral overlay** — Estlcam's `T_Wirbel_Stepover`. mm, positive only. None = use the half-radius default. (This is now the spiral stride; it was previously the cascade-step clamp, which was the "fake Whirl" v1 implementation.)
+             * @description Whirl stepover override. When `whirl` is `true`, this is the **stride along the toolpath per full revolution of the spiral overlay** — Estlcam's `T_Wirbel_Stepover`. mm, positive only. None = use the half-radius default. (This is the spiral stride.)
              */
             whirl_stepover_mm?: number | null;
             /**

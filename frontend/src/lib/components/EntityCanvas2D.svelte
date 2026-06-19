@@ -62,6 +62,7 @@
     type OSnapTargets,
   } from '../canvas/osnap';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
+  import { createOpFromSelection } from '../state/op_creation';
   import { layout } from '../state/layout.svelte';
   import { computeFootprint } from '../sim/driver';
   import {
@@ -1225,37 +1226,7 @@
       ctxMenu = null;
       return;
     }
-    const label = `New ${PICKER_LABEL[kind]} from selection`;
-    project.history.beginTransaction(label);
-    try {
-      if (kind === 'pocket_outside') {
-        const endmill =
-          project.data.tools.find((t) => t.kind === 'endmill') ?? project.data.tools[0];
-        const toolDiameter = endmill?.diameter ?? 3;
-        const op = project.addOperation('pocket');
-        project.updateOperation(op.id, {
-          name: 'Pocket Outside',
-          toolId: endmill?.id ?? op.toolId,
-          sourceLayers: null,
-          sourceObjects: sel,
-          sourceCombine: 'difference',
-          frameShape: 'rectangle',
-          framePaddingMm: 3 * toolDiameter,
-          frameCornerRadiusMm: undefined,
-        });
-      } else {
-        const op = project.addOperation(kind);
-        project.updateOperation(op.id, {
-          name: `${PICKER_LABEL[kind]} from selection`,
-          sourceLayers: null,
-          sourceObjects: sel,
-        });
-      }
-      project.history.commitTransaction();
-    } catch (e) {
-      project.cancelTransaction();
-      throw e;
-    }
+    createOpFromSelection(project, kind, PICKER_LABEL[kind], sel);
     // Bounce the sidebar to Operations so the freshly-added op
     // row is visible without a second click on the sidebar.
     onActivateSidebarPane?.('operations');

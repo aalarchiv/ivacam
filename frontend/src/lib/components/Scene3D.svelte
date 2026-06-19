@@ -23,6 +23,7 @@
   import { previewVersion, requestPreview } from '../state/text_preview.svelte';
   import { consumeSelectHint } from '../state/ui-hints';
   import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
+  import { createOpFromSelection } from '../state/op_creation';
   import { LONG_PRESS_MS, LONG_PRESS_MOVE_TOL_PX } from '../canvas/touch-gestures';
 
   interface Props {
@@ -1089,46 +1090,15 @@
     openCtxMenuAt(e.clientX, e.clientY);
   }
 
-  /// Mirror of EntityCanvas2D.pickFromCtx: build a new op whose source is
-  /// the current 3D selection. `pocket_outside` gets the same frame +
-  /// difference-combine pre-fill as the 2D path.
+  /// Build a new op whose source is the current 3D selection, shared
+  /// verbatim with EntityCanvas2D via `createOpFromSelection`.
   function pickFromCtx(kind: PickerKind) {
     const sel = [...project.sel.selectedObjects];
     if (sel.length === 0) {
       ctxMenu = null;
       return;
     }
-    const label = `New ${PICKER_LABEL[kind]} from selection`;
-    project.history.beginTransaction(label);
-    try {
-      if (kind === 'pocket_outside') {
-        const endmill =
-          project.data.tools.find((t) => t.kind === 'endmill') ?? project.data.tools[0];
-        const toolDiameter = endmill?.diameter ?? 3;
-        const op = project.addOperation('pocket');
-        project.updateOperation(op.id, {
-          name: 'Pocket Outside',
-          toolId: endmill?.id ?? op.toolId,
-          sourceLayers: null,
-          sourceObjects: sel,
-          sourceCombine: 'difference',
-          frameShape: 'rectangle',
-          framePaddingMm: 3 * toolDiameter,
-          frameCornerRadiusMm: undefined,
-        });
-      } else {
-        const op = project.addOperation(kind);
-        project.updateOperation(op.id, {
-          name: `${PICKER_LABEL[kind]} from selection`,
-          sourceLayers: null,
-          sourceObjects: sel,
-        });
-      }
-      project.history.commitTransaction();
-    } catch (err) {
-      project.cancelTransaction();
-      throw err;
-    }
+    createOpFromSelection(project, kind, PICKER_LABEL[kind], sel);
     onActivateSidebarPane?.('operations');
     ctxMenu = null;
   }

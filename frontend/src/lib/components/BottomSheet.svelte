@@ -20,8 +20,13 @@
   interface Props {
     /// Panel identity — drives the shared open/fold coordination.
     key: BottomPanelKey;
-    /// Folded-handle label (e.g. "Operations", "G-code").
+    /// Folded-handle label (e.g. "Operations", "G-code"). Full text, used
+    /// for the accessible name.
     label: string;
+    /// Short code shown in the folded handle strip (e.g. "OPS", "NGC",
+    /// "S+L") — the strip is narrow and the two panels share a row, so a
+    /// compact code reads better than the full label. Falls back to `label`.
+    code?: string;
     /// Which half of the folded bottom strip this handle occupies. The two
     /// panels take opposite sides so they tile when both are folded.
     side: 'left' | 'right';
@@ -43,6 +48,7 @@
   let {
     key,
     label,
+    code,
     side,
     count = null,
     savedSnap,
@@ -156,7 +162,7 @@
     <span class="grip" aria-hidden="true"></span>
     {#if !open}
       <span class="handle-label">
-        {label}{#if count != null}<span class="count">{count}</span>{/if}
+        {code ?? label}{#if count != null}<span class="count">{count}</span>{/if}
       </span>
     {/if}
   </div>
@@ -172,8 +178,12 @@
     bottom: 0;
     display: flex;
     flex-direction: column;
-    background: var(--panel-bg, #1e1e1e);
-    border-top: 1px solid var(--border, #3a3a3a);
+    /* Opaque, theme-correct panel colour — was var(--panel-bg) which is
+       undefined (the token is --bg-panel), so it fell back to a hardcoded
+       dark that looked wrong in the light theme and let the status bar
+       show through the empty half of the folded strip. */
+    background: var(--bg-panel);
+    border-top: 1px solid var(--border);
     box-shadow: 0 -4px 18px rgb(0 0 0 / 35%);
     height: calc(var(--handle-px) + var(--body-px));
     max-height: calc(var(--handle-px) + 75vh);

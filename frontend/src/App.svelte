@@ -946,6 +946,7 @@
       <BottomSheet
         key="gcode"
         label="G-code"
+        code="NGC"
         side="left"
         count={project.gen.generated.gcode.split('\n').length}
         savedSnap={gcodeSnap}
@@ -962,6 +963,7 @@
     <BottomSheet
       key="ops"
       label="Operations"
+      code="OPS"
       side="right"
       count={project.data.operations.length}
       savedSnap={opsSnap}
@@ -1195,8 +1197,12 @@
           <PullToRefresh onRefresh={() => generateBus.request()} />
         {/if}
       </div>
-      {#if project.gen.generated}
+      {#if project.gen.generated && activePane === '3d'}
+        <!-- Preview navigation belongs to the 3D toolpath sim; in 2D it has
+             nothing to scrub, so it's hidden there. -->
         <PlaybackBar />
+      {/if}
+      {#if project.gen.generated}
         <!-- Desktop inline G-code (toggle + resizable row). On phone this
              is the G-code bottom sheet instead (7jug.11), so hide it. -->
         {#if !layout.isNarrow}
@@ -1357,7 +1363,11 @@
   {/if}
   <ConfirmPrompt />
 
-  <footer class:footer-pick={modalStatusHint != null} title={modalStatusHint ?? statusBarText}>
+  <footer
+    class:footer-pick={modalStatusHint != null}
+    class:above-sheets={layout.isNarrow && showBottomPanels}
+    title={modalStatusHint ?? statusBarText}
+  >
     {#if modalStatusHint}
       {modalStatusHint}
     {:else}
@@ -1751,6 +1761,11 @@
   .split.with-ops-sheet {
     padding-bottom: 44px;
   }
+  /* Phone: also clear the status footer, which is lifted to sit just above
+     the 44px handle strip (see footer.above-sheets) instead of behind it. */
+  .split.narrow.with-ops-sheet {
+    padding-bottom: calc(44px + 1.6rem);
+  }
   .viewport {
     position: relative;
     overflow: hidden;
@@ -1976,6 +1991,20 @@
     background: color-mix(in srgb, var(--accent) 18%, var(--bg-panel));
     color: var(--text);
     font-weight: 600;
+  }
+  /* Phone with the bottom sheets present: the folded handle strip (44px,
+     fixed) used to cover the in-flow footer, and the empty half of the
+     strip let the status text show through. Lift the footer to sit just
+     ABOVE the handle strip, full-width and opaque. An OPEN sheet
+     (z-floating + 1) still covers it, which is fine — the panel has focus
+     then. */
+  .app.narrow > footer.above-sheets {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 44px;
+    z-index: var(--z-floating);
+    border-bottom: 1px solid var(--border);
   }
   /* Drop overlay while user is dragging a file over the window. */
   .drop-overlay {

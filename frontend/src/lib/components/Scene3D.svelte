@@ -598,7 +598,7 @@
     stockBuilder?.build({
       stock: project.data.stock,
       showStockBox: project.data.settings.showStockBox,
-      imported: project.transformedImport,
+      imported: project.stockSizingImport,
       workArea: project.data.machine.workArea,
     });
     requestRender();
@@ -747,7 +747,10 @@
       requestRender();
       return;
     }
-    const imported = project.transformedImport;
+    // Text-inclusive geometry so a text-only project's heightfield is sized
+    // to the text (transformedImport is null for text-only — that's why the
+    // solid sim never built, leaving only the wireframe).
+    const imported = project.stockSizingImport;
     const generated = project.gen.generated;
     const firstOp = project.data.operations[0];
     const tool =
@@ -1199,7 +1202,7 @@
   >
     ⌖
   </button>
-  {#if !project.transformedImport}
+  {#if !project.transformedImport && project.data.textLayers.length === 0}
     <!-- Empty-state mirror of EntityCanvas2D's "Open a file" overlay.
          Before this, switching to 3D before loading anything showed a
          blank grid + axes with no affordance. The pointer-events:none

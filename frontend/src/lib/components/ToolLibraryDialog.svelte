@@ -27,6 +27,7 @@
   import { workspace } from '../state/workspace.svelte';
   import { seedInventoryFromProject, syncStockedFromInventory } from '../state/tool_inventory';
   import { isAutoToolName, suggestToolName } from '../state/tool_naming';
+  import { dovetailProfile, tslotProfile } from '../state/tool_form_profiles';
   import {
     applyToolTableView,
     EMPTY_TOOL_VIEW,
@@ -318,15 +319,7 @@
   // the angled flank rises toward the neck: r(z) = D/2 − z·tan(angle).
   // Clamp the neck radius to ≥0 so an over-deep height can't invert it.
   function generateDovetail(idx: number, id: number) {
-    const { diaMm, angleDeg, heightMm } = dovetailParamsFor(id);
-    const rBottom = Math.max(diaMm / 2, 0);
-    const h = Math.max(heightMm, 0);
-    const rTop = Math.max(rBottom - h * Math.tan((angleDeg * Math.PI) / 180), 0);
-    const samples: FormProfileSample[] = [
-      { zMm: 0, rMm: round3(rBottom) },
-      { zMm: round3(h), rMm: round3(rTop) },
-    ];
-    updateField(idx, 'formProfileMm', samples);
+    updateField(idx, 'formProfileMm', dovetailProfile(dovetailParamsFor(id)));
   }
   // T-slot preset — the former dedicated kind, now a form-profile.
   // A wide cutting disk at the tip (headDia) of height headThickness,
@@ -346,17 +339,7 @@
     tslotDraft = { ...tslotDraft, [id]: { ...tslotParamsFor(id), [key]: v } };
   }
   function generateTslot(idx: number, id: number) {
-    const { headDiaMm, headThickMm, neckDiaMm, neckLenMm } = tslotParamsFor(id);
-    const rHead = Math.max(headDiaMm / 2, 0);
-    const rNeck = Math.max(Math.min(neckDiaMm / 2, rHead), 0);
-    const hHead = Math.max(headThickMm, 0);
-    const samples: FormProfileSample[] = [
-      { zMm: 0, rMm: round3(rHead) },
-      { zMm: round3(hHead), rMm: round3(rHead) },
-      { zMm: round3(hHead), rMm: round3(rNeck) },
-      { zMm: round3(hHead + Math.max(neckLenMm, 0)), rMm: round3(rNeck) },
-    ];
-    updateField(idx, 'formProfileMm', samples);
+    updateField(idx, 'formProfileMm', tslotProfile(tslotParamsFor(id)));
   }
   function addProfileRow(idx: number, tool: ToolEntry) {
     const rows = tool.formProfileMm ?? [];

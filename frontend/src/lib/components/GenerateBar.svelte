@@ -22,7 +22,6 @@
   import GenerateProgress from './GenerateProgress.svelte';
   import FloatingPanel from './FloatingPanel.svelte';
   import { workspace } from '../state/workspace.svelte';
-  import { inferDefaultWorkOffset } from '../state/project-types';
   import { warningFocus } from '../state/warning-focus.svelte';
   import { tick } from 'svelte';
 
@@ -353,22 +352,15 @@
   }
 
   /// Apply-Fix handler for the `stock_origin_outside_geometry_bbox`
-  /// pipeline warning. Snaps the WCS origin to the geometry bbox's
-  /// bottom-left corner — the same inference the import-time auto-default
-  /// uses, but applied to the CURRENT state rather than fresh-import-only.
-  /// Routes through `setWorkOffset` so the change is undoable.
+  /// pipeline warning. Snaps the WCS origin to the footprint's bottom-left
+  /// corner and re-generates. Delegates to the shared
+  /// `project.snapWorkOffsetToFootprint()` so desktop and phone behave
+  /// identically (the divergent inline copies had drifted — the old web
+  /// path bailed for text-only projects, where `transformedImport` is
+  /// null, even though that's the common case for this warning).
   function applyWcsBboxSnapFix() {
-    const imp = project.transformedImport;
-    if (!imp) return;
-    // Force the inference even when the current offset isn't default —
-    // user clicked Apply Fix, they're explicitly asking.
-    const next = inferDefaultWorkOffset(imp.bbox, {
-      x_mm: 0,
-      y_mm: 0,
-      z_mm: 0,
-      wcs: project.data.workOffset.wcs,
-    });
-    project.setWorkOffset({ x_mm: next.x_mm, y_mm: next.y_mm });
+    project.snapWorkOffsetToFootprint();
+    generateBus.request();
   }
 
   /// Sim status goes STALE the moment the user edits anything that
@@ -609,7 +601,6 @@
                   e.stopPropagation();
                   applyWcsBboxSnapFix();
                 }}
-                disabled={!project.transformedImport}
                 title="Snap the WCS origin to the geometry bbox's bottom-left corner — the canonical CNC zeroing convention."
                 aria-label="Apply suggested WCS origin"
               >

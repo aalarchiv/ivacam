@@ -17,7 +17,6 @@
     pipelineWarningSeverity,
     type PipelineWarning,
   } from '../api/pipeline-warnings';
-  import { computeFootprint } from '../sim/driver';
 
   let open = $state(false);
   let copied = $state(false);
@@ -63,12 +62,7 @@
     pipeWarnings.find((w) => w.kind === 'stock_origin_outside_geometry_bbox') ?? null,
   );
   function fixWcsOrigin() {
-    const fp = computeFootprint(
-      project.stockSizingImport,
-      project.data.stock,
-      project.data.machine.workArea,
-    );
-    project.setWorkOffset({ x_mm: fp.minX, y_mm: fp.minY });
+    project.snapWorkOffsetToFootprint();
     generateBus.request();
   }
   /// Generate is meaningful once geometry OR text exists to run (text-only

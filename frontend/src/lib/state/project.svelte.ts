@@ -1087,6 +1087,22 @@ export class ProjectState {
     this.history.exec(setWorkOffsetCommand(patch), this.target());
   }
 
+  /// Snap the WCS origin to the geometry/stock footprint's bottom-left
+  /// corner — the single source of truth behind the
+  /// `stock_origin_outside_geometry_bbox` Apply-Fix action (desktop
+  /// GenerateBar + phone PhoneWarnings both call this). Reads
+  /// `stockSizingImport` so it also works for text-only projects, where
+  /// `transformedImport` is null. Undoable via `setWorkOffset`; callers
+  /// trigger a re-generate afterwards.
+  snapWorkOffsetToFootprint(): void {
+    const fp = computeFootprint(
+      this.stockSizingImport,
+      this.data.stock,
+      this.data.machine.workArea,
+    );
+    this.setWorkOffset({ x_mm: fp.minX, y_mm: fp.minY });
+  }
+
   /// Per-import file-transform patch. Undoable, spinner
   /// nudges coalesce; marker re-projection — see state/import-ops.ts.
   patchFileTransformForImport(

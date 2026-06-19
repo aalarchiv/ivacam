@@ -103,7 +103,7 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'auto',
-  previewMode: 'wireframe',
+  previewMode: 'both',
   solidColor: '#c8b48a',
   solidOpacity: 0.5,
   edgeColor: '#1a1a1a',

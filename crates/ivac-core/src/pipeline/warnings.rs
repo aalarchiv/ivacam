@@ -278,6 +278,43 @@ pub(super) fn push_grbl_fixed_sensor_warning(
     });
 }
 
+/// Count cut moves (Cut / Plunge / Arc — rapids and retracts excluded,
+/// since they legitimately fly to clearance / park positions) whose END
+/// point lands outside an axis-aligned envelope, returning the count and
+/// the gcode line of the first offender (0 if none / unstamped).
+/// `is_outside` decides containment for a single endpoint; the work-area
+/// and stock scans differ only in that predicate.
+fn count_cuts_outside(
+    toolpath: &[crate::gcode::preview::ToolpathSegment],
+    is_outside: impl Fn(&crate::gcode::preview::Pose3) -> bool,
+) -> (usize, u32) {
+    use crate::gcode::preview::MoveKind;
+    let mut count = 0usize;
+    let mut first_line = 0u32;
+    for seg in toolpath {
+        if !matches!(seg.kind, MoveKind::Cut | MoveKind::Plunge | MoveKind::Arc) {
+            continue;
+        }
+        if is_outside(&seg.to) {
+            count += 1;
+            if first_line == 0 {
+                first_line = seg.gcode_line;
+            }
+        }
+    }
+    (count, first_line)
+}
+
+/// Format the " (first at gcode line N)" suffix shared by the envelope
+/// warnings; empty when the offending move is synthetic / unstamped.
+fn first_line_suffix(first_line: u32) -> String {
+    if first_line != 0 {
+        format!(" (first at gcode line {first_line})")
+    } else {
+        String::new()
+    }
+}
+
 /// Post-emit work-area envelope scan. Scan Cut / Plunge / Arc
 /// segment END points against X ∈ [0, wa.x], Y ∈ [0, wa.y],
 /// Z ∈ [-wa.z, 0] (origin at stock top) with a 1e-6 mm slack. Rapids and
@@ -291,41 +328,24 @@ pub(super) fn push_work_area_warning(
     machine: &crate::project::MachineConfig,
     warnings: &mut Vec<PipelineWarning>,
 ) {
-    use crate::gcode::preview::MoveKind;
     let wa = machine.work_area;
     if !(wa.x > 0.0 && wa.y > 0.0 && wa.z > 0.0) {
         return;
     }
     let eps = 1e-6;
-    let mut count = 0usize;
-    let mut first_line = 0u32;
-    for seg in toolpath {
-        if !matches!(seg.kind, MoveKind::Cut | MoveKind::Plunge | MoveKind::Arc) {
-            continue;
-        }
-        let p = seg.to;
-        let outside = p.x < -eps
+    let (count, first_line) = count_cuts_outside(toolpath, |p| {
+        p.x < -eps
             || p.x > wa.x + eps
             || p.y < -eps
             || p.y > wa.y + eps
             || p.z < -wa.z - eps
-            || p.z > eps;
-        if outside {
-            count += 1;
-            if first_line == 0 {
-                first_line = seg.gcode_line;
-            }
-        }
-    }
+            || p.z > eps
+    });
     if count == 0 {
         return;
     }
     let plural = if count == 1 { "" } else { "s" };
-    let where_line = if first_line != 0 {
-        format!(" (first at gcode line {first_line})")
-    } else {
-        String::new()
-    };
+    let where_line = first_line_suffix(first_line);
     warnings.push(PipelineWarning {
         op_id: None,
         kind: "out_of_work_area".into(),
@@ -357,7 +377,6 @@ pub(super) fn push_stock_warning(
     stock: Option<&StockConfig>,
     warnings: &mut Vec<PipelineWarning>,
 ) {
-    use crate::gcode::preview::MoveKind;
     let Some(stock) = stock else {
         return;
     };
@@ -373,35 +392,19 @@ pub(super) fn push_stock_warning(
     // extends down by `thickness_mm`.
     let stock_top = stock.top_z_mm;
     let stock_bottom = stock.top_z_mm - stock.thickness_mm;
-    let mut count = 0usize;
-    let mut first_line = 0u32;
-    for seg in toolpath {
-        if !matches!(seg.kind, MoveKind::Cut | MoveKind::Plunge | MoveKind::Arc) {
-            continue;
-        }
-        let p = seg.to;
-        let outside = p.x < min_x - eps
+    let (count, first_line) = count_cuts_outside(toolpath, |p| {
+        p.x < min_x - eps
             || p.x > max_x + eps
             || p.y < min_y - eps
             || p.y > max_y + eps
             || p.z < stock_bottom - eps
-            || p.z > stock_top + eps;
-        if outside {
-            count += 1;
-            if first_line == 0 {
-                first_line = seg.gcode_line;
-            }
-        }
-    }
+            || p.z > stock_top + eps
+    });
     if count == 0 {
         return;
     }
     let plural = if count == 1 { "" } else { "s" };
-    let where_line = if first_line != 0 {
-        format!(" (first at gcode line {first_line})")
-    } else {
-        String::new()
-    };
+    let where_line = first_line_suffix(first_line);
     warnings.push(PipelineWarning {
         op_id: None,
         kind: "out_of_stock".into(),

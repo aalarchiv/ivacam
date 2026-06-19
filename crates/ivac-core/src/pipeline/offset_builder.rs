@@ -378,24 +378,15 @@ pub(super) fn build_op_offsets(
                     offsets.push(o);
                 }
             }
-            if !tabs_by_object.is_empty() {
-                attach_tabs_to_offsets(&mut offsets, &tabs_by_object, setup.tool.diameter * 1.5);
-            }
-            if effective_op.profile_params().is_some_and(|p| p.overcut) {
-                apply_overcut_to_offsets(&mut offsets, objects, setup.tool.diameter * 0.5);
-            }
-            apply_cut_direction(
+            finalize_offsets(
                 &mut offsets,
+                &tabs_by_object,
                 effective_op,
-                false,
-                setup.tool.spindle_direction,
+                objects,
+                setup,
+                closed,
+                warnings,
             );
-            if let Some(ap) = effective_op.contour_params().and_then(|c| c.approach_point) {
-                crate::cam::offsets::rotate_offsets_to_approach_point(&mut offsets, ap);
-            }
-            push_tool_fit_size_warning(effective_op, setup, closed, &offsets, warnings);
-            drain_offset_diagnostics(effective_op, warnings);
-            drain_trochoidal_incompletes(effective_op, warnings);
             return Ok((offsets, closed));
         }
     }
@@ -689,25 +680,46 @@ pub(super) fn build_op_offsets(
     }
     let _ = emitted_objects;
 
+    finalize_offsets(
+        &mut offsets,
+        &tabs_by_object,
+        effective_op,
+        objects,
+        setup,
+        closed,
+        warnings,
+    );
+    Ok((offsets, closed))
+}
+
+/// Shared tail of `build_op_offsets`: once the per-op cascade has filled
+/// `offsets`, attach tabs, apply overcut + cut direction, rotate to the
+/// approach point, then drain the size / diagnostic / trochoidal
+/// warnings. Both the early-return pocket-combine path and the main
+/// per-object path finish here, so the sequence lives in one place.
+#[allow(clippy::too_many_arguments)]
+fn finalize_offsets(
+    offsets: &mut [PolylineOffset],
+    tabs_by_object: &HashMap<usize, Vec<TabPoint>>,
+    effective_op: &Op,
+    objects: &[VcObject],
+    setup: &Setup,
+    closed: usize,
+    warnings: &mut Vec<PipelineWarning>,
+) {
     if !tabs_by_object.is_empty() {
-        attach_tabs_to_offsets(&mut offsets, &tabs_by_object, setup.tool.diameter * 1.5);
+        attach_tabs_to_offsets(offsets, tabs_by_object, setup.tool.diameter * 1.5);
     }
     if effective_op.profile_params().is_some_and(|p| p.overcut) {
-        apply_overcut_to_offsets(&mut offsets, objects, setup.tool.diameter * 0.5);
+        apply_overcut_to_offsets(offsets, objects, setup.tool.diameter * 0.5);
     }
-    apply_cut_direction(
-        &mut offsets,
-        effective_op,
-        false,
-        setup.tool.spindle_direction,
-    );
+    apply_cut_direction(offsets, effective_op, false, setup.tool.spindle_direction);
     if let Some(ap) = effective_op.contour_params().and_then(|c| c.approach_point) {
-        crate::cam::offsets::rotate_offsets_to_approach_point(&mut offsets, ap);
+        crate::cam::offsets::rotate_offsets_to_approach_point(offsets, ap);
     }
-    push_tool_fit_size_warning(effective_op, setup, closed, &offsets, warnings);
+    push_tool_fit_size_warning(effective_op, setup, closed, offsets, warnings);
     drain_offset_diagnostics(effective_op, warnings);
     drain_trochoidal_incompletes(effective_op, warnings);
-    Ok((offsets, closed))
 }
 
 /// Drain any early-termination events stashed by `pocket_trochoidal`

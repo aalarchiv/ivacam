@@ -79,6 +79,15 @@
     screenMenuOpen = false;
   }
 
+  // Accordion state for the phone 2D "S+L" bottom sheet — which of
+  // Stock / Layers / Text is expanded (null = all collapsed to headers).
+  // Independent of the sidebar's activeSidebarPane so the sheet and the
+  // (legacy) sidebar overlay don't fight over one slot. Defaults to Layers.
+  let slPane = $state<'stock' | 'layers' | 'text' | null>('layers');
+  function toggleSl(p: 'stock' | 'layers' | 'text') {
+    slPane = slPane === p ? null : p;
+  }
+
   /// Quit the app (phone has no window chrome to close it). Prompts to
   /// save when there are unsaved changes, then exits the process.
   async function exitApp() {
@@ -956,17 +965,43 @@
         savedSnap={gcodeSnap}
         onPersistSnap={(s) => workspace.setPanels({ gcode_fold_snap: s })}
       >
-        <div class="sl-sheet">
-          <StockPanel />
-          <LayerList
-            active={true}
-            onActivate={() => {}}
-            onOpenFileClick={() => openFile()}
-            onAddTextClick={() => (addTextOpen = true)}
-            reopenPrompt={sessionUi.reopenPrompt}
-            onReopenAccept={acceptReopen}
-            onReopenDismiss={dismissReopen}
-          />
+        <div class="sl-sheet" data-active={slPane ?? 'none'}>
+          <div class="stock-host" class:active={slPane === 'stock'}>
+            <button
+              type="button"
+              class="group-head"
+              onclick={() => toggleSl('stock')}
+              aria-expanded={slPane === 'stock'}
+              title={slPane === 'stock' ? 'Collapse stock' : 'Expand stock settings'}
+            >
+              <span class="caret">{slPane === 'stock' ? '▾' : '▸'}</span>
+              <span class="stock-name">Stock</span>
+              <span class="stock-dims" title="Stock dimensions (Length × Width × Thickness) in mm">
+                {stockDimsLabel}
+              </span>
+            </button>
+            {#if slPane === 'stock'}
+              <div class="group-body"><StockPanel /></div>
+            {/if}
+          </div>
+          <div class="layers-host" class:active={slPane === 'layers'}>
+            <LayerList
+              active={slPane === 'layers'}
+              onActivate={() => toggleSl('layers')}
+              onOpenFileClick={() => openFile()}
+              onAddTextClick={() => (addTextOpen = true)}
+              reopenPrompt={sessionUi.reopenPrompt}
+              onReopenAccept={acceptReopen}
+              onReopenDismiss={dismissReopen}
+            />
+          </div>
+          <div class="text-list-host" class:active={slPane === 'text'}>
+            <TextList
+              active={slPane === 'text'}
+              onActivate={() => toggleSl('text')}
+              onAddText={() => (addTextOpen = true)}
+            />
+          </div>
         </div>
       </BottomSheet>
     {:else if project.gen.generated}
@@ -1791,20 +1826,26 @@
   .split.narrow.with-ops-sheet {
     padding-bottom: calc(44px + 1.6rem);
   }
-  /* Stock + Layers bottom-sheet body: stack the two panels and scroll the
-     whole thing (the sheet body itself is overflow:hidden at a fixed open
-     height). Each panel must take its NATURAL height — LayerList's root is
-     `overflow:hidden` with no flex-grow, so without this it gets shrunk to
-     ~0 under the taller StockPanel and shows nothing. flex:0 0 auto stops
-     the shrink; the .sl-sheet scrolls instead. */
+  /* Stock + Layers + Text bottom-sheet body: a collapsible accordion (one
+     pane open at a time, or all collapsed to headers). Mirrors the sidebar
+     grid — the open pane takes the 1fr row and scrolls internally; the
+     others are auto-height headers. Reuses the sidebar host/header styles
+     (.stock-host / .group-head / …), which aren't .sidebar-scoped. */
   .sl-sheet {
-    display: flex;
-    flex-direction: column;
+    display: grid;
     height: 100%;
-    overflow-y: auto;
+    min-height: 0;
+    overflow: hidden;
+    grid-template-rows: auto auto auto;
   }
-  .sl-sheet > :global(*) {
-    flex: 0 0 auto;
+  .sl-sheet[data-active='stock'] {
+    grid-template-rows: minmax(0, 1fr) auto auto;
+  }
+  .sl-sheet[data-active='layers'] {
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+  .sl-sheet[data-active='text'] {
+    grid-template-rows: auto auto minmax(0, 1fr);
   }
   .viewport {
     position: relative;

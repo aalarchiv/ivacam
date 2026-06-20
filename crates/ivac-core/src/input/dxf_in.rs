@@ -904,9 +904,30 @@ mod tests {
         root.join(name)
     }
 
+    /// Resolve a corpus fixture, or `None` when the gitignored `refs/`
+    /// scaffolding isn't checked out (e.g. CI). Mirrors the golden_corpus
+    /// smoke test: refs/ is optional dev scaffolding, so a checkout without
+    /// it must skip — not fail. The skip is announced (visible under
+    /// `cargo test -- --nocapture`) so a green run isn't mistaken for real
+    /// coverage of the DXF corpus.
+    fn fixture_or_skip(name: &str) -> Option<PathBuf> {
+        let path = fixture(name);
+        if !path.exists() {
+            eprintln!(
+                "dxf_in: SKIPPED — {} not present (refs/ is optional dev \
+                 scaffolding; clone viaconstructor into refs/ to run this).",
+                path.display()
+            );
+            return None;
+        }
+        Some(path)
+    }
+
     #[test]
     fn imports_simple_dxf() {
-        let path = fixture("simple.dxf");
+        let Some(path) = fixture_or_skip("simple.dxf") else {
+            return;
+        };
         let opts = ImportOptions::default();
         let out = import_dxf_path(&path, &opts).expect("import");
         assert!(!out.segments.is_empty(), "should have segments");
@@ -921,7 +942,9 @@ mod tests {
         // .text_entities (editable metadata) instead of being rendered
         // to opaque polylines. all.dxf contains a single "Via" TEXT
         // entity at the origin.
-        let path = fixture("all.dxf");
+        let Some(path) = fixture_or_skip("all.dxf") else {
+            return;
+        };
         let opts = ImportOptions::default();
         let out = import_dxf_path(&path, &opts).expect("import");
         assert!(

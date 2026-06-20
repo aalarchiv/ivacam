@@ -184,11 +184,13 @@ jobs:
     name: draft pre-release
     needs: build
     runs-on: ubuntu-latest
-    # always() + the tag guard: run after the build matrix concludes even if
-    # one platform (e.g. macOS) failed or was unavailable — the others still
-    # ship. The release stays a DRAFT pre-release for human review before it
-    # goes public.
-    if: always() && startsWith(github.ref, 'refs/tags/v')
+    # !cancelled() + the tag guard: run after the build matrix concludes even
+    # if one platform (e.g. macOS) failed or was unavailable — the others
+    # still ship. NOT always(): always() also fires when the run is *cancelled*,
+    # which once spawned a second draft when a macOS-blocked run was cancelled
+    # mid-flight. !cancelled() ships on partial failure but stays out of the way
+    # on cancellation. The release is a DRAFT pre-release for human review.
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') }}
     permissions:
       contents: write
     steps:

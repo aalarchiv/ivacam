@@ -20,6 +20,6 @@ The bundled license text ships in the repository as `LICENSE`; you also have a c
 
 ### Acknowledgements
 
-- **[viaConstructor](https://github.com/multigcs/viaconstructor)** — a Python CAM tool of similar scope that inspired the idea and the name (besides being a funny acronym for "I vibe-coded a CAM"). ivaCAM is independent, standalone work and uses none of its code.
+- **[viaConstructor](https://github.com/multigcs/viaconstructor)** — a Python CAM tool of similar scope that inspired the idea and the name (besides being a funny acronym for "I vibe-coded a CAM"). ivaCAM ported some calculations, so it may or may not be some kind of derivative work.
 - **Estlcam** — its feature catalogue inspired the CAM primitives ivaCAM implements. No Estlcam code is used; algorithms are implemented from public literature. Estlcam is not free, but it is great software at a reasonable price. Buy it!
 - **The CNC and maker community** — bug reports, test geometries, and the machine quirks that turned synthetic test suites into real shop-floor coverage.

@@ -978,7 +978,7 @@ mod tests {
     #[test]
     fn ray_grid_matches_full_scan_exactly() {
         let mut rng = Lcg(0x0bad_f00d_dead_beef);
-        for trial in 0..60 {
+        for trial in 0u32..60 {
             // A ring of short boundary chords around the origin patch, the
             // shape of a real offset boundary.
             let n = 8 + (trial % 80);
@@ -995,7 +995,7 @@ mod tests {
                 .collect();
             // perp_tol as apply_overcut derives it: 1e-3 × bbox diagonal.
             let perp_tol = (span.hypot(span) * 1e-3).max(1e-3);
-            let all: Vec<u32> = (0..n as u32).collect();
+            let all: Vec<u32> = (0..n).collect();
             let grid = SegmentRayGrid::new(&segs, perp_tol);
 
             let mut cands = Vec::new();

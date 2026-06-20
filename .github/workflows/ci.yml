@@ -41,8 +41,15 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace --all-features
+      # ivac-tauri is excluded from the lint/test matrix: it's the GUI shell,
+      # so compiling it needs the frontend `dist/` (tauri::generate_context!
+      # embeds it) plus the platform WebView dev libs (glib/gtk/webkit on
+      # Linux). That full build is already validated on every tag by
+      # release-desktop.yml on all three OSes — re-doing it here would be
+      # redundant and force a frontend build + apt installs onto this fast
+      # logic gate. Nothing else in the workspace depends on ivac-tauri.
+      - run: cargo clippy --workspace --exclude ivac-tauri --all-targets -- -D warnings
+      - run: cargo test --workspace --exclude ivac-tauri --all-features
       - name: schema drift guard
         run: cargo run -p xtask -- schema-check
 

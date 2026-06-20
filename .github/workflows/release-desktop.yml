@@ -1,10 +1,5 @@
 name: Release desktop bundles
 
-# DORMANT: this repo is local-only (no git remote), so — like ci.yml —
-# this workflow never fires. It's kept ready for when a remote is added;
-# until then no prebuilt binaries are published (see docs/QUICKSTART.md)
-# and AppImages are produced locally via `cargo tauri build`.
-#
 # Triggered on a `v*` tag push (e.g. v0.1.0). Builds Tauri 2 bundles for
 # Linux (.deb / .rpm / AppImage), macOS (.dmg / .app, optionally notarized),
 # and Windows (.msi + NSIS .exe) in parallel, then attaches the artifacts
@@ -27,6 +22,15 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Disable the local-dev sccache wrapper from .cargo/config.toml (not present
+  # on runners — empty string overrides the config and calls rustc directly).
+  RUSTC_WRAPPER: ""
+  # Setting RUSTFLAGS shadows the per-target `-fuse-ld=lld` rustflags in
+  # .cargo/config.toml, so the Linux build doesn't require lld on the runner.
+  # (Unlike ci.yml, this workflow had no RUSTFLAGS, so lld would otherwise
+  # apply.) Dependency warnings are capped by cargo, so -D warnings only gates
+  # our own already-clean crates.
+  RUSTFLAGS: -D warnings
 
 jobs:
   build:

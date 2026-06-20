@@ -1,13 +1,24 @@
 name: CI
 
 on:
+  # CI does not run on every push to main — only when a release tag is
+  # pushed (the same `v*` trigger as release-desktop.yml, so a tag validates
+  # and builds together). Pull requests still run the full suite, and
+  # workflow_dispatch allows on-demand validation of main without tagging.
   push:
-    branches: [main]
+    tags: ["v*"]
   pull_request:
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  # The checked-in .cargo/config.toml sets `rustc-wrapper = "sccache"` as a
+  # local dev speed-up that fails loudly on machines without sccache — i.e.
+  # every CI runner. Empty string overrides the config and calls rustc
+  # directly. (The config's lld linker rustflags are already shadowed by the
+  # RUSTFLAGS above — a set RUSTFLAGS replaces per-target config rustflags.)
+  RUSTC_WRAPPER: ""
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -64,6 +75,16 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 10
+      # `pnpm run build` runs scripts/ensure-wasm-fresh.mjs, which builds the
+      # gitignored crates/ivac-wasm/pkg via wasm-pack. A fresh checkout has no
+      # pkg, so the frontend job needs a Rust toolchain + wasm-pack to produce
+      # it (matches the wasm-pack job's setup). Pinned to rust-toolchain.toml.
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: pnpm install
         run: pnpm install --frozen-lockfile
       - name: codegen drift guard
@@ -88,6 +109,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      # Run natively rather than via EmbarkStudios/cargo-deny-action: that
+      # action runs in a musl container, and our rust-toolchain.toml pins
+      # channel 1.88.0, so rustup tries to use an uninstalled musl toolchain
+      # and `cargo metadata` fails before deny ever runs. On the gnu runner
+      # with the pinned toolchain installed, the override resolves cleanly.
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: taiki-e/install-action@v2
         with:
-          command: check bans licenses sources advisories
+          tool: cargo-deny
+      - run: cargo deny check bans licenses sources advisories

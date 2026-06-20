@@ -4,6 +4,8 @@
 
 Free, open-source CAM for the hobby shop. One self-contained app for desktop and Android — no Python, no install hell — plus an optional self-hosted web service and a fully in-browser (WebAssembly) mode where your drawings never leave your machine.
 
+![preview](./assets/ivaCAM_GH_social.png)
+
 ## Use it
 
 **Just want to cut something?** → [Quickstart](./docs/QUICKSTART.md)

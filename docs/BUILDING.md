@@ -296,7 +296,7 @@ recommendation) so the build is reproducible without re-running `init`.
 Notes / gotchas:
 
 - **versionName ≥ 0.0.1.** Android's manifest merger rejects `0.0.0`, so
-  the manifests carry the real semver (currently `0.0.1`) — see the
+  the manifests carry the real semver (currently `0.2.0`) — see the
   `version` field in `tauri.conf.json` / `Cargo.toml`.
 - **JDK 21** is required by the Gradle plugin; JDK 17 may work but is
   untested here. Expect deprecation warnings (source/target 8) — benign.

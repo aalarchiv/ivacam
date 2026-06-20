@@ -84,6 +84,18 @@ jobs:
             libayatana-appindicator3-dev librsvg2-dev libfreetype6-dev \
             patchelf
 
+      # ── wasm-pack ──
+      # `cargo tauri build` runs the frontend's beforeBuildCommand
+      # (`pnpm build`), which runs scripts/ensure-wasm-fresh.mjs and rebuilds
+      # the gitignored crates/ivac-wasm/pkg via wasm-pack. A fresh checkout
+      # has no pkg, so wasm-pack must be present or the frontend build fails.
+      # Cross-platform prebuilt install (the matrix includes Windows, where
+      # the shell installer used in ci.yml won't run). wasm-pack adds the
+      # wasm32-unknown-unknown target itself.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
       # ── tauri-cli ──
       - name: install tauri-cli
         run: cargo install tauri-cli --version "^2" --locked

@@ -68,7 +68,7 @@
   }> = [
     {
       name: 'cavalier_contours',
-      license: 'MIT',
+      license: 'MIT/Apache-2.0',
       role: 'parallel offsets, polyline boolean ops',
       home: 'https://github.com/jbuckmccready/cavalier_contours',
     },
@@ -76,13 +76,13 @@
       name: 'clipper2-rust',
       license: 'BSL-1.0',
       role: 'pocket cascade + region booleans (pure-Rust Clipper2 port)',
-      home: 'https://github.com/AngusJohnson/Clipper2',
+      home: 'https://github.com/larsbrubaker/clipper2-rust',
     },
     {
       name: 'voronator',
-      license: 'MIT/Apache-2.0',
+      license: 'MIT',
       role: 'Delaunay triangulation for V-Carve medial axis',
-      home: 'https://github.com/lucasmerlin/voronator-rs',
+      home: 'https://github.com/fesoliveira014/voronator-rs',
     },
     {
       name: 'dxf',
@@ -91,10 +91,16 @@
       home: 'https://github.com/IxMilia/dxf-rs',
     },
     {
-      name: 'usvg + ttf-parser',
-      license: 'MPL-2.0',
-      role: 'SVG + font parsing (text-to-paths)',
-      home: 'https://github.com/RazrFalcon/resvg',
+      name: 'usvg',
+      license: 'MIT/Apache-2.0',
+      role: 'SVG parsing (vector import)',
+      home: 'https://github.com/linebender/resvg',
+    },
+    {
+      name: 'ttf-parser',
+      license: 'MIT/Apache-2.0',
+      role: 'TTF/OTF font parsing (text-to-paths)',
+      home: 'https://github.com/harfbuzz/ttf-parser',
     },
     {
       name: 'serde + serde_json',

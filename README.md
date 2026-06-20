@@ -1,6 +1,6 @@
 # ivaCAM
 
-**Turn DXF, SVG and HPGL drawings into G-code for CNC mills, lasers, plasma cutters and drag knives.**
+**Turn DXF and SVG drawings into G-code for CNC mills, lasers, plasma cutters and drag knives.**
 
 Free, open-source CAM for the hobby shop. One self-contained app for desktop and Android — no Python, no install hell — plus an optional self-hosted web service and a fully in-browser (WebAssembly) mode where your drawings never leave your machine.
 
@@ -14,7 +14,7 @@ Free, open-source CAM for the hobby shop. One self-contained app for desktop and
 
 ## What it does
 
-- **Import**: DXF, SVG, HPGL/PLT.
+- **Import**: DXF, SVG.
 - **Operations**: profile, pocket, drill (canned cycles), V-carve, engrave/text, chamfer, thread, dovetail, T-slot — with tabs, lead-in/out, and tool offsets.
 - **Machines**: mill, laser, plasma (pierce + dwell), drag knife — each with its own post-processor.
 - **Preview**: 2D drawing canvas plus a live 3D toolpath and material-removal simulation.

@@ -24,13 +24,12 @@ bd close <id>         # Complete work
 
 ## Session Completion
 
-**This repo is local-only — there is no git remote configured. Skip
-the push step until a remote is added** (`git remote -v` is empty,
-and bd memory `audit-2026-05-22-fitness` confirms "Issues are saved
-locally only"). Do NOT spend cycles trying to push to a remote that
-doesn't exist.
+**This repo now has a git remote** — `origin` →
+`git@github.com:aalarchiv/ivacam.git`. Commits land on `main` locally
+and must be pushed at session end. (Earlier guidance described the repo
+as local-only; that is no longer true now that the remote exists.)
 
-**MANDATORY WORKFLOW (local-only variant):**
+**MANDATORY WORKFLOW:**
 
 1. **File issues for remaining work** — Create bd issues for anything
    that needs follow-up
@@ -40,18 +39,15 @@ doesn't exist.
 4. **Commit locally** — Every logical change should land as its own
    commit on `main`. NEVER stop with uncommitted work in the working
    tree (that's the failure mode ivac-5kcj documented).
-5. **Verify** — `git status` shows clean working tree; `bd list
+5. **Push** — `git pull --rebase && git push` to `origin/main`.
+   Confirm with a fresh `git fetch` that local HEAD == `origin/main`.
+6. **Verify** — `git status` shows clean working tree; `bd list
    --status=in_progress` is empty or accurately reflects active work
-6. **Hand off** — Provide a brief context summary for the next session
-
-**IF A REMOTE IS LATER ADDED:** restore the push step
-(`git pull --rebase && git push`) between steps 4 and 5. Until then,
-treat local commits as authoritative.
+7. **Hand off** — Provide a brief context summary for the next session
 
 ### Pre-release ritual (bb8q)
 
-Since `ci.yml` never fires (no remote, by design), run
-[`scripts/pre-release.sh`](./scripts/pre-release.sh) before tagging a
+Run [`scripts/pre-release.sh`](./scripts/pre-release.sh) before tagging a
 release or handing an AppImage to a tester. It mirrors `ci.yml`
 step-for-step: fmt, clippy `-D warnings`, `cargo test --workspace`,
 xtask schema-check, codegen drift guard, then frontend lint / check /
@@ -60,7 +56,7 @@ those binaries are on `$PATH`. Fail-fast — only ship when every gate
 reports green. This is the local stand-in for CI, not a per-commit
 hook (the routine session-completion "run quality gates" step above
 is the lighter check).
-<!-- END BEADS INTEGRATION (block edited locally — ivac-uqvd; bd init may regenerate, re-apply the no-remote workflow if so) -->
+<!-- END BEADS INTEGRATION (block edited locally — ivac-uqvd; bd init may regenerate, re-apply the push-at-session-end workflow if so) -->
 
 
 ## Build & Test

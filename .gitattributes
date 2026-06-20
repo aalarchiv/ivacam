@@ -1,0 +1,24 @@
+# Normalize line endings to LF on checkout across all platforms.
+#
+# GitHub's Windows runners default to core.autocrlf=true, which would
+# otherwise check text files out as CRLF and trip the generated-file drift
+# guards: xtask schema-check compares serde_yaml's LF output against
+# schema/openapi.yaml, and the frontend codegen guard diffs generated.ts —
+# both fail on a CRLF working tree. Every tracked file is LF today, so this
+# enforces the status quo everywhere rather than rewriting any content.
+* text=auto eol=lf
+
+# Binary assets: never normalize or line-diff.
+*.png   binary
+*.ico   binary
+*.icns  binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ttf   binary
+*.otf   binary
+*.woff  binary
+*.woff2 binary
+*.wasm  binary
+*.pdf   binary

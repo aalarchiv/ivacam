@@ -13,6 +13,7 @@
   import { workspace } from '../state/workspace.svelte';
   import { duplicateProfile, profileFromCurrent } from '../state/machine_profiles';
   import * as fileOps from '../services/file_ops';
+  import { t } from '../i18n';
   import MachineDialog from './MachineDialog.svelte';
   import MachineTooling from './MachineTooling.svelte';
 
@@ -78,80 +79,67 @@
       type="button"
       class="ws-btn"
       onclick={() => void fileOps.loadMachine()}
-      title="Replace the active machine settings with a .ivac-machine.json file.">Load file…</button
+      title={t('machinews.load_file.title')}>{t('machinews.load_file')}</button
     >
     <button
       type="button"
       class="ws-btn"
       onclick={() => void fileOps.saveMachine()}
-      title="Save the machine settings to a .ivac-machine.json file (for sharing across computers)."
-      >Save file…</button
+      title={t('machinews.save_file.title')}>{t('machinews.save_file')}</button
     >
     <span class="ws-sep"></span>
-    <label
-      class="pick"
-      title="The active machine. Switching applies its settings AND its stocked tools to the project in one undoable step. While a machine is active, edits here are saved back into it."
-    >
-      <span>Machine</span>
+    <label class="pick" title={t('machinews.pick.title')}>
+      <span>{t('machinews.machine')}</span>
       <select
         value={activeProfileId ?? ''}
         onchange={(e) => onSelect((e.currentTarget as HTMLSelectElement).value)}
       >
-        <option value="">— project-local (no machine) —</option>
+        <option value="">{t('machinews.project_local')}</option>
         {#each profiles as p (p.id)}
           <option value={p.id}>{p.name}</option>
         {/each}
         {#if activeProfileMissing}
-          <option value={activeProfileId}>Referenced machine (not on this computer)</option>
+          <option value={activeProfileId}>{t('machinews.referenced_missing')}</option>
         {/if}
       </select>
     </label>
-    <button
-      type="button"
-      class="ws-btn"
-      onclick={newMachine}
-      title="Save the current settings + stocked tools as a new machine and make it active."
-      >New</button
+    <button type="button" class="ws-btn" onclick={newMachine} title={t('machinews.new.title')}
+      >{t('machinews.new')}</button
     >
     {#if activeProfileId != null && !activeProfileMissing}
       <button
         type="button"
         class="ws-btn"
         onclick={duplicateMachine}
-        title="Copy this machine (settings + tools) under a new name.">Duplicate</button
+        title={t('machinews.duplicate.title')}>{t('machinews.duplicate')}</button
       >
       <button
         type="button"
         class="ws-btn"
         class:danger={confirmingDelete}
         onclick={deleteMachine}
-        title="Remove this machine from this computer. The project keeps its current settings and tools."
-        >{confirmingDelete ? 'Delete machine?' : 'Delete'}</button
+        title={t('machinews.delete.title')}
+        >{confirmingDelete ? t('machinews.delete.confirm') : t('machinews.delete')}</button
       >
     {/if}
     {#if activeProfileMissing}
-      <span
-        class="ws-note"
-        title="This project references a machine that doesn't exist on this computer. It loaded with its own embedded settings + tools — use New to recreate the machine here."
-        >not on this computer</span
-      >
+      <span class="ws-note" title={t('machinews.missing.title')}>{t('machinews.missing')}</span>
     {/if}
   </div>
-  <nav class="sub-tabs" aria-label="Machine sections">
+  <nav class="sub-tabs" aria-label={t('machinews.sections.aria')}>
     <button
       type="button"
       class="sub-tab"
       class:active={subTab === 'tooling'}
       onclick={() => (subTab = 'tooling')}
-      title="Stock this machine from the shop inventory — what operation dropdowns offer."
-      >Tooling</button
+      title={t('machinews.tooling.title')}>{t('machinews.tooling')}</button
     >
     <button
       type="button"
       class="sub-tab"
       class:active={subTab === 'settings'}
       onclick={() => (subTab = 'settings')}
-      title="Machine configuration — speeds, dialect, dimensions, post-processor.">Settings</button
+      title={t('machinews.settings.title')}>{t('machinews.settings')}</button
     >
   </nav>
   <div class="sub-panel" class:tab-hidden={subTab !== 'tooling'}>

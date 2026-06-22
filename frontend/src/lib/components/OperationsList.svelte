@@ -16,6 +16,7 @@
     pickerHelp,
     type PickerKind,
   } from './OpKindPicker.svelte';
+  import { t } from '../i18n';
 
   interface Props {
     /// Accordion-controlled by the sidebar parent. `active` =
@@ -30,8 +31,8 @@
   let dragOverId = $state<number | null>(null);
 
   function toolName(toolId: number): string {
-    const t = project.data.tools.find((x) => x.id === toolId);
-    return t ? t.name : `tool #${toolId}`;
+    const tool = project.data.tools.find((x) => x.id === toolId);
+    return tool ? tool.name : t('oplist.tool_missing', { id: toolId });
   }
 
   /// Per-render Set lookups for source-id / layer validity. Lifted out
@@ -91,53 +92,49 @@
       return {
         label: '✓',
         tone: 'ok',
-        reason: 'Pause op — emits M0 at this slot. Operator presses Cycle Start to resume.',
+        reason: t('oplist.status.pause'),
       };
     }
     if (op.kind === 'homing') {
       return {
         label: '✓',
         tone: 'ok',
-        reason:
-          'Homing op — emits G28 at this slot. The controller seeks the home switches; no cutter required.',
+        reason: t('oplist.status.homing'),
       };
     }
     if (op.kind === 'probe') {
       return {
         label: '✓',
         tone: 'ok',
-        reason:
-          'Probe op — emits a G38.2 probe move at this slot. Touch probe required at the spindle; no cutter.',
+        reason: t('oplist.status.probe'),
       };
     }
     if (op.kind === 'cycle_marker') {
       return {
         label: '✓',
         tone: 'ok',
-        reason:
-          'Marker op — emits a comment-only `; --- <label> ---` line so pendants / G-code viewers can jump between sections. No motion, no cutter.',
+        reason: t('oplist.status.cycle_marker'),
       };
     }
     if (op.kind === 'gcode_include') {
       return {
         label: '✓',
         tone: 'ok',
-        reason:
-          'G-code include op — splices an external file into the program. The file may carry its own toolchange; no project tool required at this slot.',
+        reason: t('oplist.status.gcode_include'),
       };
     }
-    if (!project.data.tools.find((t) => t.id === op.toolId)) {
+    if (!project.data.tools.find((tool) => tool.id === op.toolId)) {
       return {
         label: '✘',
         tone: 'bad',
-        reason: `Tool #${op.toolId} is not in the project's tool library. Pick a tool in the operation properties.`,
+        reason: t('oplist.status.tool_missing', { id: op.toolId }),
       };
     }
     if (!project.transformedImport) {
       return {
         label: '⚠',
         tone: 'warn',
-        reason: 'No drawing imported yet — open a DXF/SVG to apply this operation.',
+        reason: t('oplist.status.no_drawing'),
       };
     }
     if (op.sourceObjects && op.sourceObjects.length > 0) {
@@ -146,7 +143,7 @@
         return {
           label: '⚠',
           tone: 'warn',
-          reason: `Source includes ${missing.length} object id(s) not present in the current import — they may have come from a different drawing.`,
+          reason: t('oplist.status.orphan_objects', { count: missing.length }),
         };
       }
     }
@@ -156,7 +153,7 @@
         return {
           label: '⚠',
           tone: 'warn',
-          reason: `Source layer(s) "${missing.join(', ')}" not in this drawing.`,
+          reason: t('oplist.status.orphan_layers', { layers: missing.join(', ') }),
         };
       }
     }
@@ -164,15 +161,14 @@
       return {
         label: '⚠',
         tone: 'warn',
-        reason:
-          "Project changed since the last Generate — re-Generate to refresh this operation's G-code.",
+        reason: t('oplist.status.dirty'),
       };
     }
     if (!project.gen.generated) {
       return {
         label: '·',
         tone: 'warn',
-        reason: "Not generated yet — click Generate to produce this operation's G-code.",
+        reason: t('oplist.status.not_generated'),
       };
     }
     const opWarnings = (project.gen.generated.warnings ?? []).filter((w) => w.op_id === op.id);
@@ -183,7 +179,7 @@
       const reason = opWarnings.map((w) => w.message).join('\n');
       return bad ? { label: '✘', tone: 'bad', reason } : { label: '⚠', tone: 'warn', reason };
     }
-    return { label: '✓', tone: 'ok', reason: 'Up to date with the last Generate.' };
+    return { label: '✓', tone: 'ok', reason: t('oplist.status.up_to_date') };
   }
 
   /// True when this op has at least one warning that's listed in
@@ -343,13 +339,14 @@
         e.stopPropagation();
         onActivate();
       }}
-      title={active ? 'Collapse operations (return to previous panel)' : 'Expand operations panel'}
-      aria-label={active ? 'Collapse operations panel' : 'Activate operations panel'}
+      title={active ? t('oplist.collapse.title') : t('oplist.expand.title')}
+      aria-label={active ? t('oplist.collapse.aria') : t('oplist.activate.aria')}
     >
       {active ? '▾' : '▸'}
     </button>
-    <span class="group-name">Operations</span>
-    <span class="group-count" title="Number of operations">{project.data.operations.length}</span>
+    <span class="group-name">{t('oplist.title')}</span>
+    <span class="group-count" title={t('oplist.count.title')}>{project.data.operations.length}</span
+    >
     <button
       class="add-btn"
       onclick={(e) => {
@@ -357,8 +354,8 @@
         if (!active) onActivate();
         pickerOpen = !pickerOpen;
       }}
-      title="Add operation"
-      aria-label="Add operation"
+      title={t('oplist.add.title')}
+      aria-label={t('oplist.add.aria')}
     >
       +
     </button>
@@ -376,27 +373,22 @@
            consecutive same-tool ops so a T1/T2/T1 program emits one
            tool change instead of two. Pin individual ops (in the op
            panel) to lock a stability-critical order. -->
-      <label
-        class="group-by-tool"
-        title="Reorder operations so same-tool work runs back-to-back, cutting the number of tool changes (a T1/T2/T1 program becomes T1, T1, T2). Matters most on manual machines, where each swap is minutes + a re-probe. Program-only ops and ops with 'Pin order' set stay put. Off = the order shown here."
-      >
+      <label class="group-by-tool" title={t('oplist.group_by_tool.title')}>
         <input
           type="checkbox"
           checked={project.data.groupOpsByTool}
           onchange={(e) => project.setGroupOpsByTool((e.currentTarget as HTMLInputElement).checked)}
         />
-        Group ops by tool
+        {t('oplist.group_by_tool')}
       </label>
     {/if}
 
     {#if project.data.operations.length === 0}
       <div class="empty-card">
-        <p class="empty-title">No operations yet</p>
-        <p class="empty-sub">
-          An operation tells the machine how to cut a region — pocket, contour, drill, engrave.
-        </p>
+        <p class="empty-title">{t('oplist.empty.title')}</p>
+        <p class="empty-sub">{t('oplist.empty.sub')}</p>
         <button class="primary-cta" type="button" onclick={() => (pickerOpen = true)}>
-          + Add operation
+          {t('oplist.empty.cta')}
         </button>
       </div>
     {:else}
@@ -430,7 +422,7 @@
                 draggable="true"
                 ondragstart={(e) => onDragStart(e, op.id)}
                 ondragend={onDragEnd}
-                title="Drag to reorder · Alt+Up / Alt+Down with the row focused does the same from the keyboard"
+                title={t('oplist.grip.title')}
                 aria-hidden="true">⋮⋮</span
               >
               <input
@@ -467,8 +459,8 @@
                   type="button"
                   class="status {status.tone} status-btn"
                   use:longpressTooltip
-                  title={`${status.reason}\n\n(click to show in the warnings panel)`}
-                  aria-label={`Show warnings for ${op.name} in the warnings panel`}
+                  title={t('oplist.status_btn.title', { reason: status.reason })}
+                  aria-label={t('oplist.status_btn.aria', { name: op.name })}
                   onclick={(e) => {
                     e.stopPropagation();
                     warningFocus.focus(op.id);
@@ -486,11 +478,16 @@
                     repickFromSelection(op.id);
                   }}
                   title={project.sel.selectedObjects.size === 0
-                    ? `Source references ${orphans.objectIds.length} object id(s)${orphans.layers.length ? ` + ${orphans.layers.length} layer(s)` : ''} that no longer exist. Select objects on the canvas, then click Re-pick to attach them to this op.`
-                    : `Replace this op's source with the ${project.sel.selectedObjects.size} currently-selected object${project.sel.selectedObjects.size === 1 ? '' : 's'}.`}
-                  aria-label={`Re-pick source for operation ${op.name}`}
+                    ? t('oplist.repick.title_empty', {
+                        objects: orphans.objectIds.length,
+                        layers: orphans.layers.length
+                          ? t('oplist.repick.layers_suffix', { count: orphans.layers.length })
+                          : '',
+                      })
+                    : t('oplist.repick.title_ready', { count: project.sel.selectedObjects.size })}
+                  aria-label={t('oplist.repick.aria', { name: op.name })}
                 >
-                  Re-pick
+                  {t('oplist.repick')}
                 </button>
               {/if}
               <button
@@ -500,8 +497,8 @@
                   e.stopPropagation();
                   project.duplicateOperation(op.id);
                 }}
-                title="Duplicate"
-                aria-label={`Duplicate operation ${op.name}`}>⎘</button
+                title={t('oplist.duplicate.title')}
+                aria-label={t('oplist.duplicate.aria', { name: op.name })}>⎘</button
               >
               <button
                 class="del"
@@ -510,8 +507,8 @@
                   e.stopPropagation();
                   project.removeOperation(op.id);
                 }}
-                title="Delete operation"
-                aria-label={`Delete operation ${op.name}`}>×</button
+                title={t('oplist.delete.title')}
+                aria-label={t('oplist.delete.aria', { name: op.name })}>×</button
               >
             </div>
             {#if selected}

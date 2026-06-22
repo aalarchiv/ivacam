@@ -11,6 +11,7 @@
     type HolderShape,
   } from '../state/project.svelte';
   import { untrack } from 'svelte';
+  import { t } from '../i18n';
   import Modal from './Modal.svelte';
   import { DialogDraft } from './dialog-draft.svelte';
   import * as fileOps from '../services/file_ops';
@@ -481,18 +482,18 @@
   // dialog, the disabled-reason tooltips, and any other UI surface that
   // names a tool kind read from the same source.
   const kindLabels = KIND_DISPLAY_LABELS;
-  const coolantLabels: Record<CoolantMode, string> = {
-    off: 'Off',
-    mist: 'Mist',
-    flood: 'Flood',
+  const coolantLabels: Record<CoolantMode, () => string> = {
+    off: () => t('tools.coolant.off'),
+    mist: () => t('tools.coolant.mist'),
+    flood: () => t('tools.coolant.flood'),
   };
   const kindOptions = Object.keys(kindLabels) as ToolKind[];
   const coolantOptions = Object.keys(coolantLabels) as CoolantMode[];
-  const holderKindLabels: Record<HolderKind, string> = {
-    none: 'None',
-    cylinder: 'Cylinder',
-    cone: 'Cone',
-    stepped: 'Stepped',
+  const holderKindLabels: Record<HolderKind, () => string> = {
+    none: () => t('tools.holder.kind.none'),
+    cylinder: () => t('tools.holder.kind.cylinder'),
+    cone: () => t('tools.holder.kind.cone'),
+    stepped: () => t('tools.holder.kind.stepped'),
   };
   const holderKindOptions: HolderKind[] = ['none', 'cylinder', 'cone', 'stepped'];
 </script>
@@ -500,8 +501,8 @@
 {#snippet shell()}
   {#if !embedded}
     <header>
-      <h2 id="tools-title">Tool library</h2>
-      <button class="dlg-close" onclick={close} aria-label="Close">×</button>
+      <h2 id="tools-title">{t('tools.title')}</h2>
+      <button class="dlg-close" onclick={close} aria-label={t('common.close')}>×</button>
     </header>
   {/if}
   <!-- Header-attached filters: text search + kind + machine
@@ -518,8 +519,8 @@
         else await fileOps.saveToolset();
       }}
       title={isInventory
-        ? 'Export the shop inventory (as shown, including unapplied edits) to a .ivac-toolset.json file.'
-        : 'Save the current tool library to a .ivac-toolset.json file.'}>Save…</button
+        ? t('tools.file.save.inventory.title')
+        : t('tools.file.save.project.title')}>{t('common.save_ellipsis')}</button
     >
     <button
       type="button"
@@ -534,9 +535,8 @@
         }
       }}
       title={isInventory
-        ? 'Replace the shop inventory with the contents of a .ivac-toolset.json file (takes effect on Apply).'
-        : 'Replace the current tools with the contents of a .ivac-toolset.json file.'}
-      >Load (replace)…</button
+        ? t('tools.file.load_replace.inventory.title')
+        : t('tools.file.load_replace.project.title')}>{t('tools.file.load_replace')}</button
     >
     <button
       type="button"
@@ -550,24 +550,23 @@
           dd.draft = project.data.tools.map((t) => ({ ...t }));
         }
       }}
-      title="Add tools from a .ivac-toolset.json file. Tools whose name already exists are skipped."
-      >Load (add)…</button
+      title={t('tools.file.load_add.title')}>{t('tools.file.load_add')}</button
     >
   </div>
   <div class="table-filters">
     <input
       type="text"
       class="tc-search"
-      placeholder="Search tools…"
+      placeholder={t('tools.search.placeholder')}
       value={view.query}
       oninput={(e) => {
         view.query = (e.currentTarget as HTMLInputElement).value;
         page = 0;
       }}
-      title="Filter by name, comment, or kind."
+      title={t('tools.search.title')}
     />
     <label class="tc-filter">
-      <span>Kind</span>
+      <span>{t('tools.filter.kind')}</span>
       <select
         value={view.kind}
         onchange={(e) => {
@@ -575,14 +574,14 @@
           page = 0;
         }}
       >
-        <option value="">all</option>
+        <option value="">{t('tools.filter.all')}</option>
         {#each kindOptions as k (k)}
           <option value={k}>{kindLabels[k]}</option>
         {/each}
       </select>
     </label>
-    <label class="tc-filter" title="Show only tools that can run on this machine type.">
-      <span>Runs on</span>
+    <label class="tc-filter" title={t('tools.filter.runs_on.title')}>
+      <span>{t('tools.filter.runs_on')}</span>
       <select
         value={view.mode}
         onchange={(e) => {
@@ -590,20 +589,24 @@
           page = 0;
         }}
       >
-        <option value="">any machine</option>
-        <option value="mill">mill</option>
-        <option value="laser">laser</option>
-        <option value="drag">drag-knife</option>
-        <option value="plasma">plasma</option>
+        <option value="">{t('tools.filter.runs_on.any')}</option>
+        <option value="mill">{t('tools.filter.runs_on.mill')}</option>
+        <option value="laser">{t('tools.filter.runs_on.laser')}</option>
+        <option value="drag">{t('tools.filter.runs_on.drag')}</option>
+        <option value="plasma">{t('tools.filter.runs_on.plasma')}</option>
       </select>
     </label>
     {#if filtersActive}
-      <button type="button" class="tc-clear" onclick={clearFilters}>Clear</button>
+      <button type="button" class="tc-clear" onclick={clearFilters}
+        >{t('tools.filter.clear')}</button
+      >
     {/if}
     <span class="tc-count"
       >{paged.total === draft.length
-        ? `${draft.length} ${draft.length === 1 ? 'tool' : 'tools'}`
-        : `${paged.total} of ${draft.length} tools`}</span
+        ? draft.length === 1
+          ? t('tools.count.one', { count: draft.length })
+          : t('tools.count.many', { count: draft.length })
+        : t('tools.count.filtered', { shown: paged.total, total: draft.length })}</span
     >
   </div>
   <div class="body" bind:this={bodyEl}>
@@ -613,56 +616,64 @@
           class="sort-h"
           type="button"
           onclick={() => setSort('id')}
-          title="Sort by tool number">#{sortArrow('id')}</button
+          title={t('tools.col.id.title')}>#{sortArrow('id')}</button
         >
-        <button class="sort-h" type="button" onclick={() => setSort('name')} title="Sort by name"
-          >Name{sortArrow('name')}</button
+        <button
+          class="sort-h"
+          type="button"
+          onclick={() => setSort('name')}
+          title={t('tools.col.name.title')}>{t('tools.col.name')}{sortArrow('name')}</button
         >
-        <button class="sort-h" type="button" onclick={() => setSort('kind')} title="Sort by kind"
-          >Kind{sortArrow('kind')}</button
+        <button
+          class="sort-h"
+          type="button"
+          onclick={() => setSort('kind')}
+          title={t('tools.col.kind.title')}>{t('tools.col.kind')}{sortArrow('kind')}</button
         >
         <button
           class="sort-h"
           type="button"
           onclick={() => setSort('diameter')}
-          title="Sort by diameter">⌀ <span class="unit-hdr">mm</span>{sortArrow('diameter')}</button
+          title={t('tools.col.diameter.title')}
+          >⌀ <span class="unit-hdr">mm</span>{sortArrow('diameter')}</button
         >
-        <span>tip ⌀ <span class="unit-hdr">mm</span></span>
-        <span title="Full apex angle for V-bits / engravers — drives V-Carve depth."
-          >tip ∠ <span class="unit-hdr">°</span></span
+        <span>{t('tools.col.tip_diameter')} <span class="unit-hdr">mm</span></span>
+        <span title={t('tools.col.tip_angle.title')}
+          >{t('tools.col.tip_angle')} <span class="unit-hdr">°</span></span
         >
         <button
           class="sort-h"
           type="button"
           onclick={() => setSort('flutes')}
-          title="Sort by flute count">flutes{sortArrow('flutes')}</button
+          title={t('tools.col.flutes.title')}>{t('tools.col.flutes')}{sortArrow('flutes')}</button
         >
         <button
           class="sort-h"
           type="button"
           onclick={() => setSort('speed')}
-          title="Sort by spindle speed"
-          >speed <span class="unit-hdr">RPM</span>{sortArrow('speed')}</button
+          title={t('tools.col.speed.title')}
+          >{t('tools.col.speed')} <span class="unit-hdr">RPM</span>{sortArrow('speed')}</button
         >
         <button
           class="sort-h"
           type="button"
           onclick={() => setSort('feedRate')}
-          title="Sort by feed rate"
-          >feed <span class="unit-hdr">mm/min</span>{sortArrow('feedRate')}</button
+          title={t('tools.col.feed.title')}
+          >{t('tools.col.feed')} <span class="unit-hdr">mm/min</span>{sortArrow('feedRate')}</button
         >
         <button
           class="sort-h"
           type="button"
           onclick={() => setSort('plungeRate')}
-          title="Sort by plunge rate"
-          >plunge <span class="unit-hdr">mm/min</span>{sortArrow('plungeRate')}</button
+          title={t('tools.col.plunge.title')}
+          >{t('tools.col.plunge')} <span class="unit-hdr">mm/min</span>{sortArrow(
+            'plungeRate',
+          )}</button
         >
-        <span
-          title="Default Z step (depth-per-pass) for operations using this tool. Negative number, mm. Empty = no default — every operation must set its own."
-          >dflt step <span class="unit-hdr">mm</span></span
+        <span title={t('tools.col.dflt_step.title')}
+          >{t('tools.col.dflt_step')} <span class="unit-hdr">mm</span></span
         >
-        <span>coolant</span>
+        <span>{t('tools.col.coolant')}</span>
         <span></span>
       </div>
       {#each paged.rows as { tool, i } (tool.id)}
@@ -673,9 +684,11 @@
               type="button"
               aria-expanded={expanded.has(tool.id)}
               aria-label={expanded.has(tool.id)
-                ? `Collapse holder section for tool ${tool.id}`
-                : `Expand holder section for tool ${tool.id}`}
-              title={expanded.has(tool.id) ? 'Collapse holder section' : 'Expand holder section'}
+                ? t('tools.row.expand.collapse.aria', { id: tool.id })
+                : t('tools.row.expand.expand.aria', { id: tool.id })}
+              title={expanded.has(tool.id)
+                ? t('tools.row.expand.collapse.title')
+                : t('tools.row.expand.expand.title')}
               onclick={() => toggleExpanded(tool.id)}
               >{expanded.has(tool.id) ? '▾' : '▸'} {tool.id}</button
             >
@@ -684,7 +697,7 @@
             type="text"
             value={tool.name}
             placeholder={suggestToolName(tool)}
-            title="Tool name. Leave empty (or keep the proposal) and it follows the settings automatically — type your own to pin it."
+            title={t('tools.row.name.title')}
             oninput={(e) => updateField(i, 'name', (e.currentTarget as HTMLInputElement).value)}
           />
           <select
@@ -702,9 +715,7 @@
             min="0.01"
             value={tool.diameter}
             class:invalid={diameterInvalid(tool)}
-            title={diameterInvalid(tool)
-              ? 'Tool ⌀ must be greater than 0 mm — zero / negative values produce no toolpath.'
-              : ''}
+            title={diameterInvalid(tool) ? t('tools.row.diameter.invalid.title') : ''}
             onchange={(e) =>
               updateField(
                 i,
@@ -717,13 +728,13 @@
             step="0.05"
             min="0"
             value={tool.tipDiameter ?? ''}
-            placeholder={fieldApplies('tipDiameter', tool.kind) ? '—' : 'n/a'}
+            placeholder={fieldApplies('tipDiameter', tool.kind) ? '—' : t('tools.field.na')}
             disabled={!fieldApplies('tipDiameter', tool.kind)}
             class:invalid={tool.tipDiameter !== undefined && tool.tipDiameter < 0}
             title={!fieldApplies('tipDiameter', tool.kind)
               ? fieldDisabledReason('tipDiameter', tool.kind)
               : tool.tipDiameter !== undefined && tool.tipDiameter < 0
-                ? 'Tip ⌀ must be ≥ 0 mm — the V-Carve depth math (z = -(r - tip_r) / tan(angle / 2)) silently clamps negative values to 0, hiding the typo.'
+                ? t('tools.row.tip_diameter.invalid.title')
                 : ''}
             onchange={(e) => {
               // Reject negative tip ⌀ — Rust setup_resolver.rs:669
@@ -746,10 +757,10 @@
             min="1"
             max="179"
             value={tool.tipAngleDeg ?? ''}
-            placeholder={fieldApplies('tipAngleDeg', tool.kind) ? '60' : 'n/a'}
+            placeholder={fieldApplies('tipAngleDeg', tool.kind) ? '60' : t('tools.field.na')}
             disabled={!fieldApplies('tipAngleDeg', tool.kind)}
             title={fieldApplies('tipAngleDeg', tool.kind)
-              ? 'Full apex angle of the V cone in degrees. Drives V-Carve depth (z = -(r - tip_r) / tan(angle / 2)) and Chamfer width. Common values: 30°, 45°, 60°, 90°.'
+              ? t('tools.row.tip_angle.title')
               : fieldDisabledReason('tipAngleDeg', tool.kind)}
             onchange={(e) => {
               const v = (e.currentTarget as HTMLInputElement).value;
@@ -782,7 +793,7 @@
             title={!fieldApplies('speed', tool.kind)
               ? fieldDisabledReason('speed', tool.kind)
               : speedInvalid(tool)
-                ? 'Spindle speed must be ≥ 1 RPM — zero / negative values emit no S word and the controller may refuse.'
+                ? t('tools.row.speed.invalid.title')
                 : ''}
             onchange={(e) =>
               updateField(
@@ -798,9 +809,9 @@
             value={tool.feedRate}
             class:invalid={feedInvalid(tool)}
             title={feedInvalid(tool)
-              ? 'Feed rate must be ≥ 1 mm/min — zero / negative values emit no F word and the controller stalls.'
+              ? t('tools.row.feed.invalid.title')
               : tool.kind === 'drill'
-                ? 'For drill, this is the plunge feed.'
+                ? t('tools.row.feed.drill.title')
                 : ''}
             onchange={(e) =>
               updateField(
@@ -819,7 +830,7 @@
             title={!fieldApplies('plunge', tool.kind)
               ? fieldDisabledReason('plunge', tool.kind)
               : plungeInvalid(tool)
-                ? 'Plunge rate must be ≥ 1 mm/min — zero / negative values cause the controller to refuse the move.'
+                ? t('tools.row.plunge.invalid.title')
                 : ''}
             onchange={(e) =>
               updateField(
@@ -833,12 +844,12 @@
             step="0.05"
             max="0"
             value={tool.defaultStep ?? ''}
-            placeholder={fieldApplies('defaultStep', tool.kind) ? '—' : 'n/a'}
+            placeholder={fieldApplies('defaultStep', tool.kind) ? '—' : t('tools.field.na')}
             disabled={!fieldApplies('defaultStep', tool.kind)}
             title={fieldApplies('defaultStep', tool.kind)
               ? tool.defaultStep !== undefined && tool.defaultStep >= 0
-                ? 'Default step must be NEGATIVE (mm down per pass) — values ≥ 0 are ignored and treated as unset.'
-                : "Operations using this tool inherit this when they don't specify their own. Negative number, mm."
+                ? t('tools.row.dflt_step.invalid.title')
+                : t('tools.row.dflt_step.title')
               : fieldDisabledReason('defaultStep', tool.kind)}
             class:invalid={tool.defaultStep !== undefined && tool.defaultStep >= 0}
             onchange={(e) => {
@@ -861,26 +872,24 @@
               )}
           >
             {#each coolantOptions as c (c)}
-              <option value={c}>{coolantLabels[c]}</option>
+              <option value={c}>{coolantLabels[c]()}</option>
             {/each}
           </select>
           <button
             class="del"
             onclick={() => removeAt(i)}
             disabled={draft.length <= 1}
-            title={draft.length <= 1 ? 'At least one tool must remain' : 'Delete tool'}
+            title={draft.length <= 1 ? t('tools.row.delete.disabled') : t('tools.row.delete.title')}
             aria-label={draft.length <= 1
-              ? 'At least one tool must remain'
-              : `Delete tool ${tool.name}`}>×</button
+              ? t('tools.row.delete.disabled')
+              : t('tools.row.delete.aria', { name: tool.name })}>×</button
           >
         </div>
         {#if expanded.has(tool.id)}
           <div class="holder-panel">
             <div class="holder-row">
-              <span
-                class="holder-label"
-                title="Machine modes this tool kind can physically run on — a machine stocks only compatible tools."
-                >Runs on</span
+              <span class="holder-label" title={t('tools.holder.runs_on.title')}
+                >{t('tools.holder.runs_on')}</span
               >
               {#each TOOL_COMPATIBLE_MODES[tool.kind] as m (m)}
                 <span class="cap-chip">{MACHINE_MODE_NOUN[m]}</span>
@@ -888,14 +897,14 @@
             </div>
             <div class="holder-row">
               <label>
-                <span>Flute length (mm)</span>
+                <span>{t('tools.holder.flute_length')}</span>
                 <input
                   type="number"
                   step="0.5"
                   min="0"
                   placeholder="—"
                   value={tool.fluteLengthMm ?? ''}
-                  title="Length of the cutting flutes from the tip up. Sets the height above the tip where the shank starts. Empty = treat the entire tool as cutting (no holder check)."
+                  title={t('tools.holder.flute_length.title')}
                   onchange={(e) => {
                     const v = (e.currentTarget as HTMLInputElement).value;
                     updateField(i, 'fluteLengthMm', v === '' ? undefined : parseFloat(v));
@@ -903,14 +912,14 @@
                 />
               </label>
               <label>
-                <span>Overall length (mm)</span>
+                <span>{t('tools.holder.overall_length')}</span>
                 <input
                   type="number"
                   step="0.5"
                   min="0"
                   placeholder="—"
                   value={tool.lengthMm ?? ''}
-                  title="Overall / usable tool length (mm), tip to where the shank enters the collet. Display + 3D-preview only — it does NOT change the G-code (reach is driven by flute length + stickout + holder). Sets the preview tool's total height. Empty = diameter-derived heuristic."
+                  title={t('tools.holder.overall_length.title')}
                   onchange={(e) => {
                     const v = (e.currentTarget as HTMLInputElement).value;
                     updateField(i, 'lengthMm', v === '' ? undefined : parseFloat(v));
@@ -918,14 +927,14 @@
                 />
               </label>
               <label>
-                <span>Shank ⌀ (mm)</span>
+                <span>{t('tools.holder.shank_diameter')}</span>
                 <input
                   type="number"
                   step="0.1"
                   min="0"
-                  placeholder="= cutting ⌀"
+                  placeholder={t('tools.holder.shank_diameter.placeholder')}
                   value={tool.shankDiameterMm ?? ''}
-                  title="Shank diameter above the cutting flutes. Empty = same as the cutting diameter (parallel-shank bit)."
+                  title={t('tools.holder.shank_diameter.title')}
                   onchange={(e) => {
                     const v = (e.currentTarget as HTMLInputElement).value;
                     updateField(i, 'shankDiameterMm', v === '' ? undefined : parseFloat(v));
@@ -933,14 +942,14 @@
                 />
               </label>
               <label>
-                <span>Stickout (mm)</span>
+                <span>{t('tools.holder.stickout')}</span>
                 <input
                   type="number"
                   step="0.5"
                   min="0"
                   placeholder="—"
                   value={tool.stickoutLengthMm ?? ''}
-                  title="Free shank length between the top of the cutting flutes and the bottom of the holder/collet (mm). Models reach-extension tooling where the collet doesn't grip right above the flutes. Empty / 0 = legacy behavior (collet sits directly on flutes)."
+                  title={t('tools.holder.stickout.title')}
                   onchange={(e) => {
                     const v = (e.currentTarget as HTMLInputElement).value;
                     updateField(i, 'stickoutLengthMm', v === '' ? undefined : parseFloat(v));
@@ -948,9 +957,9 @@
                 />
               </label>
               <label>
-                <span>Preset</span>
+                <span>{t('tools.holder.preset')}</span>
                 <select
-                  title="Apply common ER-style holder presets — fills in flute length, shank, and holder fields with conservative ballpark values."
+                  title={t('tools.holder.preset.title')}
                   onchange={(e) => {
                     const sel = e.currentTarget as HTMLSelectElement;
                     if (sel.value) {
@@ -959,7 +968,7 @@
                     }
                   }}
                 >
-                  <option value="">Apply…</option>
+                  <option value="">{t('tools.holder.preset.apply')}</option>
                   {#each presets as p (p.label)}
                     <option value={p.label}>{p.label}</option>
                   {/each}
@@ -967,7 +976,7 @@
               </label>
             </div>
             <div class="holder-row">
-              <span class="holder-label">Holder</span>
+              <span class="holder-label">{t('tools.holder.label')}</span>
               {#each holderKindOptions as k (k)}
                 <label class="radio">
                   <input
@@ -977,14 +986,14 @@
                     checked={holderKind(tool) === k}
                     onchange={() => setHolderKind(i, k)}
                   />
-                  <span>{holderKindLabels[k]}</span>
+                  <span>{holderKindLabels[k]()}</span>
                 </label>
               {/each}
             </div>
             {#if tool.holder?.kind === 'cylinder'}
               <div class="holder-row">
                 <label>
-                  <span>⌀ (mm)</span>
+                  <span>{t('tools.holder.cyl.diameter')}</span>
                   <input
                     type="number"
                     step="0.5"
@@ -999,7 +1008,7 @@
                   />
                 </label>
                 <label>
-                  <span>Length (mm)</span>
+                  <span>{t('tools.holder.length')}</span>
                   <input
                     type="number"
                     step="0.5"
@@ -1017,7 +1026,7 @@
             {:else if tool.holder?.kind === 'cone'}
               <div class="holder-row">
                 <label>
-                  <span>Bottom ⌀ (mm)</span>
+                  <span>{t('tools.holder.cone.bottom_diameter')}</span>
                   <input
                     type="number"
                     step="0.5"
@@ -1032,7 +1041,7 @@
                   />
                 </label>
                 <label>
-                  <span>Top ⌀ (mm)</span>
+                  <span>{t('tools.holder.cone.top_diameter')}</span>
                   <input
                     type="number"
                     step="0.5"
@@ -1047,7 +1056,7 @@
                   />
                 </label>
                 <label>
-                  <span>Length (mm)</span>
+                  <span>{t('tools.holder.length')}</span>
                   <input
                     type="number"
                     step="0.5"
@@ -1065,7 +1074,7 @@
             {:else if tool.holder?.kind === 'stepped'}
               <div class="holder-row">
                 <label>
-                  <span>Cyl ⌀ (mm)</span>
+                  <span>{t('tools.holder.stepped.cyl_diameter')}</span>
                   <input
                     type="number"
                     step="0.5"
@@ -1080,7 +1089,7 @@
                   />
                 </label>
                 <label>
-                  <span>Cyl length (mm)</span>
+                  <span>{t('tools.holder.stepped.cyl_length')}</span>
                   <input
                     type="number"
                     step="0.5"
@@ -1095,7 +1104,7 @@
                   />
                 </label>
                 <label>
-                  <span>Cone top ⌀ (mm)</span>
+                  <span>{t('tools.holder.stepped.cone_top_diameter')}</span>
                   <input
                     type="number"
                     step="0.5"
@@ -1110,7 +1119,7 @@
                   />
                 </label>
                 <label>
-                  <span>Cone length (mm)</span>
+                  <span>{t('tools.holder.stepped.cone_length')}</span>
                   <input
                     type="number"
                     step="0.5"
@@ -1127,15 +1136,13 @@
               </div>
             {/if}
             <div class="holder-row pass-overrides">
-              <span
-                class="holder-label"
-                title="Per-tool overrides for the wall-defining (finish) pass of a Pocket op and for Drill ops. Empty = inherit the main speed/feed/plunge values."
-                >Pass overrides</span
+              <span class="holder-label" title={t('tools.pass_overrides.title')}
+                >{t('tools.pass_overrides')}</span
               >
             </div>
             <div class="holder-row">
               <label>
-                <span>Finish RPM</span>
+                <span>{t('tools.finish.rpm')}</span>
                 <input
                   type="number"
                   step="500"
@@ -1149,7 +1156,7 @@
                 />
               </label>
               <label>
-                <span>Finish feed (mm/min)</span>
+                <span>{t('tools.finish.feed')}</span>
                 <input
                   type="number"
                   step="50"
@@ -1163,7 +1170,7 @@
                 />
               </label>
               <label>
-                <span>Finish plunge (mm/min)</span>
+                <span>{t('tools.finish.plunge')}</span>
                 <input
                   type="number"
                   step="50"
@@ -1179,7 +1186,7 @@
             </div>
             <div class="holder-row">
               <label>
-                <span>Drill RPM</span>
+                <span>{t('tools.drill.rpm')}</span>
                 <input
                   type="number"
                   step="500"
@@ -1193,7 +1200,7 @@
                 />
               </label>
               <label>
-                <span>Drill feed (mm/min)</span>
+                <span>{t('tools.drill.feed')}</span>
                 <input
                   type="number"
                   step="50"
@@ -1207,7 +1214,7 @@
                 />
               </label>
               <label>
-                <span>Drill plunge (mm/min)</span>
+                <span>{t('tools.drill.plunge')}</span>
                 <input
                   type="number"
                   step="50"
@@ -1221,14 +1228,14 @@
                 />
               </label>
               <label>
-                <span>Default peck (mm)</span>
+                <span>{t('tools.drill.peck')}</span>
                 <input
                   type="number"
                   step="0.1"
                   min="0"
                   placeholder="—"
                   value={tool.defaultPeckStepMm ?? ''}
-                  title="Default peck step for Peck / ChipBreak drill cycles whose op leaves peck_step_mm at 0. Empty = the op must specify its own."
+                  title={t('tools.drill.peck.title')}
                   onchange={(e) => {
                     const v = (e.currentTarget as HTMLInputElement).value;
                     updateField(i, 'defaultPeckStepMm', v === '' ? undefined : parseFloat(v));
@@ -1236,7 +1243,7 @@
                 />
               </label>
               <label>
-                <span>Default XY overlap (0..1)</span>
+                <span>{t('tools.drill.xy_overlap')}</span>
                 <input
                   type="number"
                   step="0.05"
@@ -1244,7 +1251,7 @@
                   max="0.95"
                   placeholder="0.5"
                   value={tool.defaultXyOverlap ?? ''}
-                  title="Per-tool default XY overlap for pocket / cascade ops (dr5). Empty = fall through to the global 0.5. Clamped to 0.05–0.95 at generate time."
+                  title={t('tools.drill.xy_overlap.title')}
                   onchange={(e) => {
                     const v = (e.currentTarget as HTMLInputElement).value;
                     if (v === '') {
@@ -1259,12 +1266,12 @@
             </div>
             <div class="holder-row">
               <label class="comment-row">
-                <span>Comment</span>
+                <span>{t('tools.comment')}</span>
                 <textarea
                   rows="2"
                   value={tool.comment ?? ''}
-                  placeholder="Notes about this tool — material, vendor, sharpening date, etc. Appears as the tooltip on the tool dropdown in op properties."
-                  title="Free-text description. Doesn't affect any pipeline output."
+                  placeholder={t('tools.comment.placeholder')}
+                  title={t('tools.comment.title')}
                   onchange={(e) => {
                     const v = (e.currentTarget as HTMLTextAreaElement).value;
                     updateField(i, 'comment', v === '' ? undefined : v);
@@ -1274,13 +1281,13 @@
             </div>
             <div class="holder-row">
               <label>
-                <span>Z shift (mm)</span>
+                <span>{t('tools.z_shift')}</span>
                 <input
                   type="number"
                   step="0.01"
                   placeholder="—"
                   value={tool.zShiftMm ?? ''}
-                  title="Per-tool Z origin offset. For machines without auto tool-length probing. Pre-measure each tool's tip Z relative to a reference and record the delta. Positive = sticks out further; negative = shorter. A G92 Z<shift> line is emitted at program start and after each tool change. Empty / 0 = no shift."
+                  title={t('tools.z_shift.title')}
                   onchange={(e) => {
                     const v = (e.currentTarget as HTMLInputElement).value;
                     if (v === '') {
@@ -1293,14 +1300,14 @@
                 />
               </label>
               <label>
-                <span>Spindle warmup (s)</span>
+                <span>{t('tools.spindle_warmup')}</span>
                 <input
                   type="number"
                   step="0.5"
                   min="0"
                   placeholder="1"
                   value={tool.pause ?? ''}
-                  title="Dwell (seconds) emitted as G4 P<n> after every M3 / M4 so the spindle reaches commanded RPM before the cut starts. Critical on machines without spindle-at-speed feedback. Empty = default (1 s)."
+                  title={t('tools.spindle_warmup.title')}
                   onchange={(e) => {
                     const v = (e.currentTarget as HTMLInputElement).value;
                     if (v === '') {
@@ -1318,14 +1325,14 @@
                   tool.kind === 'laser_beam' ||
                   tool.kind === 'plasma_torch'}
                 title={tool.kind === 'drag_knife'
-                  ? `Drag-knife doesn't spin.`
+                  ? t('tools.spindle_dir.disabled.drag_knife')
                   : tool.kind === 'laser_beam'
-                    ? `Laser has no spindle.`
+                    ? t('tools.spindle_dir.disabled.laser')
                     : tool.kind === 'plasma_torch'
-                      ? `Plasma torch has no spindle.`
-                      : 'z1y0: spindle direction the post commands when this tool is selected. CW (M3) is the default; CCW (M4) is for left-hand cutters / reverse-thread / mirror-helix tooling.'}
+                      ? t('tools.spindle_dir.disabled.plasma')
+                      : t('tools.spindle_dir.title')}
               >
-                <legend>Spindle dir</legend>
+                <legend>{t('tools.spindle_dir')}</legend>
                 <label class="radio">
                   <input
                     type="radio"
@@ -1334,7 +1341,7 @@
                     checked={(tool.spindleDirection ?? 'cw') === 'cw'}
                     onchange={() => updateField(i, 'spindleDirection', undefined)}
                   />
-                  <span>CW (M3)</span>
+                  <span>{t('tools.spindle_dir.cw')}</span>
                 </label>
                 <label class="radio">
                   <input
@@ -1344,16 +1351,12 @@
                     checked={tool.spindleDirection === 'ccw'}
                     onchange={() => updateField(i, 'spindleDirection', 'ccw')}
                   />
-                  <span>CCW (M4)</span>
+                  <span>{t('tools.spindle_dir.ccw')}</span>
                 </label>
               </fieldset>
             </div>
             <div class="holder-row pass-overrides">
-              <span
-                class="holder-label"
-                title="Whirling (orbital milling) overlay. When enabled with an Extra width > 0, every cut move with this tool is subdivided and the cutter orbits in a helical spiral around the toolpath — keeping radial engagement bounded at every point, for chip-thinning on hard material. This is milling whirling, not lathe thread-whirling; to cut threads use a Thread operation with a thread-mill tool. Set Extra width to the orbit diameter, Stride to the path distance per revolution, Z-wobble to a small dip for chip clearance."
-                >Whirling</span
-              >
+              <span class="holder-label" title={t('tools.whirl.title')}>{t('tools.whirl')}</span>
             </div>
             <div class="holder-row">
               <label class="radio">
@@ -1363,10 +1366,10 @@
                   onchange={(e) =>
                     updateField(i, 'whirl', (e.currentTarget as HTMLInputElement).checked)}
                 />
-                <span>Enable</span>
+                <span>{t('tools.whirl.enable')}</span>
               </label>
               <label>
-                <span>Extra width (mm)</span>
+                <span>{t('tools.whirl.extra_width')}</span>
                 <input
                   type="number"
                   step="0.1"
@@ -1374,7 +1377,7 @@
                   placeholder="0"
                   value={tool.whirlExtraWidthMm ?? ''}
                   disabled={!tool.whirl}
-                  title="Diameter (mm) by which the whirling orbit widens the cut. Empty / 0 ⇒ overlay disabled (whirling is a no-op)."
+                  title={t('tools.whirl.extra_width.title')}
                   onchange={(e) => {
                     const v = (e.currentTarget as HTMLInputElement).value;
                     updateField(i, 'whirlExtraWidthMm', v === '' ? undefined : parseFloat(v));
@@ -1384,7 +1387,7 @@
             </div>
             <div class="holder-row">
               <label>
-                <span>Stride (mm)</span>
+                <span>{t('tools.whirl.stride')}</span>
                 <input
                   type="number"
                   step="0.1"
@@ -1392,7 +1395,7 @@
                   placeholder={((tool.whirlExtraWidthMm ?? 0) * 0.5).toFixed(2)}
                   value={tool.whirlStepoverMm ?? ''}
                   disabled={!tool.whirl}
-                  title="Path distance per full spiral revolution. Empty = half the spiral radius (one-revolution overlap)."
+                  title={t('tools.whirl.stride.title')}
                   onchange={(e) => {
                     const v = (e.currentTarget as HTMLInputElement).value;
                     updateField(i, 'whirlStepoverMm', v === '' ? undefined : parseFloat(v));
@@ -1400,7 +1403,7 @@
                 />
               </label>
               <label>
-                <span>Z-wobble (mm)</span>
+                <span>{t('tools.whirl.z_wobble')}</span>
                 <input
                   type="number"
                   step="0.05"
@@ -1408,7 +1411,7 @@
                   placeholder="0"
                   value={tool.whirlOscMm ?? ''}
                   disabled={!tool.whirl}
-                  title="Z ripple amplitude. The cutter dips up to 2·osc below the cut plane between revolutions, improving chip evacuation. Empty / 0 ⇒ flat (no Z motion from the overlay)."
+                  title={t('tools.whirl.z_wobble.title')}
                   onchange={(e) => {
                     const v = (e.currentTarget as HTMLInputElement).value;
                     updateField(i, 'whirlOscMm', v === '' ? undefined : parseFloat(v));
@@ -1418,22 +1421,18 @@
             </div>
             {#if attrApplies('dragoff', tool.kind)}
               <div class="holder-row pass-overrides">
-                <span
-                  class="holder-label"
-                  title="Drag-knife fields. The drag offset drives the pivot-arc compensation at corners."
-                  >Drag-knife</span
-                >
+                <span class="holder-label" title={t('tools.drag.title')}>{t('tools.drag')}</span>
               </div>
               <div class="holder-row">
                 <label>
-                  <span>Drag offset (mm)</span>
+                  <span>{t('tools.drag.offset')}</span>
                   <input
                     type="number"
                     step="0.05"
                     min="0"
                     placeholder="—"
                     value={tool.dragoff ?? ''}
-                    title="Distance from the spindle axis to the cutting tip. The post emits a pivot arc at each corner so the blade trails through cleanly. 0 ⇒ no compensation (true tangent knife)."
+                    title={t('tools.drag.offset.title')}
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       updateField(i, 'dragoff', v === '' ? undefined : parseFloat(v));
@@ -1441,7 +1440,7 @@
                   />
                 </label>
                 <label>
-                  <span>Self-align angle (°)</span>
+                  <span>{t('tools.drag.self_align')}</span>
                   <input
                     type="number"
                     step="1"
@@ -1449,7 +1448,7 @@
                     max="60"
                     placeholder="30"
                     value={tool.dragKnifeSelfAlignAngleDeg ?? ''}
-                    title="Corners with a tangent change below this angle skip the explicit swivel arc — real drag knives self-align below ~30° via the trailing offset. Set to 0 to force a swivel at every corner (legacy behaviour). Empty = 30° default."
+                    title={t('tools.drag.self_align.title')}
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       updateField(
@@ -1464,22 +1463,20 @@
             {/if}
             {#if attrApplies('compressionTransition', tool.kind)}
               <div class="holder-row pass-overrides">
-                <span
-                  class="holder-label"
-                  title="Compression / up-down cutter: down-cut flutes on the upper part, up-cut on the lower, meeting at the transition height — clean edges on both faces of sheet stock."
-                  >Compression</span
+                <span class="holder-label" title={t('tools.compression.title')}
+                  >{t('tools.compression')}</span
                 >
               </div>
               <div class="holder-row">
                 <label>
-                  <span>Transition height (mm)</span>
+                  <span>{t('tools.compression.transition')}</span>
                   <input
                     type="number"
                     step="0.5"
                     min="0"
-                    placeholder="flute midpoint"
+                    placeholder={t('tools.compression.transition.placeholder')}
                     value={tool.compressionTransitionMm ?? ''}
-                    title="Height above the tip where the down-cut flutes flip to up-cut. Set to your stock thickness so the flip lands at the bottom face. Display + preview only in v1 — it does NOT change the cut cross-section. Empty = the preview assumes the flute midpoint."
+                    title={t('tools.compression.transition.title')}
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       updateField(
@@ -1494,22 +1491,19 @@
             {/if}
             {#if attrApplies('threadPitch', tool.kind)}
               <div class="holder-row pass-overrides">
-                <span
-                  class="holder-label"
-                  title="Single-point thread mill: cuts threads by helical interpolation. The tip ∠ in the main row is the thread flank angle (60° metric / 55° Whitworth)."
-                  >Thread mill</span
+                <span class="holder-label" title={t('tools.thread.title')}>{t('tools.thread')}</span
                 >
               </div>
               <div class="holder-row">
                 <label>
-                  <span>Pitch (mm)</span>
+                  <span>{t('tools.thread.pitch')}</span>
                   <input
                     type="number"
                     step="0.05"
                     min="0"
                     placeholder="—"
                     value={tool.threadPitchMm ?? ''}
-                    title="Thread pitch (mm) — the axial advance per orbit. e.g. 1.0 for M6×1, 1.5 for M10×1.5. Drives the helical Z-advance of the Thread op."
+                    title={t('tools.thread.pitch.title')}
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       updateField(i, 'threadPitchMm', v === '' ? undefined : parseFloat(v));
@@ -1520,22 +1514,20 @@
             {/if}
             {#if attrApplies('cornerRadius', tool.kind)}
               <div class="holder-row pass-overrides">
-                <span
-                  class="holder-label"
-                  title="Bull-nose endmill: corner radius rounds the cutter's bottom edge."
-                  >Bull-nose</span
+                <span class="holder-label" title={t('tools.bullnose.title')}
+                  >{t('tools.bullnose')}</span
                 >
               </div>
               <div class="holder-row">
                 <label>
-                  <span>Corner radius (mm)</span>
+                  <span>{t('tools.bullnose.corner_radius')}</span>
                   <input
                     type="number"
                     step="0.05"
                     min="0"
                     placeholder="—"
                     value={tool.cornerRadiusMm ?? ''}
-                    title="Radius of the rounded corner where the flat bottom meets the side. Set to 0 (or empty) for a square endmill; set to half the diameter for a ball-nose."
+                    title={t('tools.bullnose.corner_radius.title')}
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       updateField(i, 'cornerRadiusMm', v === '' ? undefined : parseFloat(v));
@@ -1553,21 +1545,17 @@
             {/if}
             {#if attrApplies('wear', tool.kind)}
               <div class="holder-row pass-overrides">
-                <span
-                  class="holder-label"
-                  title="Wear compensation. Toolpaths cut at the nominal diameter minus this offset — the bit's TRUE cutting diameter after wear or a regrind. The nominal diameter above stays what's printed on the bit."
-                  >Wear</span
-                >
+                <span class="holder-label" title={t('tools.wear.title')}>{t('tools.wear')}</span>
               </div>
               <div class="holder-row">
                 <label>
-                  <span>Wear offset (mm)</span>
+                  <span>{t('tools.wear.offset')}</span>
                   <input
                     type="number"
                     step="0.01"
                     placeholder="0"
                     value={tool.wearOffsetMm ?? ''}
-                    title="Difference between the bit's nominal and measured cutting diameter (positive = worn smaller). Empty / 0 = cut at the nominal diameter. Run Calibrate to measure it."
+                    title={t('tools.wear.offset.title')}
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       if (v === '') {
@@ -1583,45 +1571,41 @@
                   type="button"
                   class="profile-btn"
                   onclick={() => (calibratingIdx = i)}
-                  title="Measure the bit's true cutting diameter with a slot test cut and store the wear offset."
-                  >Calibrate…</button
+                  title={t('tools.wear.calibrate.title')}>{t('tools.wear.calibrate')}</button
                 >
                 <span class="cal-status">
                   {#if tool.lastCalibrated}
-                    Last calibrated {tool.lastCalibrated}
+                    {t('tools.wear.last_calibrated', { date: tool.lastCalibrated })}
                     {#if isCalibrationStale(tool.lastCalibrated, new Date())}
-                      <span
-                        class="stale-chip"
-                        title="This measurement is more than 90 days old — bits keep wearing; re-run the calibration."
-                        >Stale calibration</span
+                      <span class="stale-chip" title={t('tools.wear.stale.title')}
+                        >{t('tools.wear.stale')}</span
                       >
                     {/if}
                   {:else}
-                    Never calibrated
+                    {t('tools.wear.never')}
                   {/if}
                 </span>
                 {#if (tool.wearOffsetMm ?? 0) !== 0}
-                  <span class="eff-hint">cuts as {effectiveDiameterHint(tool)}</span>
+                  <span class="eff-hint"
+                    >{t('tools.wear.cuts_as', { diameter: effectiveDiameterHint(tool) })}</span
+                  >
                 {/if}
               </div>
             {/if}
             {#if attrApplies('laser', tool.kind)}
               <div class="holder-row pass-overrides">
-                <span
-                  class="holder-label"
-                  title="Laser-only fields. Honored when this tool fires the cut.">Laser</span
-                >
+                <span class="holder-label" title={t('tools.laser.title')}>{t('tools.laser')}</span>
               </div>
               <div class="holder-row">
                 <label>
-                  <span>Pierce time (s)</span>
+                  <span>{t('tools.laser.pierce_time')}</span>
                   <input
                     type="number"
                     step="0.05"
                     min="0"
                     placeholder="—"
                     value={tool.laserPierceSec ?? ''}
-                    title="Seconds the beam dwells at the entry point with laser ON before the cut begins. Critical for piercing thick acrylic / wood — without it the first millimeter is gouged. Emitted as a G4 P<sec> between rapid-to-entry and plunge."
+                    title={t('tools.laser.pierce_time.title')}
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       updateField(i, 'laserPierceSec', v === '' ? undefined : parseFloat(v));
@@ -1629,14 +1613,14 @@
                   />
                 </label>
                 <label>
-                  <span>Lead-in (mm)</span>
+                  <span>{t('tools.laser.lead_in')}</span>
                   <input
                     type="number"
                     step="0.1"
                     min="0"
                     placeholder="—"
                     value={tool.laserLeadInMm ?? ''}
-                    title="Per-tool lead-in distance (mm) the laser head travels before reaching the cut path, to reduce edge entry burn. Used as the lead-in length for laser ops that don't override leads themselves."
+                    title={t('tools.laser.lead_in.title')}
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       updateField(i, 'laserLeadInMm', v === '' ? undefined : parseFloat(v));
@@ -1644,14 +1628,14 @@
                   />
                 </label>
                 <label>
-                  <span>Kerf (mm)</span>
+                  <span>{t('tools.laser.kerf')}</span>
                   <input
                     type="number"
                     step="0.01"
                     min="0"
                     placeholder="0.15"
                     value={tool.kerfMm ?? ''}
-                    title="Laser kerf width (mm) — the heightmap-side spot radius the sim carves at. Empty / 0 = the legacy 0.15 mm default in the Rust sim. Set to your measured kerf on the actual stock for accurate heightmap previews."
+                    title={t('tools.laser.kerf.title')}
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       if (v === '') {
@@ -1667,22 +1651,19 @@
             {/if}
             {#if attrApplies('plasma', tool.kind)}
               <div class="holder-row pass-overrides">
-                <span
-                  class="holder-label"
-                  title="Plasma torch entry sequence. The torch pierces at the pierce height, dwells the pierce delay, then drops to the cut height for the cut."
-                  >Plasma</span
+                <span class="holder-label" title={t('tools.plasma.title')}>{t('tools.plasma')}</span
                 >
               </div>
               <div class="holder-row">
                 <label>
-                  <span>Pierce height (mm)</span>
+                  <span>{t('tools.plasma.pierce_height')}</span>
                   <input
                     type="number"
                     step="0.1"
                     min="0"
                     placeholder="3.8"
                     value={tool.pierceHeightMm ?? ''}
-                    title="Height above the stock where the arc is established before dropping to the cut height. Too low and the torch sticks to the slag; too high and the arc drops out. Typical 3–5 mm for 1–3 mm steel. Empty = 3.8 mm default."
+                    title={t('tools.plasma.pierce_height.title')}
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       updateField(i, 'pierceHeightMm', v === '' ? undefined : parseFloat(v));
@@ -1690,14 +1671,14 @@
                   />
                 </label>
                 <label>
-                  <span>Cut height (mm)</span>
+                  <span>{t('tools.plasma.cut_height')}</span>
                   <input
                     type="number"
                     step="0.1"
                     min="0"
                     placeholder="1.5"
                     value={tool.cutHeightMm ?? ''}
-                    title="Height above the stock the torch drops to for the actual cut (below the pierce height). Typical 1.5–2.5 mm for thin steel. Empty = 1.5 mm default."
+                    title={t('tools.plasma.cut_height.title')}
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       updateField(i, 'cutHeightMm', v === '' ? undefined : parseFloat(v));
@@ -1705,14 +1686,14 @@
                   />
                 </label>
                 <label>
-                  <span>Pierce delay (s)</span>
+                  <span>{t('tools.plasma.pierce_delay')}</span>
                   <input
                     type="number"
                     step="0.1"
                     min="0"
                     placeholder="0.5"
                     value={tool.pierceDelaySec ?? ''}
-                    title="Seconds the torch dwells at the pierce height before dropping to the cut height — long enough to pierce the stock, short enough not to undercut the rim. Typical 0.4 s for 1 mm steel, up to ~1.5 s for 6 mm. Empty = 0.5 s default."
+                    title={t('tools.plasma.pierce_delay.title')}
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       updateField(i, 'pierceDelaySec', v === '' ? undefined : parseFloat(v));
@@ -1720,14 +1701,14 @@
                   />
                 </label>
                 <label>
-                  <span>Kerf (mm)</span>
+                  <span>{t('tools.plasma.kerf')}</span>
                   <input
                     type="number"
                     step="0.1"
                     min="0"
                     placeholder="—"
                     value={tool.kerfMm ?? ''}
-                    title="Plasma cut width (kerf). The toolpath is offset by kerf/2 so the cut edge lands on the geometry — the same compensation a milling cutter gets from its diameter. Measure on your actual stock/amperage. Empty = no kerf compensation (cut on the nominal path)."
+                    title={t('tools.plasma.kerf.title')}
                     onchange={(e) => {
                       const v = (e.currentTarget as HTMLInputElement).value;
                       if (v === '') {
@@ -1746,82 +1727,91 @@
       {/each}
       {#if paged.total === 0 && filtersActive}
         <div class="mode-filter-row">
-          <span>No tools match the current filters.</span>
-          <button type="button" class="btn-secondary" onclick={clearFilters}>Clear filters</button>
+          <span>{t('tools.no_match')}</span>
+          <button type="button" class="btn-secondary" onclick={clearFilters}
+            >{t('tools.clear_filters')}</button
+          >
         </div>
       {/if}
       {#if !showIncompatible && incompatibleCount > 0}
         <div class="mode-filter-row">
           <span
-            >{incompatibleCount}
-            {incompatibleCount === 1 ? 'tool' : 'tools'} hidden (incompatible with a {machineModesLabel(
-              machineModes,
-            )} machine)</span
+            >{incompatibleCount === 1
+              ? t('tools.hidden.one', {
+                  count: incompatibleCount,
+                  machine: machineModesLabel(machineModes),
+                })
+              : t('tools.hidden.many', {
+                  count: incompatibleCount,
+                  machine: machineModesLabel(machineModes),
+                })}</span
           >
           <button
             type="button"
             class="btn-secondary"
             onclick={() => (showIncompatible = true)}
-            title="Show every tool in the library, including ones the machine's mode/capabilities can't run. The library is never modified by a mode switch — this only changes the view."
-            >Show all</button
+            title={t('tools.show_all.title')}>{t('tools.show_all')}</button
           >
         </div>
       {:else if showIncompatible && incompatibleCount > 0}
         <div class="mode-filter-row">
           <span
-            >Showing all tools — {incompatibleCount} can't run on a {machineModesLabel(
-              machineModes,
-            )} machine</span
+            >{t('tools.showing_all', {
+              count: incompatibleCount,
+              machine: machineModesLabel(machineModes),
+            })}</span
           >
           <button type="button" class="btn-secondary" onclick={() => (showIncompatible = false)}
-            >Hide incompatible</button
+            >{t('tools.hide_incompatible')}</button
           >
         </div>
       {/if}
     </div>
-    <button class="add" onclick={addTool}>+ Add tool</button>
+    <button class="add" onclick={addTool}>{t('tools.add')}</button>
   </div>
   {#if paged.pageCount > 1}
     <div class="table-pager">
       <button type="button" disabled={paged.page === 0} onclick={() => (page = paged.page - 1)}
-        >‹ Prev</button
+        >{t('tools.pager.prev')}</button
       >
-      <span>Page {paged.page + 1} of {paged.pageCount}</span>
+      <span>{t('tools.pager.status', { page: paged.page + 1, total: paged.pageCount })}</span>
       <button
         type="button"
         disabled={paged.page >= paged.pageCount - 1}
-        onclick={() => (page = paged.page + 1)}>Next ›</button
+        onclick={() => (page = paged.page + 1)}>{t('tools.pager.next')}</button
       >
     </div>
   {/if}
   <footer>
     {#if dd.confirmingDiscard}
-      <span class="discard-prompt">Discard unsaved changes?</span>
-      <button class="btn-secondary" onclick={() => dd.cancelDiscard()}>Keep editing</button>
-      <button class="btn-danger" onclick={close}>Discard</button>
+      <span class="discard-prompt">{t('common.discard_unsaved')}</span>
+      <button class="btn-secondary" onclick={() => dd.cancelDiscard()}
+        >{t('common.keep_editing')}</button
+      >
+      <button class="btn-danger" onclick={close}>{t('common.discard')}</button>
     {:else}
       <span class="sep"></span>
       {#if hasInvalidRow}
         <!-- Surface why OK is greyed out so the user knows which inputs need fixing. -->
-        <span class="validation-msg" role="status"
-          >Fix highlighted fields (⌀, RPM, feed, plunge must be &gt; 0).</span
-        >
+        <span class="validation-msg" role="status">{t('tools.validation_msg')}</span>
       {/if}
       {#if embedded}
-        <button class="btn-secondary" onclick={revert} disabled={!dd.isDirty}>Revert</button>
+        <button class="btn-secondary" onclick={revert} disabled={!dd.isDirty}
+          >{t('common.revert')}</button
+        >
         <button
           class="btn-primary"
           onclick={commit}
           disabled={hasInvalidRow || !dd.isDirty}
-          title={hasInvalidRow ? 'Fix the highlighted fields before applying.' : ''}>Apply</button
+          title={hasInvalidRow ? t('tools.apply.invalid.title') : ''}>{t('common.apply')}</button
         >
       {:else}
-        <button class="btn-secondary" onclick={close}>Cancel</button>
+        <button class="btn-secondary" onclick={close}>{t('common.cancel')}</button>
         <button
           class="btn-primary"
           onclick={commit}
           disabled={hasInvalidRow}
-          title={hasInvalidRow ? 'Fix the highlighted fields before saving.' : ''}>OK</button
+          title={hasInvalidRow ? t('tools.save.invalid.title') : ''}>{t('common.ok')}</button
         >
       {/if}
     {/if}

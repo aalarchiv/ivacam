@@ -4,6 +4,20 @@
 
 /** Every translatable message key, derived from the English base catalog. */
 export type MsgKey =
+  | "about.build"
+  | "about.build_hint"
+  | "about.col.library"
+  | "about.col.license"
+  | "about.col.role"
+  | "about.copied"
+  | "about.copy"
+  | "about.copy_build_id.title"
+  | "about.date"
+  | "about.date.title"
+  | "about.logo_alt"
+  | "about.third_party"
+  | "about.third_party.intro"
+  | "about.title"
   | "canvas.add_to_selection.aria"
   | "canvas.add_to_selection.title"
   | "canvas.ctx.dismiss"
@@ -96,6 +110,11 @@ export type MsgKey =
   | "dialog.unsaved.dont_save"
   | "dialog.unsaved.save_continue"
   | "dialog.unsaved.title"
+  | "gcode.label"
+  | "gcode.silenced"
+  | "gcode.silenced.title"
+  | "gcode.stale"
+  | "gcode.stale.title"
   | "genbar.chip.clean"
   | "genbar.chip.critical"
   | "genbar.chip.details_title"
@@ -307,6 +326,47 @@ export type MsgKey =
   | "machine.unit.title"
   | "machine.work_area"
   | "machine.work_area.legend_title"
+  | "machinetool.add"
+  | "machinetool.add.title"
+  | "machinetool.already_stocked.title"
+  | "machinetool.filter.placeholder"
+  | "machinetool.filter.title"
+  | "machinetool.incompatible"
+  | "machinetool.incompatible.title"
+  | "machinetool.incompatible_tool.title"
+  | "machinetool.inventory_empty"
+  | "machinetool.remove"
+  | "machinetool.remove.title"
+  | "machinetool.remove_last.title"
+  | "machinetool.remove_used.title.one"
+  | "machinetool.remove_used.title.other"
+  | "machinetool.shop_inventory"
+  | "machinetool.shop_inventory.title"
+  | "machinetool.stocked"
+  | "machinetool.stocked_col"
+  | "machinetool.stocked_col.title"
+  | "machinews.delete"
+  | "machinews.delete.confirm"
+  | "machinews.delete.title"
+  | "machinews.duplicate"
+  | "machinews.duplicate.title"
+  | "machinews.load_file"
+  | "machinews.load_file.title"
+  | "machinews.machine"
+  | "machinews.missing"
+  | "machinews.missing.title"
+  | "machinews.new"
+  | "machinews.new.title"
+  | "machinews.pick.title"
+  | "machinews.project_local"
+  | "machinews.referenced_missing"
+  | "machinews.save_file"
+  | "machinews.save_file.title"
+  | "machinews.sections.aria"
+  | "machinews.settings"
+  | "machinews.settings.title"
+  | "machinews.tooling"
+  | "machinews.tooling.title"
   | "menu.aria.more_actions"
   | "menu.aria.trigger"
   | "menu.exit"
@@ -320,6 +380,175 @@ export type MsgKey =
   | "menu.save_stl"
   | "menu.show_regions"
   | "menu.undo"
+  | "oplist.activate.aria"
+  | "oplist.add.aria"
+  | "oplist.add.title"
+  | "oplist.collapse.aria"
+  | "oplist.collapse.title"
+  | "oplist.count.title"
+  | "oplist.delete.aria"
+  | "oplist.delete.title"
+  | "oplist.duplicate.aria"
+  | "oplist.duplicate.title"
+  | "oplist.empty.cta"
+  | "oplist.empty.sub"
+  | "oplist.empty.title"
+  | "oplist.expand.title"
+  | "oplist.grip.title"
+  | "oplist.group_by_tool"
+  | "oplist.group_by_tool.title"
+  | "oplist.repick"
+  | "oplist.repick.aria"
+  | "oplist.repick.layers_suffix"
+  | "oplist.repick.title_empty"
+  | "oplist.repick.title_ready"
+  | "oplist.status.cycle_marker"
+  | "oplist.status.dirty"
+  | "oplist.status.gcode_include"
+  | "oplist.status.homing"
+  | "oplist.status.no_drawing"
+  | "oplist.status.not_generated"
+  | "oplist.status.orphan_layers"
+  | "oplist.status.orphan_objects"
+  | "oplist.status.pause"
+  | "oplist.status.probe"
+  | "oplist.status.tool_missing"
+  | "oplist.status.up_to_date"
+  | "oplist.status_btn.aria"
+  | "oplist.status_btn.title"
+  | "oplist.title"
+  | "oplist.tool_missing"
+  | "opprops.combine"
+  | "opprops.combine.auto"
+  | "opprops.combine.auto.help"
+  | "opprops.combine.difference"
+  | "opprops.combine.difference.help"
+  | "opprops.combine.intersection"
+  | "opprops.combine.intersection.help"
+  | "opprops.combine.none"
+  | "opprops.combine.none.help"
+  | "opprops.combine.union"
+  | "opprops.combine.union.help"
+  | "opprops.combine.xor"
+  | "opprops.combine.xor.help"
+  | "opprops.cut"
+  | "opprops.cut.approach_point"
+  | "opprops.cut.approach_point.clear"
+  | "opprops.cut.approach_point.clear.title"
+  | "opprops.cut.approach_point.pick"
+  | "opprops.cut.approach_point.pick.title"
+  | "opprops.cut.approach_point.picking"
+  | "opprops.cut.approach_point.picking.title"
+  | "opprops.cut.approach_point.title"
+  | "opprops.cut.approach_point.x_aria"
+  | "opprops.cut.approach_point.y_aria"
+  | "opprops.cut.depth_list"
+  | "opprops.cut.depth_list.placeholder"
+  | "opprops.cut.depth_list.title"
+  | "opprops.cut.direction"
+  | "opprops.cut.final_depth"
+  | "opprops.cut.finish_direction"
+  | "opprops.cut.finish_step"
+  | "opprops.cut.finish_step.placeholder"
+  | "opprops.cut.finish_step.title"
+  | "opprops.cut.plunge"
+  | "opprops.cut.start_depth"
+  | "opprops.cut.step"
+  | "opprops.cut.step.from_tool"
+  | "opprops.cut.step.required"
+  | "opprops.cut.step.reset"
+  | "opprops.cut.step.reset.title"
+  | "opprops.cut.through_depth"
+  | "opprops.cut.through_depth.title"
+  | "opprops.cut.xy_finish_stock"
+  | "opprops.cut.xy_finish_stock.title"
+  | "opprops.direction.climb"
+  | "opprops.direction.climb.help"
+  | "opprops.direction.conventional"
+  | "opprops.direction.conventional.help"
+  | "opprops.empty"
+  | "opprops.feeds"
+  | "opprops.feeds.corner_slow"
+  | "opprops.feeds.corner_slow.title"
+  | "opprops.feeds.custom"
+  | "opprops.feeds.feed_rate"
+  | "opprops.feeds.feed_rate.reset.title"
+  | "opprops.feeds.feed_rate.title"
+  | "opprops.feeds.fraction"
+  | "opprops.feeds.fraction.title"
+  | "opprops.feeds.plunge_rate"
+  | "opprops.feeds.plunge_rate.reset.title"
+  | "opprops.feeds.plunge_rate.title"
+  | "opprops.feeds.reset"
+  | "opprops.feeds.tool_default"
+  | "opprops.feeds.tool_defaults"
+  | "opprops.finish_tool"
+  | "opprops.finish_tool.same_as_rough"
+  | "opprops.finish_tool.title.drill"
+  | "opprops.finish_tool.title.pocket"
+  | "opprops.from_selection"
+  | "opprops.from_selection.count"
+  | "opprops.from_selection.disabled_aria"
+  | "opprops.from_selection.title"
+  | "opprops.group"
+  | "opprops.group.label"
+  | "opprops.group.label.placeholder"
+  | "opprops.group.label.title"
+  | "opprops.group.none"
+  | "opprops.group.pin_order"
+  | "opprops.group.pin_order.title"
+  | "opprops.helix"
+  | "opprops.helix_angle"
+  | "opprops.helix_angle.title"
+  | "opprops.helix_autofit"
+  | "opprops.helix_autofit.title"
+  | "opprops.helix_radius"
+  | "opprops.helix_radius.auto.title"
+  | "opprops.helix_radius.auto_detected"
+  | "opprops.helix_radius.auto_no_fit"
+  | "opprops.helix_radius.auto_no_fit_reason"
+  | "opprops.helix_radius.auto_pending"
+  | "opprops.helix_radius.manual.title"
+  | "opprops.name"
+  | "opprops.pattern"
+  | "opprops.pattern.grid"
+  | "opprops.pattern.linear"
+  | "opprops.pattern.polar"
+  | "opprops.pattern.single"
+  | "opprops.plunge.direct"
+  | "opprops.plunge.direct.help"
+  | "opprops.plunge.helix"
+  | "opprops.plunge.helix.help"
+  | "opprops.plunge.ramp"
+  | "opprops.plunge.ramp.help"
+  | "opprops.ramp_angle"
+  | "opprops.ramp_angle.title"
+  | "opprops.source"
+  | "opprops.source.all_chains"
+  | "opprops.source.layer"
+  | "opprops.source.layer.pick"
+  | "opprops.source.mode"
+  | "opprops.source.mode.all"
+  | "opprops.source.mode.layer"
+  | "opprops.source.mode.objects"
+  | "opprops.source.objects_selected"
+  | "opprops.source.text_group"
+  | "opprops.tabs"
+  | "opprops.tabs.auto"
+  | "opprops.tabs.auto_manual"
+  | "opprops.tabs.manual"
+  | "opprops.tabs.off"
+  | "opprops.title"
+  | "opprops.tool"
+  | "opprops.tool.edit"
+  | "opprops.tool.incompatible_group"
+  | "opprops.tool.mismatch"
+  | "opprops.tool.mismatch.title"
+  | "opprops.tool.title.default"
+  | "opprops.tool.title.raster"
+  | "opprops.tool.title.relief"
+  | "opprops.wear.effective_diameter"
+  | "opprops.wear.title"
   | "ops.chamfer.legend"
   | "ops.drill.cycle.chip_break"
   | "ops.drill.cycle.peck"
@@ -417,6 +646,86 @@ export type MsgKey =
   | "ops.thread.side.internal"
   | "ops.vcarve.advanced.summary"
   | "ops.vcarve.legend"
+  | "playback.next_op"
+  | "playback.next_op.named"
+  | "playback.pause"
+  | "playback.play"
+  | "playback.position"
+  | "playback.prev_op"
+  | "playback.prev_op.named"
+  | "playback.scrub.exact"
+  | "playback.scrub.forward"
+  | "playback.speed"
+  | "playback.speed.aria"
+  | "playback.tick.jump"
+  | "playback.tick.silenced"
+  | "playback.valuetext"
+  | "playback.valuetext.named"
+  | "post.axes.axis"
+  | "post.axes.disabled"
+  | "post.axes.enable_aria"
+  | "post.axes.feed"
+  | "post.axes.format"
+  | "post.axes.format_aria"
+  | "post.axes.i_arc"
+  | "post.axes.j_arc"
+  | "post.axes.name"
+  | "post.axes.name_aria"
+  | "post.axes.on"
+  | "post.axes.scale"
+  | "post.axes.scale.title"
+  | "post.axes.scale_aria"
+  | "post.axes.spindle"
+  | "post.coolant_flood_off"
+  | "post.coolant_flood_on"
+  | "post.coolant_mist_on"
+  | "post.discard_prompt"
+  | "post.export_json"
+  | "post.extension"
+  | "post.file_output"
+  | "post.import_err.axes_incomplete"
+  | "post.import_err.parse"
+  | "post.import_json"
+  | "post.keep_editing"
+  | "post.line_ending"
+  | "post.line_ending.crlf"
+  | "post.line_ending.lf"
+  | "post.per_axis"
+  | "post.per_axis.hint_after"
+  | "post.per_axis.hint_before"
+  | "post.per_axis.hint_mid"
+  | "post.per_axis.override"
+  | "post.preview"
+  | "post.preview.sub"
+  | "post.profile_name"
+  | "post.profile_name.placeholder"
+  | "post.program_end"
+  | "post.program_start"
+  | "post.save"
+  | "post.templates"
+  | "post.templates.case_insensitive"
+  | "post.templates.marker.diameter"
+  | "post.templates.marker.feed"
+  | "post.templates.marker.newline"
+  | "post.templates.marker.spindle"
+  | "post.templates.marker.tool_name"
+  | "post.templates.marker.tool_num"
+  | "post.templates.markers"
+  | "post.title"
+  | "post.tokens.d"
+  | "post.tokens.f"
+  | "post.tokens.intro_after"
+  | "post.tokens.intro_before"
+  | "post.tokens.n"
+  | "post.tokens.nl"
+  | "post.tokens.op"
+  | "post.tokens.project"
+  | "post.tokens.s"
+  | "post.tokens.summary"
+  | "post.tokens.t"
+  | "post.tokens.tools"
+  | "post.tokens.version"
+  | "post.tool_change"
   | "settings.appearance.language"
   | "settings.appearance.language.auto"
   | "settings.appearance.language.help"
@@ -479,13 +788,286 @@ export type MsgKey =
   | "settings.view.preview_style.solid"
   | "settings.view.preview_style.wireframe"
   | "settings.view.show_stock_box"
+  | "stock.dimensions"
+  | "stock.length"
+  | "stock.margin"
+  | "stock.margin.title"
+  | "stock.mode"
+  | "stock.mode.auto"
+  | "stock.mode.manual"
+  | "stock.offset_z.title"
+  | "stock.origin_offset"
+  | "stock.snap_bbox"
+  | "stock.snap_bbox.title"
+  | "stock.thickness"
+  | "stock.wcs"
+  | "stock.width"
+  | "stock.work_origin"
+  | "stock.work_origin.title"
+  | "textlist.activate.aria"
+  | "textlist.add"
+  | "textlist.add.aria"
+  | "textlist.add.title"
+  | "textlist.align.center"
+  | "textlist.align.left"
+  | "textlist.align.right"
+  | "textlist.collapse.aria"
+  | "textlist.collapse.title"
+  | "textlist.delete.aria"
+  | "textlist.delete.title"
+  | "textlist.empty"
+  | "textlist.expand.title"
+  | "textlist.field.align"
+  | "textlist.field.font"
+  | "textlist.field.letter_gap"
+  | "textlist.field.line_spacing"
+  | "textlist.field.rotation"
+  | "textlist.field.size"
+  | "textlist.field.text"
+  | "textlist.field.width"
+  | "textlist.field.width.title"
+  | "textlist.field.x"
+  | "textlist.field.y"
+  | "textlist.snap_origin"
+  | "textlist.snap_origin.title"
+  | "textlist.snap_origin.title_disabled"
+  | "textlist.title"
+  | "textlist.toggle_form.aria"
   | "toast.dismiss"
   | "toast.queue.more"
   | "toast.queue.title"
-  | "toast.report_bug";
+  | "toast.report_bug"
+  | "toolform.add_row"
+  | "toolform.angle"
+  | "toolform.angle.title"
+  | "toolform.cut_height"
+  | "toolform.cut_height.title"
+  | "toolform.delete_row.title"
+  | "toolform.dovetail_dia"
+  | "toolform.dovetail_dia.title"
+  | "toolform.form_profile"
+  | "toolform.form_profile.title"
+  | "toolform.generate_dovetail"
+  | "toolform.generate_dovetail.title"
+  | "toolform.generate_tslot"
+  | "toolform.generate_tslot.title"
+  | "toolform.head_thick"
+  | "toolform.head_thick.title"
+  | "toolform.min_rows_hint"
+  | "toolform.neck_dia"
+  | "toolform.neck_dia.title"
+  | "toolform.neck_length"
+  | "toolform.neck_length.title"
+  | "toolform.radius"
+  | "toolform.tslot_head_dia"
+  | "toolform.tslot_head_dia.title"
+  | "toolform.z_above_tip"
+  | "tools.add"
+  | "tools.apply.invalid.title"
+  | "tools.bullnose"
+  | "tools.bullnose.corner_radius"
+  | "tools.bullnose.corner_radius.title"
+  | "tools.bullnose.title"
+  | "tools.clear_filters"
+  | "tools.col.coolant"
+  | "tools.col.dflt_step"
+  | "tools.col.dflt_step.title"
+  | "tools.col.diameter.title"
+  | "tools.col.feed"
+  | "tools.col.feed.title"
+  | "tools.col.flutes"
+  | "tools.col.flutes.title"
+  | "tools.col.id.title"
+  | "tools.col.kind"
+  | "tools.col.kind.title"
+  | "tools.col.name"
+  | "tools.col.name.title"
+  | "tools.col.plunge"
+  | "tools.col.plunge.title"
+  | "tools.col.speed"
+  | "tools.col.speed.title"
+  | "tools.col.tip_angle"
+  | "tools.col.tip_angle.title"
+  | "tools.col.tip_diameter"
+  | "tools.comment"
+  | "tools.comment.placeholder"
+  | "tools.comment.title"
+  | "tools.compression"
+  | "tools.compression.title"
+  | "tools.compression.transition"
+  | "tools.compression.transition.placeholder"
+  | "tools.compression.transition.title"
+  | "tools.coolant.flood"
+  | "tools.coolant.mist"
+  | "tools.coolant.off"
+  | "tools.count.filtered"
+  | "tools.count.many"
+  | "tools.count.one"
+  | "tools.drag"
+  | "tools.drag.offset"
+  | "tools.drag.offset.title"
+  | "tools.drag.self_align"
+  | "tools.drag.self_align.title"
+  | "tools.drag.title"
+  | "tools.drill.feed"
+  | "tools.drill.peck"
+  | "tools.drill.peck.title"
+  | "tools.drill.plunge"
+  | "tools.drill.rpm"
+  | "tools.drill.xy_overlap"
+  | "tools.drill.xy_overlap.title"
+  | "tools.field.na"
+  | "tools.file.load_add"
+  | "tools.file.load_add.title"
+  | "tools.file.load_replace"
+  | "tools.file.load_replace.inventory.title"
+  | "tools.file.load_replace.project.title"
+  | "tools.file.save.inventory.title"
+  | "tools.file.save.project.title"
+  | "tools.filter.all"
+  | "tools.filter.clear"
+  | "tools.filter.kind"
+  | "tools.filter.runs_on"
+  | "tools.filter.runs_on.any"
+  | "tools.filter.runs_on.drag"
+  | "tools.filter.runs_on.laser"
+  | "tools.filter.runs_on.mill"
+  | "tools.filter.runs_on.plasma"
+  | "tools.filter.runs_on.title"
+  | "tools.finish.feed"
+  | "tools.finish.plunge"
+  | "tools.finish.rpm"
+  | "tools.hidden.many"
+  | "tools.hidden.one"
+  | "tools.hide_incompatible"
+  | "tools.holder.cone.bottom_diameter"
+  | "tools.holder.cone.top_diameter"
+  | "tools.holder.cyl.diameter"
+  | "tools.holder.flute_length"
+  | "tools.holder.flute_length.title"
+  | "tools.holder.kind.cone"
+  | "tools.holder.kind.cylinder"
+  | "tools.holder.kind.none"
+  | "tools.holder.kind.stepped"
+  | "tools.holder.label"
+  | "tools.holder.length"
+  | "tools.holder.overall_length"
+  | "tools.holder.overall_length.title"
+  | "tools.holder.preset"
+  | "tools.holder.preset.apply"
+  | "tools.holder.preset.title"
+  | "tools.holder.runs_on"
+  | "tools.holder.runs_on.title"
+  | "tools.holder.shank_diameter"
+  | "tools.holder.shank_diameter.placeholder"
+  | "tools.holder.shank_diameter.title"
+  | "tools.holder.stepped.cone_length"
+  | "tools.holder.stepped.cone_top_diameter"
+  | "tools.holder.stepped.cyl_diameter"
+  | "tools.holder.stepped.cyl_length"
+  | "tools.holder.stickout"
+  | "tools.holder.stickout.title"
+  | "tools.laser"
+  | "tools.laser.kerf"
+  | "tools.laser.kerf.title"
+  | "tools.laser.lead_in"
+  | "tools.laser.lead_in.title"
+  | "tools.laser.pierce_time"
+  | "tools.laser.pierce_time.title"
+  | "tools.laser.title"
+  | "tools.no_match"
+  | "tools.pager.next"
+  | "tools.pager.prev"
+  | "tools.pager.status"
+  | "tools.pass_overrides"
+  | "tools.pass_overrides.title"
+  | "tools.plasma"
+  | "tools.plasma.cut_height"
+  | "tools.plasma.cut_height.title"
+  | "tools.plasma.kerf"
+  | "tools.plasma.kerf.title"
+  | "tools.plasma.pierce_delay"
+  | "tools.plasma.pierce_delay.title"
+  | "tools.plasma.pierce_height"
+  | "tools.plasma.pierce_height.title"
+  | "tools.plasma.title"
+  | "tools.row.delete.aria"
+  | "tools.row.delete.disabled"
+  | "tools.row.delete.title"
+  | "tools.row.dflt_step.invalid.title"
+  | "tools.row.dflt_step.title"
+  | "tools.row.diameter.invalid.title"
+  | "tools.row.expand.collapse.aria"
+  | "tools.row.expand.collapse.title"
+  | "tools.row.expand.expand.aria"
+  | "tools.row.expand.expand.title"
+  | "tools.row.feed.drill.title"
+  | "tools.row.feed.invalid.title"
+  | "tools.row.name.title"
+  | "tools.row.plunge.invalid.title"
+  | "tools.row.speed.invalid.title"
+  | "tools.row.tip_angle.title"
+  | "tools.row.tip_diameter.invalid.title"
+  | "tools.save.invalid.title"
+  | "tools.search.placeholder"
+  | "tools.search.title"
+  | "tools.show_all"
+  | "tools.show_all.title"
+  | "tools.showing_all"
+  | "tools.spindle_dir"
+  | "tools.spindle_dir.ccw"
+  | "tools.spindle_dir.cw"
+  | "tools.spindle_dir.disabled.drag_knife"
+  | "tools.spindle_dir.disabled.laser"
+  | "tools.spindle_dir.disabled.plasma"
+  | "tools.spindle_dir.title"
+  | "tools.spindle_warmup"
+  | "tools.spindle_warmup.title"
+  | "tools.thread"
+  | "tools.thread.pitch"
+  | "tools.thread.pitch.title"
+  | "tools.thread.title"
+  | "tools.title"
+  | "tools.validation_msg"
+  | "tools.wear"
+  | "tools.wear.calibrate"
+  | "tools.wear.calibrate.title"
+  | "tools.wear.cuts_as"
+  | "tools.wear.last_calibrated"
+  | "tools.wear.never"
+  | "tools.wear.offset"
+  | "tools.wear.offset.title"
+  | "tools.wear.stale"
+  | "tools.wear.stale.title"
+  | "tools.wear.title"
+  | "tools.whirl"
+  | "tools.whirl.enable"
+  | "tools.whirl.extra_width"
+  | "tools.whirl.extra_width.title"
+  | "tools.whirl.stride"
+  | "tools.whirl.stride.title"
+  | "tools.whirl.title"
+  | "tools.whirl.z_wobble"
+  | "tools.whirl.z_wobble.title"
+  | "tools.z_shift"
+  | "tools.z_shift.title";
 
 /** All keys as an array (handy for coverage tests / iteration). */
 export const MSG_KEYS: readonly MsgKey[] = [
+  "about.build",
+  "about.build_hint",
+  "about.col.library",
+  "about.col.license",
+  "about.col.role",
+  "about.copied",
+  "about.copy",
+  "about.copy_build_id.title",
+  "about.date",
+  "about.date.title",
+  "about.logo_alt",
+  "about.third_party",
+  "about.third_party.intro",
+  "about.title",
   "canvas.add_to_selection.aria",
   "canvas.add_to_selection.title",
   "canvas.ctx.dismiss",
@@ -578,6 +1160,11 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "dialog.unsaved.dont_save",
   "dialog.unsaved.save_continue",
   "dialog.unsaved.title",
+  "gcode.label",
+  "gcode.silenced",
+  "gcode.silenced.title",
+  "gcode.stale",
+  "gcode.stale.title",
   "genbar.chip.clean",
   "genbar.chip.critical",
   "genbar.chip.details_title",
@@ -789,6 +1376,47 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "machine.unit.title",
   "machine.work_area",
   "machine.work_area.legend_title",
+  "machinetool.add",
+  "machinetool.add.title",
+  "machinetool.already_stocked.title",
+  "machinetool.filter.placeholder",
+  "machinetool.filter.title",
+  "machinetool.incompatible",
+  "machinetool.incompatible.title",
+  "machinetool.incompatible_tool.title",
+  "machinetool.inventory_empty",
+  "machinetool.remove",
+  "machinetool.remove.title",
+  "machinetool.remove_last.title",
+  "machinetool.remove_used.title.one",
+  "machinetool.remove_used.title.other",
+  "machinetool.shop_inventory",
+  "machinetool.shop_inventory.title",
+  "machinetool.stocked",
+  "machinetool.stocked_col",
+  "machinetool.stocked_col.title",
+  "machinews.delete",
+  "machinews.delete.confirm",
+  "machinews.delete.title",
+  "machinews.duplicate",
+  "machinews.duplicate.title",
+  "machinews.load_file",
+  "machinews.load_file.title",
+  "machinews.machine",
+  "machinews.missing",
+  "machinews.missing.title",
+  "machinews.new",
+  "machinews.new.title",
+  "machinews.pick.title",
+  "machinews.project_local",
+  "machinews.referenced_missing",
+  "machinews.save_file",
+  "machinews.save_file.title",
+  "machinews.sections.aria",
+  "machinews.settings",
+  "machinews.settings.title",
+  "machinews.tooling",
+  "machinews.tooling.title",
   "menu.aria.more_actions",
   "menu.aria.trigger",
   "menu.exit",
@@ -802,6 +1430,175 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "menu.save_stl",
   "menu.show_regions",
   "menu.undo",
+  "oplist.activate.aria",
+  "oplist.add.aria",
+  "oplist.add.title",
+  "oplist.collapse.aria",
+  "oplist.collapse.title",
+  "oplist.count.title",
+  "oplist.delete.aria",
+  "oplist.delete.title",
+  "oplist.duplicate.aria",
+  "oplist.duplicate.title",
+  "oplist.empty.cta",
+  "oplist.empty.sub",
+  "oplist.empty.title",
+  "oplist.expand.title",
+  "oplist.grip.title",
+  "oplist.group_by_tool",
+  "oplist.group_by_tool.title",
+  "oplist.repick",
+  "oplist.repick.aria",
+  "oplist.repick.layers_suffix",
+  "oplist.repick.title_empty",
+  "oplist.repick.title_ready",
+  "oplist.status.cycle_marker",
+  "oplist.status.dirty",
+  "oplist.status.gcode_include",
+  "oplist.status.homing",
+  "oplist.status.no_drawing",
+  "oplist.status.not_generated",
+  "oplist.status.orphan_layers",
+  "oplist.status.orphan_objects",
+  "oplist.status.pause",
+  "oplist.status.probe",
+  "oplist.status.tool_missing",
+  "oplist.status.up_to_date",
+  "oplist.status_btn.aria",
+  "oplist.status_btn.title",
+  "oplist.title",
+  "oplist.tool_missing",
+  "opprops.combine",
+  "opprops.combine.auto",
+  "opprops.combine.auto.help",
+  "opprops.combine.difference",
+  "opprops.combine.difference.help",
+  "opprops.combine.intersection",
+  "opprops.combine.intersection.help",
+  "opprops.combine.none",
+  "opprops.combine.none.help",
+  "opprops.combine.union",
+  "opprops.combine.union.help",
+  "opprops.combine.xor",
+  "opprops.combine.xor.help",
+  "opprops.cut",
+  "opprops.cut.approach_point",
+  "opprops.cut.approach_point.clear",
+  "opprops.cut.approach_point.clear.title",
+  "opprops.cut.approach_point.pick",
+  "opprops.cut.approach_point.pick.title",
+  "opprops.cut.approach_point.picking",
+  "opprops.cut.approach_point.picking.title",
+  "opprops.cut.approach_point.title",
+  "opprops.cut.approach_point.x_aria",
+  "opprops.cut.approach_point.y_aria",
+  "opprops.cut.depth_list",
+  "opprops.cut.depth_list.placeholder",
+  "opprops.cut.depth_list.title",
+  "opprops.cut.direction",
+  "opprops.cut.final_depth",
+  "opprops.cut.finish_direction",
+  "opprops.cut.finish_step",
+  "opprops.cut.finish_step.placeholder",
+  "opprops.cut.finish_step.title",
+  "opprops.cut.plunge",
+  "opprops.cut.start_depth",
+  "opprops.cut.step",
+  "opprops.cut.step.from_tool",
+  "opprops.cut.step.required",
+  "opprops.cut.step.reset",
+  "opprops.cut.step.reset.title",
+  "opprops.cut.through_depth",
+  "opprops.cut.through_depth.title",
+  "opprops.cut.xy_finish_stock",
+  "opprops.cut.xy_finish_stock.title",
+  "opprops.direction.climb",
+  "opprops.direction.climb.help",
+  "opprops.direction.conventional",
+  "opprops.direction.conventional.help",
+  "opprops.empty",
+  "opprops.feeds",
+  "opprops.feeds.corner_slow",
+  "opprops.feeds.corner_slow.title",
+  "opprops.feeds.custom",
+  "opprops.feeds.feed_rate",
+  "opprops.feeds.feed_rate.reset.title",
+  "opprops.feeds.feed_rate.title",
+  "opprops.feeds.fraction",
+  "opprops.feeds.fraction.title",
+  "opprops.feeds.plunge_rate",
+  "opprops.feeds.plunge_rate.reset.title",
+  "opprops.feeds.plunge_rate.title",
+  "opprops.feeds.reset",
+  "opprops.feeds.tool_default",
+  "opprops.feeds.tool_defaults",
+  "opprops.finish_tool",
+  "opprops.finish_tool.same_as_rough",
+  "opprops.finish_tool.title.drill",
+  "opprops.finish_tool.title.pocket",
+  "opprops.from_selection",
+  "opprops.from_selection.count",
+  "opprops.from_selection.disabled_aria",
+  "opprops.from_selection.title",
+  "opprops.group",
+  "opprops.group.label",
+  "opprops.group.label.placeholder",
+  "opprops.group.label.title",
+  "opprops.group.none",
+  "opprops.group.pin_order",
+  "opprops.group.pin_order.title",
+  "opprops.helix",
+  "opprops.helix_angle",
+  "opprops.helix_angle.title",
+  "opprops.helix_autofit",
+  "opprops.helix_autofit.title",
+  "opprops.helix_radius",
+  "opprops.helix_radius.auto.title",
+  "opprops.helix_radius.auto_detected",
+  "opprops.helix_radius.auto_no_fit",
+  "opprops.helix_radius.auto_no_fit_reason",
+  "opprops.helix_radius.auto_pending",
+  "opprops.helix_radius.manual.title",
+  "opprops.name",
+  "opprops.pattern",
+  "opprops.pattern.grid",
+  "opprops.pattern.linear",
+  "opprops.pattern.polar",
+  "opprops.pattern.single",
+  "opprops.plunge.direct",
+  "opprops.plunge.direct.help",
+  "opprops.plunge.helix",
+  "opprops.plunge.helix.help",
+  "opprops.plunge.ramp",
+  "opprops.plunge.ramp.help",
+  "opprops.ramp_angle",
+  "opprops.ramp_angle.title",
+  "opprops.source",
+  "opprops.source.all_chains",
+  "opprops.source.layer",
+  "opprops.source.layer.pick",
+  "opprops.source.mode",
+  "opprops.source.mode.all",
+  "opprops.source.mode.layer",
+  "opprops.source.mode.objects",
+  "opprops.source.objects_selected",
+  "opprops.source.text_group",
+  "opprops.tabs",
+  "opprops.tabs.auto",
+  "opprops.tabs.auto_manual",
+  "opprops.tabs.manual",
+  "opprops.tabs.off",
+  "opprops.title",
+  "opprops.tool",
+  "opprops.tool.edit",
+  "opprops.tool.incompatible_group",
+  "opprops.tool.mismatch",
+  "opprops.tool.mismatch.title",
+  "opprops.tool.title.default",
+  "opprops.tool.title.raster",
+  "opprops.tool.title.relief",
+  "opprops.wear.effective_diameter",
+  "opprops.wear.title",
   "ops.chamfer.legend",
   "ops.drill.cycle.chip_break",
   "ops.drill.cycle.peck",
@@ -899,6 +1696,86 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "ops.thread.side.internal",
   "ops.vcarve.advanced.summary",
   "ops.vcarve.legend",
+  "playback.next_op",
+  "playback.next_op.named",
+  "playback.pause",
+  "playback.play",
+  "playback.position",
+  "playback.prev_op",
+  "playback.prev_op.named",
+  "playback.scrub.exact",
+  "playback.scrub.forward",
+  "playback.speed",
+  "playback.speed.aria",
+  "playback.tick.jump",
+  "playback.tick.silenced",
+  "playback.valuetext",
+  "playback.valuetext.named",
+  "post.axes.axis",
+  "post.axes.disabled",
+  "post.axes.enable_aria",
+  "post.axes.feed",
+  "post.axes.format",
+  "post.axes.format_aria",
+  "post.axes.i_arc",
+  "post.axes.j_arc",
+  "post.axes.name",
+  "post.axes.name_aria",
+  "post.axes.on",
+  "post.axes.scale",
+  "post.axes.scale.title",
+  "post.axes.scale_aria",
+  "post.axes.spindle",
+  "post.coolant_flood_off",
+  "post.coolant_flood_on",
+  "post.coolant_mist_on",
+  "post.discard_prompt",
+  "post.export_json",
+  "post.extension",
+  "post.file_output",
+  "post.import_err.axes_incomplete",
+  "post.import_err.parse",
+  "post.import_json",
+  "post.keep_editing",
+  "post.line_ending",
+  "post.line_ending.crlf",
+  "post.line_ending.lf",
+  "post.per_axis",
+  "post.per_axis.hint_after",
+  "post.per_axis.hint_before",
+  "post.per_axis.hint_mid",
+  "post.per_axis.override",
+  "post.preview",
+  "post.preview.sub",
+  "post.profile_name",
+  "post.profile_name.placeholder",
+  "post.program_end",
+  "post.program_start",
+  "post.save",
+  "post.templates",
+  "post.templates.case_insensitive",
+  "post.templates.marker.diameter",
+  "post.templates.marker.feed",
+  "post.templates.marker.newline",
+  "post.templates.marker.spindle",
+  "post.templates.marker.tool_name",
+  "post.templates.marker.tool_num",
+  "post.templates.markers",
+  "post.title",
+  "post.tokens.d",
+  "post.tokens.f",
+  "post.tokens.intro_after",
+  "post.tokens.intro_before",
+  "post.tokens.n",
+  "post.tokens.nl",
+  "post.tokens.op",
+  "post.tokens.project",
+  "post.tokens.s",
+  "post.tokens.summary",
+  "post.tokens.t",
+  "post.tokens.tools",
+  "post.tokens.version",
+  "post.tool_change",
   "settings.appearance.language",
   "settings.appearance.language.auto",
   "settings.appearance.language.help",
@@ -961,8 +1838,267 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "settings.view.preview_style.solid",
   "settings.view.preview_style.wireframe",
   "settings.view.show_stock_box",
+  "stock.dimensions",
+  "stock.length",
+  "stock.margin",
+  "stock.margin.title",
+  "stock.mode",
+  "stock.mode.auto",
+  "stock.mode.manual",
+  "stock.offset_z.title",
+  "stock.origin_offset",
+  "stock.snap_bbox",
+  "stock.snap_bbox.title",
+  "stock.thickness",
+  "stock.wcs",
+  "stock.width",
+  "stock.work_origin",
+  "stock.work_origin.title",
+  "textlist.activate.aria",
+  "textlist.add",
+  "textlist.add.aria",
+  "textlist.add.title",
+  "textlist.align.center",
+  "textlist.align.left",
+  "textlist.align.right",
+  "textlist.collapse.aria",
+  "textlist.collapse.title",
+  "textlist.delete.aria",
+  "textlist.delete.title",
+  "textlist.empty",
+  "textlist.expand.title",
+  "textlist.field.align",
+  "textlist.field.font",
+  "textlist.field.letter_gap",
+  "textlist.field.line_spacing",
+  "textlist.field.rotation",
+  "textlist.field.size",
+  "textlist.field.text",
+  "textlist.field.width",
+  "textlist.field.width.title",
+  "textlist.field.x",
+  "textlist.field.y",
+  "textlist.snap_origin",
+  "textlist.snap_origin.title",
+  "textlist.snap_origin.title_disabled",
+  "textlist.title",
+  "textlist.toggle_form.aria",
   "toast.dismiss",
   "toast.queue.more",
   "toast.queue.title",
   "toast.report_bug",
+  "toolform.add_row",
+  "toolform.angle",
+  "toolform.angle.title",
+  "toolform.cut_height",
+  "toolform.cut_height.title",
+  "toolform.delete_row.title",
+  "toolform.dovetail_dia",
+  "toolform.dovetail_dia.title",
+  "toolform.form_profile",
+  "toolform.form_profile.title",
+  "toolform.generate_dovetail",
+  "toolform.generate_dovetail.title",
+  "toolform.generate_tslot",
+  "toolform.generate_tslot.title",
+  "toolform.head_thick",
+  "toolform.head_thick.title",
+  "toolform.min_rows_hint",
+  "toolform.neck_dia",
+  "toolform.neck_dia.title",
+  "toolform.neck_length",
+  "toolform.neck_length.title",
+  "toolform.radius",
+  "toolform.tslot_head_dia",
+  "toolform.tslot_head_dia.title",
+  "toolform.z_above_tip",
+  "tools.add",
+  "tools.apply.invalid.title",
+  "tools.bullnose",
+  "tools.bullnose.corner_radius",
+  "tools.bullnose.corner_radius.title",
+  "tools.bullnose.title",
+  "tools.clear_filters",
+  "tools.col.coolant",
+  "tools.col.dflt_step",
+  "tools.col.dflt_step.title",
+  "tools.col.diameter.title",
+  "tools.col.feed",
+  "tools.col.feed.title",
+  "tools.col.flutes",
+  "tools.col.flutes.title",
+  "tools.col.id.title",
+  "tools.col.kind",
+  "tools.col.kind.title",
+  "tools.col.name",
+  "tools.col.name.title",
+  "tools.col.plunge",
+  "tools.col.plunge.title",
+  "tools.col.speed",
+  "tools.col.speed.title",
+  "tools.col.tip_angle",
+  "tools.col.tip_angle.title",
+  "tools.col.tip_diameter",
+  "tools.comment",
+  "tools.comment.placeholder",
+  "tools.comment.title",
+  "tools.compression",
+  "tools.compression.title",
+  "tools.compression.transition",
+  "tools.compression.transition.placeholder",
+  "tools.compression.transition.title",
+  "tools.coolant.flood",
+  "tools.coolant.mist",
+  "tools.coolant.off",
+  "tools.count.filtered",
+  "tools.count.many",
+  "tools.count.one",
+  "tools.drag",
+  "tools.drag.offset",
+  "tools.drag.offset.title",
+  "tools.drag.self_align",
+  "tools.drag.self_align.title",
+  "tools.drag.title",
+  "tools.drill.feed",
+  "tools.drill.peck",
+  "tools.drill.peck.title",
+  "tools.drill.plunge",
+  "tools.drill.rpm",
+  "tools.drill.xy_overlap",
+  "tools.drill.xy_overlap.title",
+  "tools.field.na",
+  "tools.file.load_add",
+  "tools.file.load_add.title",
+  "tools.file.load_replace",
+  "tools.file.load_replace.inventory.title",
+  "tools.file.load_replace.project.title",
+  "tools.file.save.inventory.title",
+  "tools.file.save.project.title",
+  "tools.filter.all",
+  "tools.filter.clear",
+  "tools.filter.kind",
+  "tools.filter.runs_on",
+  "tools.filter.runs_on.any",
+  "tools.filter.runs_on.drag",
+  "tools.filter.runs_on.laser",
+  "tools.filter.runs_on.mill",
+  "tools.filter.runs_on.plasma",
+  "tools.filter.runs_on.title",
+  "tools.finish.feed",
+  "tools.finish.plunge",
+  "tools.finish.rpm",
+  "tools.hidden.many",
+  "tools.hidden.one",
+  "tools.hide_incompatible",
+  "tools.holder.cone.bottom_diameter",
+  "tools.holder.cone.top_diameter",
+  "tools.holder.cyl.diameter",
+  "tools.holder.flute_length",
+  "tools.holder.flute_length.title",
+  "tools.holder.kind.cone",
+  "tools.holder.kind.cylinder",
+  "tools.holder.kind.none",
+  "tools.holder.kind.stepped",
+  "tools.holder.label",
+  "tools.holder.length",
+  "tools.holder.overall_length",
+  "tools.holder.overall_length.title",
+  "tools.holder.preset",
+  "tools.holder.preset.apply",
+  "tools.holder.preset.title",
+  "tools.holder.runs_on",
+  "tools.holder.runs_on.title",
+  "tools.holder.shank_diameter",
+  "tools.holder.shank_diameter.placeholder",
+  "tools.holder.shank_diameter.title",
+  "tools.holder.stepped.cone_length",
+  "tools.holder.stepped.cone_top_diameter",
+  "tools.holder.stepped.cyl_diameter",
+  "tools.holder.stepped.cyl_length",
+  "tools.holder.stickout",
+  "tools.holder.stickout.title",
+  "tools.laser",
+  "tools.laser.kerf",
+  "tools.laser.kerf.title",
+  "tools.laser.lead_in",
+  "tools.laser.lead_in.title",
+  "tools.laser.pierce_time",
+  "tools.laser.pierce_time.title",
+  "tools.laser.title",
+  "tools.no_match",
+  "tools.pager.next",
+  "tools.pager.prev",
+  "tools.pager.status",
+  "tools.pass_overrides",
+  "tools.pass_overrides.title",
+  "tools.plasma",
+  "tools.plasma.cut_height",
+  "tools.plasma.cut_height.title",
+  "tools.plasma.kerf",
+  "tools.plasma.kerf.title",
+  "tools.plasma.pierce_delay",
+  "tools.plasma.pierce_delay.title",
+  "tools.plasma.pierce_height",
+  "tools.plasma.pierce_height.title",
+  "tools.plasma.title",
+  "tools.row.delete.aria",
+  "tools.row.delete.disabled",
+  "tools.row.delete.title",
+  "tools.row.dflt_step.invalid.title",
+  "tools.row.dflt_step.title",
+  "tools.row.diameter.invalid.title",
+  "tools.row.expand.collapse.aria",
+  "tools.row.expand.collapse.title",
+  "tools.row.expand.expand.aria",
+  "tools.row.expand.expand.title",
+  "tools.row.feed.drill.title",
+  "tools.row.feed.invalid.title",
+  "tools.row.name.title",
+  "tools.row.plunge.invalid.title",
+  "tools.row.speed.invalid.title",
+  "tools.row.tip_angle.title",
+  "tools.row.tip_diameter.invalid.title",
+  "tools.save.invalid.title",
+  "tools.search.placeholder",
+  "tools.search.title",
+  "tools.show_all",
+  "tools.show_all.title",
+  "tools.showing_all",
+  "tools.spindle_dir",
+  "tools.spindle_dir.ccw",
+  "tools.spindle_dir.cw",
+  "tools.spindle_dir.disabled.drag_knife",
+  "tools.spindle_dir.disabled.laser",
+  "tools.spindle_dir.disabled.plasma",
+  "tools.spindle_dir.title",
+  "tools.spindle_warmup",
+  "tools.spindle_warmup.title",
+  "tools.thread",
+  "tools.thread.pitch",
+  "tools.thread.pitch.title",
+  "tools.thread.title",
+  "tools.title",
+  "tools.validation_msg",
+  "tools.wear",
+  "tools.wear.calibrate",
+  "tools.wear.calibrate.title",
+  "tools.wear.cuts_as",
+  "tools.wear.last_calibrated",
+  "tools.wear.never",
+  "tools.wear.offset",
+  "tools.wear.offset.title",
+  "tools.wear.stale",
+  "tools.wear.stale.title",
+  "tools.wear.title",
+  "tools.whirl",
+  "tools.whirl.enable",
+  "tools.whirl.extra_width",
+  "tools.whirl.extra_width.title",
+  "tools.whirl.stride",
+  "tools.whirl.stride.title",
+  "tools.whirl.title",
+  "tools.whirl.z_wobble",
+  "tools.whirl.z_wobble.title",
+  "tools.z_shift",
+  "tools.z_shift.title",
 ];

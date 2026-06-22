@@ -9,6 +9,7 @@
   import { project } from '../state/project.svelte';
   import { workspace } from '../state/workspace.svelte';
   import { stockTool } from '../state/tool_inventory';
+  import { t } from '../i18n';
   import {
     effectiveModes,
     KIND_DISPLAY_LABELS,
@@ -62,35 +63,31 @@
 
 <div class="tooling">
   <section class="col">
-    <h3
-      title="The shop's tool inventory (edit it in the Tool library tab). Greyed-out tools can't run on this machine."
-    >
-      Shop inventory
+    <h3 title={t('machinetool.shop_inventory.title')}>
+      {t('machinetool.shop_inventory')}
     </h3>
     {#if inventory.length > 0}
       <input
         type="text"
         class="inv-filter"
-        placeholder="Filter inventory…"
+        placeholder={t('machinetool.filter.placeholder')}
         bind:value={filter}
-        title="Filter the inventory by name or kind."
+        title={t('machinetool.filter.title')}
       />
     {/if}
     {#if inventory.length === 0}
-      <p class="hint">
-        The shop inventory is empty — open the <strong>Tool library</strong> tab once to seed it from
-        the current tools, then stock machines from here.
-      </p>
+      <!-- eslint-disable-next-line svelte/no-at-html-tags -- static, translator-authored markup -->
+      <p class="hint">{@html t('machinetool.inventory_empty')}</p>
     {/if}
     <ul>
-      {#each shownInventory as t (t.id)}
-        {@const compatible = toolCompatibleWithAnyMode(t.kind, machineModes)}
-        {@const stockedAlready = alreadyStocked(t.id)}
+      {#each shownInventory as tool (tool.id)}
+        {@const compatible = toolCompatibleWithAnyMode(tool.kind, machineModes)}
+        {@const stockedAlready = alreadyStocked(tool.id)}
         <li class:incompatible={!compatible}>
-          <span class="name">#{t.id} {t.name}</span>
-          <span class="meta">{KIND_DISPLAY_LABELS[t.kind]} · ⌀{t.diameter}</span>
+          <span class="name">#{tool.id} {tool.name}</span>
+          <span class="meta">{KIND_DISPLAY_LABELS[tool.kind]} · ⌀{tool.diameter}</span>
           <span class="chips">
-            {#each TOOL_COMPATIBLE_MODES[t.kind] as m (m)}
+            {#each TOOL_COMPATIBLE_MODES[tool.kind] as m (m)}
               <span class="cap-chip">{MACHINE_MODE_NOUN[m]}</span>
             {/each}
           </span>
@@ -99,33 +96,33 @@
             class="act"
             disabled={!compatible || stockedAlready}
             title={!compatible
-              ? `A ${KIND_DISPLAY_LABELS[t.kind].toLowerCase()} cannot run on a ${machineLabel} machine.`
+              ? t('machinetool.incompatible_tool.title', {
+                  kind: KIND_DISPLAY_LABELS[tool.kind].toLowerCase(),
+                  machine: machineLabel,
+                })
               : stockedAlready
-                ? 'Already stocked on this machine.'
-                : 'Stock this tool on the machine — it becomes available in operation tool dropdowns.'}
-            onclick={() => add(t.id)}>{stockedAlready ? 'Stocked' : 'Add →'}</button
+                ? t('machinetool.already_stocked.title')
+                : t('machinetool.add.title')}
+            onclick={() => add(tool.id)}
+            >{stockedAlready ? t('machinetool.stocked') : t('machinetool.add')}</button
           >
         </li>
       {/each}
     </ul>
   </section>
   <section class="col">
-    <h3
-      title="Tools loaded on this machine — what operation dropdowns offer. Saved with the machine (profile) and the project."
-    >
-      Stocked on this machine ({machineLabel})
+    <h3 title={t('machinetool.stocked_col.title')}>
+      {t('machinetool.stocked_col', { machine: machineLabel })}
     </h3>
     <ul>
-      {#each stocked as t (t.id)}
-        {@const uses = usedByOps(t.id)}
-        <li class:incompatible={!toolCompatibleWithAnyMode(t.kind, machineModes)}>
-          <span class="name">#{t.id} {t.name}</span>
-          <span class="meta">{KIND_DISPLAY_LABELS[t.kind]} · ⌀{t.diameter}</span>
-          {#if !toolCompatibleWithAnyMode(t.kind, machineModes)}
-            <span
-              class="warn"
-              title="This tool cannot run on the machine's current mode/capabilities — generate-time warnings will flag operations using it."
-              >incompatible</span
+      {#each stocked as tool (tool.id)}
+        {@const uses = usedByOps(tool.id)}
+        <li class:incompatible={!toolCompatibleWithAnyMode(tool.kind, machineModes)}>
+          <span class="name">#{tool.id} {tool.name}</span>
+          <span class="meta">{KIND_DISPLAY_LABELS[tool.kind]} · ⌀{tool.diameter}</span>
+          {#if !toolCompatibleWithAnyMode(tool.kind, machineModes)}
+            <span class="warn" title={t('machinetool.incompatible.title')}
+              >{t('machinetool.incompatible')}</span
             >
           {/if}
           <button
@@ -133,11 +130,13 @@
             class="act"
             disabled={stocked.length <= 1 || uses > 0}
             title={uses > 0
-              ? `${uses} operation${uses === 1 ? '' : 's'} use this tool — reassign them first.`
+              ? uses === 1
+                ? t('machinetool.remove_used.title.one', { n: uses })
+                : t('machinetool.remove_used.title.other', { n: uses })
               : stocked.length <= 1
-                ? 'At least one tool must stay stocked.'
-                : 'Remove from this machine (the tool stays in the shop inventory).'}
-            onclick={() => remove(t.id)}>Remove</button
+                ? t('machinetool.remove_last.title')
+                : t('machinetool.remove.title')}
+            onclick={() => remove(tool.id)}>{t('machinetool.remove')}</button
           >
         </li>
       {/each}

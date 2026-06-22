@@ -11,6 +11,7 @@
   import aboutMd from 'virtual:about';
   import { renderMarkdown } from './markdown-lite';
   import { onExternalLinkClick } from '../services/external-links';
+  import { t } from '../i18n';
 
   interface Props {
     onClose: () => void;
@@ -149,11 +150,19 @@
 
 {#snippet shell()}
   <header>
-    <h2 id="about-title">About ivaCAM</h2>
+    <h2 id="about-title">{t('about.title')}</h2>
     <div class="header-right">
-      <img class="about-logo" src="/ivacam-logo.png" alt="ivaCAM logo" width="80" height="80" />
+      <img
+        class="about-logo"
+        src="/ivacam-logo.png"
+        alt={t('about.logo_alt')}
+        width="80"
+        height="80"
+      />
       {#if !embedded}
-        <button type="button" class="dlg-close" onclick={onClose} aria-label="Close">×</button>
+        <button type="button" class="dlg-close" onclick={onClose} aria-label={t('common.close')}
+          >×</button
+        >
       {/if}
     </div>
   </header>
@@ -167,49 +176,40 @@
 
   <section>
     <dl class="build">
-      <dt>Build</dt>
+      <dt>{t('about.build')}</dt>
       <dd>
         <code class="build-id">{buildVersion}</code>
         <button
           type="button"
           class="copy-btn"
           onclick={copyBuildId}
-          title="Copy the build identifier so it can go in a bug report"
+          title={t('about.copy_build_id.title')}
         >
-          {copyState === 'copied' ? 'Copied' : 'Copy'}
+          {copyState === 'copied' ? t('about.copied') : t('about.copy')}
         </button>
       </dd>
       {#if buildDateDisplay}
-        <dt>Date</dt>
+        <dt>{t('about.date')}</dt>
         <dd>
-          <span
-            class="build-date"
-            title="UTC timestamp the binary was produced at — for cross-timezone bug reports."
-          >
+          <span class="build-date" title={t('about.date.title')}>
             {buildDateDisplay}
           </span>
         </dd>
       {/if}
     </dl>
-    <p class="hint">
-      Include the build identifier above when filing issues - it pins the report to the exact binary
-      you tested.
-    </p>
+    <p class="hint">{t('about.build_hint')}</p>
   </section>
 
   <section>
-    <h3>Third-party libraries</h3>
-    <p class="hint">
-      ivaCAM stands on the work of many open-source projects. The major runtime dependencies are
-      listed below; full transitive lists ship in <code>Cargo.lock</code>
-      and <code>package-lock.json</code>.
-    </p>
+    <h3>{t('about.third_party')}</h3>
+    <!-- eslint-disable-next-line svelte/no-at-html-tags -- static, translator-authored markup (only <code> filenames) -->
+    <p class="hint">{@html t('about.third_party.intro')}</p>
     <table class="libs">
       <thead>
         <tr>
-          <th>Library</th>
-          <th>License</th>
-          <th>Role</th>
+          <th>{t('about.col.library')}</th>
+          <th>{t('about.col.license')}</th>
+          <th>{t('about.col.role')}</th>
         </tr>
       </thead>
       <tbody>

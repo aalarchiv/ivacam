@@ -21,6 +21,7 @@
   import { effectiveModes, machineModesLabel } from '../state/tool_family';
   import { effectiveDiameterHint } from '../state/tool_wear';
   import { partitionToolsForModes } from '../state/tool_picker';
+  import { t } from '../i18n';
   import VCarveSection from './op_properties/VCarveSection.svelte';
   import ChamferSection from './op_properties/ChamferSection.svelte';
   import ThreadSection from './op_properties/ThreadSection.svelte';
@@ -45,29 +46,27 @@
   const apiClient = defaultClient();
   const HELIX_PREVIEW_DEBOUNCE_MS = 300;
 
-  /// Help text for the per-op dropdowns. Hardcoded English (the UI is
-  /// not localized). Keep these grouped near the top so future
-  /// translators have one obvious target.
-  const COMBINE_HELP: Record<string, string> = {
-    auto: 'Containment-aware: nested closed objects become holes (outer + inner = annulus). Default.',
-    union: 'Boolean union of all selected closed contours.',
-    difference: 'First selected minus the union of the rest.',
-    intersection: 'Boolean intersection of all selected closed contours.',
-    xor: 'Symmetric difference (xor) of all selected closed contours.',
-    none: 'No combination — one boundary per selected object, no holes.',
-  };
-  const CUT_DIRECTION_HELP: Record<string, string> = {
-    conventional:
-      'Cutter rotation OPPOSES feed at contact. Safer on machines with backlash; chip starts thin.',
-    climb: 'Cutter rotation matches feed at contact. Better surface finish; needs a stiff machine.',
-  };
-  const PLUNGE_HELP: Record<string, string> = {
-    direct:
-      'Straight Z plunge into material. Safe for center-cutting endmills on shallow steps; risky on harder materials.',
-    ramp: 'Ramped descent: cutter walks forward along the path while Z descends, taking a chip in both directions. Required for non-center-cutting bits.',
-    helix:
-      'Helical entry: cutter spirals down on a small circle inside the closed pocket boundary, then walks to the path start. Standard for non-center-cutting endmills and harder materials. Falls back to ramp on open paths or when the helix circle does not fit.',
-  };
+  /// Help text for the per-op dropdowns. Each map keys an enum value to a
+  /// message key; resolved through t() at the use site so it translates
+  /// live. Keep these grouped near the top so future translators have one
+  /// obvious target.
+  const COMBINE_HELP = {
+    auto: 'opprops.combine.auto.help',
+    union: 'opprops.combine.union.help',
+    difference: 'opprops.combine.difference.help',
+    intersection: 'opprops.combine.intersection.help',
+    xor: 'opprops.combine.xor.help',
+    none: 'opprops.combine.none.help',
+  } as const;
+  const CUT_DIRECTION_HELP = {
+    conventional: 'opprops.direction.conventional.help',
+    climb: 'opprops.direction.climb.help',
+  } as const;
+  const PLUNGE_HELP = {
+    direct: 'opprops.plunge.direct.help',
+    ramp: 'opprops.plunge.ramp.help',
+    helix: 'opprops.plunge.helix.help',
+  } as const;
 
   interface Props {
     /// True when rendered inline under an OperationsList row (drops the
@@ -199,7 +198,9 @@
       >
     {/each}
     {#if toolParts.incompatible.length > 0}
-      <optgroup label="Incompatible with a {machineModesLabel(machineModes)} machine">
+      <optgroup
+        label={t('opprops.tool.incompatible_group', { modes: machineModesLabel(machineModes) })}
+      >
         {#each toolParts.incompatible as t (t.id)}
           <option value={t.id} disabled={disabledId === t.id} title={t.comment ?? ''}
             >#{t.id} {t.name} ({formatLength(t.diameter, project.data.machine.unit)})</option
@@ -209,11 +210,11 @@
     {/if}
   {/snippet}
   {#if !embedded}
-    <h3>Properties</h3>
+    <h3>{t('opprops.title')}</h3>
   {/if}
 
   {#if !op}
-    <p class="empty" class:embedded-empty={embedded}>Select an operation in the list to edit it.</p>
+    <p class="empty" class:embedded-empty={embedded}>{t('opprops.empty')}</p>
   {:else if op.kind === 'pause'}
     <!-- Program-only kinds delegate to a dedicated *Section, same as
          the geometry kinds — one rule for where a kind's panel lives. -->
@@ -230,7 +231,7 @@
     <!-- Relief surfacing follows an image-derived Z-surface, not
          source geometry — name + tool + the relief section only. -->
     <label class="row">
-      <span>Name</span>
+      <span>{t('opprops.name')}</span>
       <input
         type="text"
         value={op.name}
@@ -241,16 +242,16 @@
     {#if reliefTool != null && !isToolKindAcceptable(op.kind, reliefTool.kind)}
       <p
         class="warn-chip"
-        title={`This op typically uses ${formatExpectedToolKinds(op.kind)}; running it with the assigned tool will likely produce unexpected gcode.`}
+        title={t('opprops.tool.mismatch.title', { kinds: formatExpectedToolKinds(op.kind) })}
       >
-        Tool kind mismatch — {prettyOpKind(op.kind)} expects {formatExpectedToolKinds(op.kind)}.
+        {t('opprops.tool.mismatch', {
+          op: prettyOpKind(op.kind),
+          kinds: formatExpectedToolKinds(op.kind),
+        })}
       </p>
     {/if}
-    <label
-      class="row"
-      title="Ball-nose tool from the project library — its radius drives the scallop + the surface follow."
-    >
-      <span>Tool</span>
+    <label class="row" title={t('opprops.tool.title.relief')}>
+      <span>{t('opprops.tool')}</span>
       <div class="tool-cell">
         <select
           value={op.toolId}
@@ -262,8 +263,8 @@
         <button
           type="button"
           class="tool-edit"
-          title="Edit this tool in the Tool library"
-          aria-label="Edit this tool in the Tool library"
+          title={t('opprops.tool.edit')}
+          aria-label={t('opprops.tool.edit')}
           onclick={(e) => {
             e.stopPropagation();
             project.sel.toolsDialogFocusId = op.toolId;
@@ -276,7 +277,7 @@
     <!-- Laser raster engraving follows an image-derived power
          field, not source geometry — name + tool + the raster section. -->
     <label class="row">
-      <span>Name</span>
+      <span>{t('opprops.name')}</span>
       <input
         type="text"
         value={op.name}
@@ -287,16 +288,16 @@
     {#if rasterTool != null && !isToolKindAcceptable(op.kind, rasterTool.kind)}
       <p
         class="warn-chip"
-        title={`This op typically uses ${formatExpectedToolKinds(op.kind)}; running it with the assigned tool will likely produce unexpected gcode.`}
+        title={t('opprops.tool.mismatch.title', { kinds: formatExpectedToolKinds(op.kind) })}
       >
-        Tool kind mismatch — {prettyOpKind(op.kind)} expects {formatExpectedToolKinds(op.kind)}.
+        {t('opprops.tool.mismatch', {
+          op: prettyOpKind(op.kind),
+          kinds: formatExpectedToolKinds(op.kind),
+        })}
       </p>
     {/if}
-    <label
-      class="row"
-      title="Laser tool from the project library — its feed rate drives the burn-time estimate."
-    >
-      <span>Tool</span>
+    <label class="row" title={t('opprops.tool.title.raster')}>
+      <span>{t('opprops.tool')}</span>
       <div class="tool-cell">
         <select
           value={op.toolId}
@@ -308,8 +309,8 @@
         <button
           type="button"
           class="tool-edit"
-          title="Edit this tool in the Tool library"
-          aria-label="Edit this tool in the Tool library"
+          title={t('opprops.tool.edit')}
+          aria-label={t('opprops.tool.edit')}
           onclick={(e) => {
             e.stopPropagation();
             project.sel.toolsDialogFocusId = op.toolId;
@@ -320,7 +321,7 @@
     <RasterEngraveSection {op} {patch} />
   {:else}
     <label class="row">
-      <span>Name</span>
+      <span>{t('opprops.name')}</span>
       <input
         type="text"
         value={op.name}
@@ -333,18 +334,19 @@
     {#if selectedTool != null && !toolKindOk}
       <p
         class="warn-chip"
-        title={`This op typically uses ${formatExpectedToolKinds(op.kind)}; running it with the assigned tool will likely produce unexpected gcode.`}
+        title={t('opprops.tool.mismatch.title', { kinds: formatExpectedToolKinds(op.kind) })}
       >
-        Tool kind mismatch — {prettyOpKind(op.kind)} expects {formatExpectedToolKinds(op.kind)}.
+        {t('opprops.tool.mismatch', {
+          op: prettyOpKind(op.kind),
+          kinds: formatExpectedToolKinds(op.kind),
+        })}
       </p>
     {/if}
     <label
       class="row"
-      title={selectedTool?.comment
-        ? selectedTool.comment
-        : 'Tool from the project library. Drives the offset radius + feeds + speeds + holder collision check.'}
+      title={selectedTool?.comment ? selectedTool.comment : t('opprops.tool.title.default')}
     >
-      <span>Tool</span>
+      <span>{t('opprops.tool')}</span>
       <div class="tool-cell">
         <select
           value={op.toolId}
@@ -356,8 +358,8 @@
         <button
           type="button"
           class="tool-edit"
-          title="Edit this tool in the Tool library"
-          aria-label="Edit this tool in the Tool library"
+          title={t('opprops.tool.edit')}
+          aria-label={t('opprops.tool.edit')}
           onclick={(e) => {
             e.stopPropagation();
             project.sel.toolsDialogFocusId = op.toolId;
@@ -366,11 +368,8 @@
       </div>
     </label>
     {#if selectedTool != null && (selectedTool.wearOffsetMm ?? 0) !== 0}
-      <p
-        class="wear-hint"
-        title="This tool has a measured wear offset (Tool library → Wear). Toolpaths are compensated to the effective diameter; the picker above keeps showing the nominal size."
-      >
-        Effective diameter: {effectiveDiameterHint(selectedTool)}
+      <p class="wear-hint" title={t('opprops.wear.title')}>
+        {t('opprops.wear.effective_diameter', { value: effectiveDiameterHint(selectedTool) })}
       </p>
     {/if}
 
@@ -378,10 +377,10 @@
       <label
         class="row"
         title={op.kind === 'pocket'
-          ? 'Optional finish tool. When different from the rough tool, the pipeline runs the bulk cascade with the rough tool, emits a T<n> M6 tool change, then walks the wall ring with this smaller / sharper finish tool at its finish-set feed/speed. Empty = single-tool (the rough tool also defines the wall).'
-          : 'Countersink chamfer cutter. Used only when Chamfer width is set below — after the drill cycle the pipeline emits a toolchange to this V-bit, then walks the hole rim at the chamfer depth. Empty = chamfer with the drill tool itself.'}
+          ? t('opprops.finish_tool.title.pocket')
+          : t('opprops.finish_tool.title.drill')}
       >
-        <span>Finish tool</span>
+        <span>{t('opprops.finish_tool')}</span>
         <div class="tool-cell">
           <select
             value={op.finishToolId ?? ''}
@@ -390,7 +389,7 @@
               patch('finishToolId', raw === '' ? undefined : parseInt(raw, 10));
             }}
           >
-            <option value="">— same as rough —</option>
+            <option value="">{t('opprops.finish_tool.same_as_rough')}</option>
             {@render toolOptions(op.toolId)}
           </select>
         </div>
@@ -398,9 +397,9 @@
     {/if}
 
     <fieldset>
-      <legend>Source</legend>
+      <legend>{t('opprops.source')}</legend>
       <label class="row">
-        <span>Mode</span>
+        <span>{t('opprops.source.mode')}</span>
         <select
           value={op.sourceObjects && op.sourceObjects.length > 0
             ? '_objects_'
@@ -421,19 +420,19 @@
             }
           }}
         >
-          <option value="_all_">all imported geometry</option>
-          <option value="_layer_">specific layer(s)</option>
-          <option value="_objects_">selected objects</option>
+          <option value="_all_">{t('opprops.source.mode.all')}</option>
+          <option value="_layer_">{t('opprops.source.mode.layer')}</option>
+          <option value="_objects_">{t('opprops.source.mode.objects')}</option>
         </select>
       </label>
       {#if op.sourceLayers !== null && (op.sourceObjects?.length ?? 0) === 0}
         <label class="row">
-          <span>Layer</span>
+          <span>{t('opprops.source.layer')}</span>
           <select
             value={op.sourceLayers[0] ?? ''}
             onchange={(e) => patch('sourceLayers', [(e.currentTarget as HTMLSelectElement).value])}
           >
-            <option value="">— pick a layer —</option>
+            <option value="">{t('opprops.source.layer.pick')}</option>
             {#if project.transformedImport}
               {#each project.transformedImport.layers.filter((l) => l.segment_count > 0) as layer (layer.name)}
                 <option value={layer.name}>"{layer.name}"</option>
@@ -446,7 +445,7 @@
                  source visible + re-selectable instead of rendering blank
                  and getting clobbered on the next edit. -->
             {#if project.data.textLayers.length > 0}
-              <optgroup label="Text">
+              <optgroup label={t('opprops.source.text_group')}>
                 {#each project.data.textLayers as t (t.id)}
                   <option value={`__text_${t.id}`}>{t.name}</option>
                 {/each}
@@ -455,9 +454,11 @@
           </select>
         </label>
       {:else if op.sourceObjects && op.sourceObjects.length > 0}
-        <p class="hint">{op.sourceObjects.length} object(s) selected</p>
+        <p class="hint">
+          {t('opprops.source.objects_selected', { count: op.sourceObjects.length })}
+        </p>
       {:else if op.sourceLayers === null}
-        <p class="hint">runs on every chain in the import</p>
+        <p class="hint">{t('opprops.source.all_chains')}</p>
       {/if}
       <!-- Drill picks a single XY per selected object (POINT / circle
            center / bbox center) and emits a drill cycle there. The
@@ -466,19 +467,24 @@
            matter what. Hide the Combine selector for Drill to stop
            promising a knob that does nothing. -->
       {#if op.kind !== 'drill' && ((op.sourceObjects?.length ?? 0) > 1 || (op.sourceLayers !== null && op.sourceLayers.length > 0))}
-        <label class="row" title={COMBINE_HELP[op.sourceCombine ?? 'auto']}>
-          <span>Combine</span>
+        <label class="row" title={t(COMBINE_HELP[op.sourceCombine ?? 'auto'])}>
+          <span>{t('opprops.combine')}</span>
           <select
             value={op.sourceCombine ?? 'auto'}
             onchange={(e) =>
               patch('sourceCombine', (e.currentTarget as HTMLSelectElement).value as SourceCombine)}
           >
-            <option value="auto" title={COMBINE_HELP.auto}>auto (containment)</option>
-            <option value="union" title={COMBINE_HELP.union}>union</option>
-            <option value="difference" title={COMBINE_HELP.difference}>difference</option>
-            <option value="intersection" title={COMBINE_HELP.intersection}>intersection</option>
-            <option value="xor" title={COMBINE_HELP.xor}>xor</option>
-            <option value="none" title={COMBINE_HELP.none}>none (per object)</option>
+            <option value="auto" title={t(COMBINE_HELP.auto)}>{t('opprops.combine.auto')}</option>
+            <option value="union" title={t(COMBINE_HELP.union)}>{t('opprops.combine.union')}</option
+            >
+            <option value="difference" title={t(COMBINE_HELP.difference)}
+              >{t('opprops.combine.difference')}</option
+            >
+            <option value="intersection" title={t(COMBINE_HELP.intersection)}
+              >{t('opprops.combine.intersection')}</option
+            >
+            <option value="xor" title={t(COMBINE_HELP.xor)}>{t('opprops.combine.xor')}</option>
+            <option value="none" title={t(COMBINE_HELP.none)}>{t('opprops.combine.none')}</option>
           </select>
         </label>
       {/if}
@@ -488,25 +494,25 @@
         type="button"
         disabled={project.sel.selectedObjects.size === 0}
         aria-label={project.sel.selectedObjects.size === 0
-          ? 'Select one or more objects in the 2D canvas first to enable this.'
-          : `Set sources from ${project.sel.selectedObjects.size} selected`}
+          ? t('opprops.from_selection.disabled_aria')
+          : t('opprops.from_selection.count', { count: project.sel.selectedObjects.size })}
         title={project.sel.selectedObjects.size === 0
-          ? 'Select one or more objects in the 2D canvas first to enable this.'
-          : 'Use the chains currently highlighted in the 2D pane'}
+          ? t('opprops.from_selection.disabled_aria')
+          : t('opprops.from_selection.title')}
         onclick={() => {
           patch('sourceLayers', null);
           patch('sourceObjects', [...project.sel.selectedObjects]);
         }}
         >{project.sel.selectedObjects.size === 0
-          ? 'Set sources from selection'
-          : `Set sources from ${project.sel.selectedObjects.size} selected`}</button
+          ? t('opprops.from_selection')
+          : t('opprops.from_selection.count', { count: project.sel.selectedObjects.size })}</button
       >
     </fieldset>
 
     <fieldset>
-      <legend>Cut</legend>
+      <legend>{t('opprops.cut')}</legend>
       <label class="row">
-        <span>Final depth</span>
+        <span>{t('opprops.cut.final_depth')}</span>
         <div class="num-cell">
           <input
             type="number"
@@ -524,7 +530,7 @@
         </div>
       </label>
       <label class="row">
-        <span>Start depth</span>
+        <span>{t('opprops.cut.start_depth')}</span>
         <div class="num-cell">
           <input
             type="number"
@@ -540,14 +546,14 @@
         </div>
       </label>
       <label class="row">
-        <span>Step / pass</span>
+        <span>{t('opprops.cut.step')}</span>
         <div class="step-cell">
           <input
             type="number"
             step="0.1"
             value={op.step ?? ''}
             placeholder={stepInheriting && toolDefaultStep !== null && toolDefaultStep < 0
-              ? `${toolDefaultStep} (from tool)`
+              ? t('opprops.cut.step.from_tool', { value: toolDefaultStep })
               : '—'}
             class:inherit={stepInheriting && toolDefaultStep !== null && toolDefaultStep < 0}
             class:invalid={stepMissing}
@@ -566,26 +572,23 @@
             <button
               type="button"
               class="reset-link"
-              title="Clear the override and inherit the tool's default Z step."
-              onclick={() => patch('step', null)}>reset to inherit</button
+              title={t('opprops.cut.step.reset.title')}
+              onclick={() => patch('step', null)}>{t('opprops.cut.step.reset')}</button
             >
           {/if}
         </div>
       </label>
       {#if stepMissing}
-        <p class="step-error">Step required (set per-op or in the tool library).</p>
+        <p class="step-error">{t('opprops.cut.step.required')}</p>
       {/if}
       {#if isContourOp(op)}
-        <label
-          class="row"
-          title="Optional smaller step for the FINAL Z pass — gives a thin finishing pass at the bottom for cleaner surface. Same sign as Step (negative). Empty = same as Step."
-        >
-          <span>Finish step</span>
+        <label class="row" title={t('opprops.cut.finish_step.title')}>
+          <span>{t('opprops.cut.finish_step')}</span>
           <div class="num-cell">
             <input
               type="number"
               step="0.05"
-              placeholder="same as step"
+              placeholder={t('opprops.cut.finish_step.placeholder')}
               value={op.finishStep ?? ''}
               onchange={(e) => {
                 const v = parseFloat((e.currentTarget as HTMLInputElement).value);
@@ -597,11 +600,8 @@
         </label>
       {/if}
       {#if op.kind === 'pocket'}
-        <label
-          class="row"
-          title="Material left UNCUT on the walls by the roughing pass. A dedicated finish ring walks the actual boundary at the tool's finish-set feed/speed to remove it. Empty / 0 = no allowance (roughing reaches the wall in one pass)."
-        >
-          <span>XY finish stock</span>
+        <label class="row" title={t('opprops.cut.xy_finish_stock.title')}>
+          <span>{t('opprops.cut.xy_finish_stock')}</span>
           <div class="num-cell">
             <input
               type="number"
@@ -622,17 +622,14 @@
       {#if op.kind === 'pocket' || op.kind === 'profile'}
         {@const pickActive =
           project.sel.pickMode?.kind === 'approach-point' && project.sel.pickMode.opId === op.id}
-        <div
-          class="row"
-          title="Approach point: user-picked XY where the cutter enters each closed ring. Each closed offset's start vertex is rotated to the segment closest to this point — plunge/lead-in then happens there instead of an auto-picked vertex. Empty = auto."
-        >
-          <span>Approach point</span>
+        <div class="row" title={t('opprops.cut.approach_point.title')}>
+          <span>{t('opprops.cut.approach_point')}</span>
           <div class="num-cell num-cell-pair">
             <input
               type="number"
               step="0.1"
               placeholder="X"
-              aria-label="Approach point X"
+              aria-label={t('opprops.cut.approach_point.x_aria')}
               value={op.approachPoint?.[0] ?? ''}
               onchange={(e) => {
                 const xs = (e.currentTarget as HTMLInputElement).value;
@@ -649,7 +646,7 @@
               type="number"
               step="0.1"
               placeholder="Y"
-              aria-label="Approach point Y"
+              aria-label={t('opprops.cut.approach_point.y_aria')}
               value={op.approachPoint?.[1] ?? ''}
               onchange={(e) => {
                 const ys = (e.currentTarget as HTMLInputElement).value;
@@ -667,28 +664,29 @@
               class="reset-link"
               class:pick-active={pickActive}
               title={pickActive
-                ? 'Picking — click in canvas, ESC to finalize'
-                : 'Pick the approach point by clicking in the 2D canvas (Shift = disable snap)'}
+                ? t('opprops.cut.approach_point.picking.title')
+                : t('opprops.cut.approach_point.pick.title')}
               onclick={() => {
                 project.sel.pickMode = pickActive ? null : { kind: 'approach-point', opId: op.id };
-              }}>{pickActive ? 'picking…' : 'pick'}</button
+              }}
+              >{pickActive
+                ? t('opprops.cut.approach_point.picking')
+                : t('opprops.cut.approach_point.pick')}</button
             >
             {#if op.approachPoint}
               <button
                 type="button"
                 class="reset-link"
-                title="Clear approach point (auto-pick)"
-                onclick={() => patch('approachPoint', undefined)}>clear</button
+                title={t('opprops.cut.approach_point.clear.title')}
+                onclick={() => patch('approachPoint', undefined)}
+                >{t('opprops.cut.approach_point.clear')}</button
               >
             {/if}
           </div>
         </div>
       {/if}
-      <label
-        class="row"
-        title="Cut past the nominal depth by this many mm. Useful for through-cuts on edge-clamped sheet so the cutter clears the bottom. 0 = no extension. Drill ops additionally extend the cut by the tool's tip-cone length automatically (so the full bore diameter reaches the bottom of the stock) — this manual extension stacks on top of the auto-cone."
-      >
-        <span>Through depth</span>
+      <label class="row" title={t('opprops.cut.through_depth.title')}>
+        <span>{t('opprops.cut.through_depth')}</span>
         <div class="num-cell">
           <input
             type="number"
@@ -703,15 +701,12 @@
           <span class="unit">mm</span>
         </div>
       </label>
-      <label
-        class="row"
-        title="Explicit comma-separated list of Z depths (negative numbers, e.g. -0.5, -1.5, -3). When non-empty, overrides Step / Finish step / Through depth. Empty = use the step-down loop."
-      >
-        <span>Depth list</span>
+      <label class="row" title={t('opprops.cut.depth_list.title')}>
+        <span>{t('opprops.cut.depth_list')}</span>
         <div class="num-cell">
           <input
             type="text"
-            placeholder="e.g. -0.5, -1.5, -3"
+            placeholder={t('opprops.cut.depth_list.placeholder')}
             value={op.depthList ? op.depthList.join(', ') : ''}
             onchange={(e) => {
               const text = (e.currentTarget as HTMLInputElement).value.trim();
@@ -730,21 +725,23 @@
         </div>
       </label>
       {#if op.kind === 'profile' || op.kind === 'pocket'}
-        <label class="row" title={CUT_DIRECTION_HELP[op.cutDirection ?? 'conventional']}>
-          <span>Direction</span>
+        <label class="row" title={t(CUT_DIRECTION_HELP[op.cutDirection ?? 'conventional'])}>
+          <span>{t('opprops.cut.direction')}</span>
           <select
             value={op.cutDirection ?? 'conventional'}
             onchange={(e) =>
               patch('cutDirection', (e.currentTarget as HTMLSelectElement).value as CutDirection)}
           >
-            <option value="conventional" title={CUT_DIRECTION_HELP.conventional}
-              >conventional</option
+            <option value="conventional" title={t(CUT_DIRECTION_HELP.conventional)}
+              >{t('opprops.direction.conventional')}</option
             >
-            <option value="climb" title={CUT_DIRECTION_HELP.climb}>climb</option>
+            <option value="climb" title={t(CUT_DIRECTION_HELP.climb)}
+              >{t('opprops.direction.climb')}</option
+            >
           </select>
         </label>
-        <label class="row" title={CUT_DIRECTION_HELP[op.finishCutDirection ?? 'conventional']}>
-          <span>Finish dir</span>
+        <label class="row" title={t(CUT_DIRECTION_HELP[op.finishCutDirection ?? 'conventional'])}>
+          <span>{t('opprops.cut.finish_direction')}</span>
           <select
             value={op.finishCutDirection ?? 'conventional'}
             onchange={(e) =>
@@ -753,14 +750,16 @@
                 (e.currentTarget as HTMLSelectElement).value as CutDirection,
               )}
           >
-            <option value="conventional" title={CUT_DIRECTION_HELP.conventional}
-              >conventional</option
+            <option value="conventional" title={t(CUT_DIRECTION_HELP.conventional)}
+              >{t('opprops.direction.conventional')}</option
             >
-            <option value="climb" title={CUT_DIRECTION_HELP.climb}>climb</option>
+            <option value="climb" title={t(CUT_DIRECTION_HELP.climb)}
+              >{t('opprops.direction.climb')}</option
+            >
           </select>
         </label>
-        <label class="row" title={PLUNGE_HELP[op.plunge?.kind ?? 'direct']}>
-          <span>Plunge</span>
+        <label class="row" title={t(PLUNGE_HELP[op.plunge?.kind ?? 'direct'])}>
+          <span>{t('opprops.cut.plunge')}</span>
           <select
             value={op.plunge?.kind ?? 'direct'}
             onchange={(e) => {
@@ -785,17 +784,16 @@
               }
             }}
           >
-            <option value="direct" title={PLUNGE_HELP.direct}>direct</option>
-            <option value="ramp" title={PLUNGE_HELP.ramp}>ramp</option>
-            <option value="helix" title={PLUNGE_HELP.helix}>helix</option>
+            <option value="direct" title={t(PLUNGE_HELP.direct)}
+              >{t('opprops.plunge.direct')}</option
+            >
+            <option value="ramp" title={t(PLUNGE_HELP.ramp)}>{t('opprops.plunge.ramp')}</option>
+            <option value="helix" title={t(PLUNGE_HELP.helix)}>{t('opprops.plunge.helix')}</option>
           </select>
         </label>
         {#if op.plunge && op.plunge.kind === 'ramp'}
-          <label
-            class="row"
-            title="Ramp angle in degrees. 1°–5° is gentle, 10°+ is aggressive. The ramp's horizontal length is step / tan(angle)."
-          >
-            <span>Ramp angle</span>
+          <label class="row" title={t('opprops.ramp_angle.title')}>
+            <span>{t('opprops.ramp_angle')}</span>
             <div class="num-cell">
               <input
                 type="number"
@@ -814,12 +812,9 @@
           </label>
         {:else if op.plunge && op.plunge.kind === 'helix'}
           <details class="subsection" open>
-            <summary>Helix</summary>
-            <label
-              class="row"
-              title="Helix descent angle in degrees. 1°–5° is gentle, 10°+ is aggressive. Each revolution drops Z by 2π·radius·tan(angle)."
-            >
-              <span>Helix angle</span>
+            <summary>{t('opprops.helix')}</summary>
+            <label class="row" title={t('opprops.helix_angle.title')}>
+              <span>{t('opprops.helix_angle')}</span>
               <div class="num-cell">
                 <input
                   type="number"
@@ -840,11 +835,8 @@
                 <span class="unit">°</span>
               </div>
             </label>
-            <label
-              class="row"
-              title="Auto-fit the helix circle to the largest inscribed circle inside the pocket boundary. Falls back to ramp when no helix circle fits."
-            >
-              <span>Auto-fit helix</span>
+            <label class="row" title={t('opprops.helix_autofit.title')}>
+              <span>{t('opprops.helix_autofit')}</span>
               <input
                 type="checkbox"
                 checked={op.plunge.radiusMm === null}
@@ -861,33 +853,31 @@
               />
             </label>
             {#if op.plunge.radiusMm === null}
-              <div
-                class="row"
-                title="Auto-fit picks the helix radius from the pocket geometry. The detected value previews here before generation; the final fit re-runs at G-code time."
-              >
-                <span>Helix radius</span>
+              <div class="row" title={t('opprops.helix_radius.auto.title')}>
+                <span>{t('opprops.helix_radius')}</span>
                 {#if helixPreview?.radius_mm != null}
                   <em class="placeholder"
-                    >Auto (detected: {helixPreview.radius_mm.toFixed(1)} mm)</em
+                    >{t('opprops.helix_radius.auto_detected', {
+                      value: helixPreview.radius_mm.toFixed(1),
+                    })}</em
                   >
                 {:else if helixPreview && helixPreview.radius_mm == null}
                   <em class="placeholder"
-                    >Auto (no fit — will Ramp instead{helixPreview.fallback_reason
-                      ? `: ${helixPreview.fallback_reason}`
-                      : ''})</em
+                    >{helixPreview.fallback_reason
+                      ? t('opprops.helix_radius.auto_no_fit_reason', {
+                          reason: helixPreview.fallback_reason,
+                        })
+                      : t('opprops.helix_radius.auto_no_fit')}</em
                   >
                 {:else if helixPreviewLoading}
-                  <em class="placeholder">Auto (will fit at generation)</em>
+                  <em class="placeholder">{t('opprops.helix_radius.auto_pending')}</em>
                 {:else}
-                  <em class="placeholder">Auto (will fit at generation)</em>
+                  <em class="placeholder">{t('opprops.helix_radius.auto_pending')}</em>
                 {/if}
               </div>
             {:else}
-              <label
-                class="row"
-                title="Helix radius in mm. Should be ≥ tool radius; sane default is 1.5 × tool radius. Larger = more clearance, more material removed by the spiral."
-              >
-                <span>Helix radius</span>
+              <label class="row" title={t('opprops.helix_radius.manual.title')}>
+                <span>{t('opprops.helix_radius')}</span>
                 <div class="num-cell">
                   <input
                     type="number"
@@ -921,15 +911,18 @@
           (op.tabPlacements && op.tabPlacements.length > 0)}
       >
         <summary>
-          Tabs
+          {t('opprops.tabs')}
           <span class="opt-summary"
             >{op.tabMode?.kind === 'off' || !op.tabMode
-              ? 'Off'
+              ? t('opprops.tabs.off')
               : op.tabMode.kind === 'manual'
-                ? `${op.tabPlacements?.length ?? 0} manual`
+                ? t('opprops.tabs.manual', { count: op.tabPlacements?.length ?? 0 })
                 : op.tabMode.kind === 'auto'
-                  ? `${op.tabMode.count} auto`
-                  : `${op.tabMode.autoCount} auto + ${op.tabPlacements?.length ?? 0} manual`}</span
+                  ? t('opprops.tabs.auto', { count: op.tabMode.count })
+                  : t('opprops.tabs.auto_manual', {
+                      auto: op.tabMode.autoCount,
+                      manual: op.tabPlacements?.length ?? 0,
+                    })}</span
           >
         </summary>
         <TabsSection {op} {patch} />
@@ -954,28 +947,27 @@
           (op.cornerFeedReduction ?? 0) > 0}
       >
         <summary>
-          Feeds (overrides)
+          {t('opprops.feeds')}
           <span class="opt-summary"
             >{op.feedRateOverride !== undefined ||
             op.plungeRateOverride !== undefined ||
             (op.cornerFeedReduction ?? 0) > 0
-              ? 'custom'
-              : 'tool defaults'}</span
+              ? t('opprops.feeds.custom')
+              : t('opprops.feeds.tool_defaults')}</span
           >
         </summary>
         <fieldset class="optional-fieldset">
-          <legend>Feeds (overrides)</legend>
-          <label
-            class="row"
-            title="Override the tool's feed rate (mm/min) for this operation only. Leave empty to use the tool default."
-          >
-            <span>Feed rate</span>
+          <legend>{t('opprops.feeds')}</legend>
+          <label class="row" title={t('opprops.feeds.feed_rate.title')}>
+            <span>{t('opprops.feeds.feed_rate')}</span>
             <div class="num-cell">
               <input
                 type="number"
                 step="50"
                 min="0"
-                placeholder={toolFeedRate != null ? String(toolFeedRate) : 'tool default'}
+                placeholder={toolFeedRate != null
+                  ? String(toolFeedRate)
+                  : t('opprops.feeds.tool_default')}
                 value={op.feedRateOverride ?? ''}
                 onchange={(e) => {
                   const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
@@ -988,22 +980,22 @@
                   type="button"
                   class="reset-link"
                   onclick={() => patch('feedRateOverride', undefined)}
-                  title="Clear override and inherit from the tool's feed rate.">reset</button
+                  title={t('opprops.feeds.feed_rate.reset.title')}
+                  >{t('opprops.feeds.reset')}</button
                 >
               {/if}
             </div>
           </label>
-          <label
-            class="row"
-            title="Override the tool's plunge rate (mm/min) for Z descents in this operation. Leave empty to use the tool default."
-          >
-            <span>Plunge rate</span>
+          <label class="row" title={t('opprops.feeds.plunge_rate.title')}>
+            <span>{t('opprops.feeds.plunge_rate')}</span>
             <div class="num-cell">
               <input
                 type="number"
                 step="10"
                 min="0"
-                placeholder={toolPlungeRate != null ? String(toolPlungeRate) : 'tool default'}
+                placeholder={toolPlungeRate != null
+                  ? String(toolPlungeRate)
+                  : t('opprops.feeds.tool_default')}
                 value={op.plungeRateOverride ?? ''}
                 onchange={(e) => {
                   const v = parseInt((e.currentTarget as HTMLInputElement).value, 10);
@@ -1016,16 +1008,14 @@
                   type="button"
                   class="reset-link"
                   onclick={() => patch('plungeRateOverride', undefined)}
-                  title="Clear override and inherit from the tool's plunge rate.">reset</button
+                  title={t('opprops.feeds.plunge_rate.reset.title')}
+                  >{t('opprops.feeds.reset')}</button
                 >
               {/if}
             </div>
           </label>
-          <label
-            class="row"
-            title="Slow the feed at sharp Line→Line corners by this fraction. 0 = no reduction (default). 0.5 = half feed at corners. Most useful for zigzag pocket fills with their many 180° turns."
-          >
-            <span>Corner slow</span>
+          <label class="row" title={t('opprops.feeds.corner_slow.title')}>
+            <span>{t('opprops.feeds.corner_slow')}</span>
             <div class="num-cell">
               <input
                 type="number"
@@ -1038,7 +1028,9 @@
                   patch('cornerFeedReduction', isNaN(v) ? 0 : Math.max(0, Math.min(0.95, v)));
                 }}
               />
-              <span class="unit" title="Unitless fraction between 0 and 1.">fraction</span>
+              <span class="unit" title={t('opprops.feeds.fraction.title')}
+                >{t('opprops.feeds.fraction')}</span
+              >
             </div>
           </label>
         </fieldset>
@@ -1069,28 +1061,22 @@
          the G-code stream. Collapsed by default; empty = no group. -->
     <details class="optional-section" open={op.group != null && op.group !== ''}>
       <summary>
-        Group
-        <span class="opt-summary">{op.group ? op.group : '(none)'}</span>
+        {t('opprops.group')}
+        <span class="opt-summary">{op.group ? op.group : t('opprops.group.none')}</span>
       </summary>
-      <label
-        class="row"
-        title="Optional phase label. Consecutive ops sharing this value belong to one logical phase (`rough`, `finish`, `drill cycle`, …) and the pipeline emits a `; === GROUP: <name> ===` boundary line at every transition. Empty = no group."
-      >
-        <span>Label</span>
+      <label class="row" title={t('opprops.group.label.title')}>
+        <span>{t('opprops.group.label')}</span>
         <input
           type="text"
           value={op.group ?? ''}
-          placeholder="rough, finish, drill, …"
+          placeholder={t('opprops.group.label.placeholder')}
           oninput={(e) => patch('group', (e.currentTarget as HTMLInputElement).value)}
         />
       </label>
       <!-- Pin this op's position when the project-level "Group ops
            by tool" reorder is on. A pinned op is a fixed barrier. -->
-      <label
-        class="row"
-        title="Pin this operation's position when 'Group ops by tool' is on. A pinned op is a fixed barrier — it keeps its slot and the grouping pass won't move other ops across it. Use to lock a stability-critical cut order (tabs, thin walls)."
-      >
-        <span>Pin order</span>
+      <label class="row" title={t('opprops.group.pin_order.title')}>
+        <span>{t('opprops.group.pin_order')}</span>
         <input
           type="checkbox"
           checked={op.pinOrder ?? false}
@@ -1102,15 +1088,15 @@
     {#if op.kind === 'drill'}
       <details class="optional-section" open={op.pattern !== undefined && op.pattern !== null}>
         <summary>
-          Pattern
+          {t('opprops.pattern')}
           <span class="opt-summary"
             >{op.pattern == null
-              ? 'single'
+              ? t('opprops.pattern.single')
               : op.pattern.kind === 'linear'
-                ? `linear · ${op.pattern.count}`
+                ? t('opprops.pattern.linear', { count: op.pattern.count })
                 : op.pattern.kind === 'grid'
-                  ? `grid · ${op.pattern.countX}×${op.pattern.countY}`
-                  : `polar · ${op.pattern.count}`}</span
+                  ? t('opprops.pattern.grid', { x: op.pattern.countX, y: op.pattern.countY })
+                  : t('opprops.pattern.polar', { count: op.pattern.count })}</span
           >
         </summary>
         <PatternSection {op} {patch} />

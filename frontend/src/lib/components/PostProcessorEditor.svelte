@@ -17,6 +17,7 @@
   import { previewGcode, AXIS_DEFAULTS } from '../cam/post-profile-preview';
   import { project } from '../state/project.svelte';
   import { DialogDraft } from './dialog-draft.svelte';
+  import { t } from '../i18n';
   import Modal from './Modal.svelte';
 
   interface Props {
@@ -79,7 +80,7 @@
   }
 
   function axisSummary(af: AxisFormat, defaultName: string, defaultFormat: string): string {
-    if (!af.enabled) return 'disabled';
+    if (!af.enabled) return t('post.axes.disabled');
     const tweaks: string[] = [];
     if (af.name !== defaultName) tweaks.push(`→${af.name}`);
     if (af.format !== defaultFormat) tweaks.push(af.format);
@@ -150,14 +151,13 @@
           if (required.every((k) => isAxisFormat(parsed.axes[k]))) {
             next.axes = parsed.axes as AxesConfig;
           } else {
-            importErr =
-              'JSON has an axes section but one or more axes are missing required fields (enabled / name / format / scale). Skipped axes.';
+            importErr = t('post.import_err.axes_incomplete');
           }
         }
         dd.draft = next;
         importErr = null;
       } catch (e) {
-        importErr = `Could not parse JSON: ${(e as Error).message}`;
+        importErr = t('post.import_err.parse', { message: (e as Error).message });
       }
     });
   }
@@ -198,17 +198,17 @@
 {#if open}
   <Modal onClose={close} width="min(1000px, 94vw)" ariaLabelledBy="post-editor-title">
     <header>
-      <h2 id="post-editor-title">Post-processor editor</h2>
-      <button class="dlg-close" onclick={close} aria-label="Close">×</button>
+      <h2 id="post-editor-title">{t('post.title')}</h2>
+      <button class="dlg-close" onclick={close} aria-label={t('common.close')}>×</button>
     </header>
 
     <div class="pp-grid">
       <div class="pp-form">
         <label class="full">
-          Profile name
+          {t('post.profile_name')}
           <input
             type="text"
-            placeholder="My controller"
+            placeholder={t('post.profile_name.placeholder')}
             value={draft.name ?? ''}
             oninput={(e) =>
               patchProfile({ name: (e.target as HTMLInputElement).value || undefined })}
@@ -216,37 +216,31 @@
         </label>
 
         <details class="full token-legend">
-          <summary>Template tokens (click to expand)</summary>
+          <summary>{t('post.tokens.summary')}</summary>
           <p class="hint">
-            Tokens are case-insensitive <code>&lt;name&gt;</code> placeholders. Type them verbatim into
-            any template field (header / footer / tool-change). Unknown tokens pass through unchanged.
+            {t('post.tokens.intro_before')}<code>&lt;name&gt;</code>{t('post.tokens.intro_after')}
           </p>
           <table class="legend-grid">
             <tbody>
-              <tr><td><code>&lt;version&gt;</code></td><td>ivac version string</td></tr>
+              <tr><td><code>&lt;version&gt;</code></td><td>{t('post.tokens.version')}</td></tr>
               <tr><td><code>&lt;unit&gt;</code></td><td><code>mm</code> or <code>in</code></td></tr>
-              <tr><td><code>&lt;t&gt;</code></td><td>tool number</td></tr>
-              <tr><td><code>&lt;n&gt;</code></td><td>tool name</td></tr>
-              <tr><td><code>&lt;d&gt;</code></td><td>tool diameter</td></tr>
-              <tr><td><code>&lt;f&gt;</code></td><td>feed (mm/min)</td></tr>
-              <tr><td><code>&lt;s&gt;</code></td><td>spindle (RPM)</td></tr>
-              <tr><td><code>&lt;op&gt;</code></td><td>current operation name</td></tr>
-              <tr
-                ><td><code>&lt;tools&gt;</code></td><td>full tool-library listing (one per line)</td
-                ></tr
-              >
-              <tr
-                ><td><code>&lt;project&gt;</code></td><td>project name (save-file basename)</td></tr
-              >
-              <tr><td><code>&lt;nl&gt;</code></td><td>explicit newline</td></tr>
+              <tr><td><code>&lt;t&gt;</code></td><td>{t('post.tokens.t')}</td></tr>
+              <tr><td><code>&lt;n&gt;</code></td><td>{t('post.tokens.n')}</td></tr>
+              <tr><td><code>&lt;d&gt;</code></td><td>{t('post.tokens.d')}</td></tr>
+              <tr><td><code>&lt;f&gt;</code></td><td>{t('post.tokens.f')}</td></tr>
+              <tr><td><code>&lt;s&gt;</code></td><td>{t('post.tokens.s')}</td></tr>
+              <tr><td><code>&lt;op&gt;</code></td><td>{t('post.tokens.op')}</td></tr>
+              <tr><td><code>&lt;tools&gt;</code></td><td>{t('post.tokens.tools')}</td></tr>
+              <tr><td><code>&lt;project&gt;</code></td><td>{t('post.tokens.project')}</td></tr>
+              <tr><td><code>&lt;nl&gt;</code></td><td>{t('post.tokens.nl')}</td></tr>
             </tbody>
           </table>
         </details>
 
         <details open>
-          <summary>File output</summary>
+          <summary>{t('post.file_output')}</summary>
           <label>
-            Extension
+            {t('post.extension')}
             <input
               type="text"
               placeholder="nc"
@@ -259,7 +253,7 @@
             />
           </label>
           <label>
-            Line ending
+            {t('post.line_ending')}
             <select
               value={draft.line_ending ?? '\n'}
               onchange={(e) =>
@@ -267,24 +261,27 @@
                   line_ending: (e.target as HTMLSelectElement).value || undefined,
                 })}
             >
-              <option value="\n">LF (\n, Linux / Mac / GRBL)</option>
-              <option value="\r\n">CRLF (\r\n, Windows / FANUC)</option>
+              <option value="\n">{t('post.line_ending.lf')}</option>
+              <option value="\r\n">{t('post.line_ending.crlf')}</option>
             </select>
           </label>
         </details>
 
         <details open>
-          <summary>Templates</summary>
+          <summary>{t('post.templates')}</summary>
           <p class="hint">
-            Token markers: <code>&lt;version&gt;</code>, <code>&lt;unit&gt;</code>,
-            <code>&lt;t&gt;</code> (tool#), <code>&lt;n&gt;</code> (tool name),
-            <code>&lt;d&gt;</code> (diameter), <code>&lt;f&gt;</code> (feed),
-            <code>&lt;s&gt;</code> (spindle), <code>&lt;op&gt;</code>,
+            {t('post.templates.markers')} <code>&lt;version&gt;</code>, <code>&lt;unit&gt;</code>,
+            <code>&lt;t&gt;</code> ({t('post.templates.marker.tool_num')}), <code>&lt;n&gt;</code>
+            ({t('post.templates.marker.tool_name')}),
+            <code>&lt;d&gt;</code> ({t('post.templates.marker.diameter')}), <code>&lt;f&gt;</code>
+            ({t('post.templates.marker.feed')}),
+            <code>&lt;s&gt;</code> ({t('post.templates.marker.spindle')}), <code>&lt;op&gt;</code>,
             <code>&lt;tools&gt;</code>, <code>&lt;project&gt;</code>,
-            <code>&lt;nl&gt;</code> (newline). Case-insensitive.
+            <code>&lt;nl&gt;</code> ({t('post.templates.marker.newline')}).
+            {t('post.templates.case_insensitive')}
           </p>
           <label class="full">
-            Program start
+            {t('post.program_start')}
             <textarea
               rows="3"
               placeholder="(generated by ivaCAM)"
@@ -296,7 +293,7 @@
             ></textarea>
           </label>
           <label class="full">
-            Program end
+            {t('post.program_end')}
             <textarea
               rows="2"
               placeholder="M30"
@@ -308,7 +305,7 @@
             ></textarea>
           </label>
           <label class="full">
-            Tool change
+            {t('post.tool_change')}
             <textarea
               rows="2"
               placeholder="T<t> M6"
@@ -320,7 +317,7 @@
             ></textarea>
           </label>
           <label class="full">
-            Coolant flood on
+            {t('post.coolant_flood_on')}
             <input
               type="text"
               placeholder="M8"
@@ -332,7 +329,7 @@
             />
           </label>
           <label class="full">
-            Coolant flood off / mist off
+            {t('post.coolant_flood_off')}
             <input
               type="text"
               placeholder="M9"
@@ -344,7 +341,7 @@
             />
           </label>
           <label class="full">
-            Coolant mist on
+            {t('post.coolant_mist_on')}
             <input
               type="text"
               placeholder="M7"
@@ -358,13 +355,12 @@
         </details>
 
         <details open={!!draft.axes}>
-          <summary>Per-axis output</summary>
+          <summary>{t('post.per_axis')}</summary>
           <p class="hint">
-            Rename, reformat, scale, or disable individual axis words. Common uses: <code
-              >scale = -1</code
-            >
-            on Z to flip Z-up, or
-            <code>enabled = off</code> on Z for a laser.
+            {t('post.per_axis.hint_before')} <code>scale = -1</code>
+            {t('post.per_axis.hint_mid')}
+            <code>enabled = off</code>
+            {t('post.per_axis.hint_after')}
           </p>
           <label class="axes-toggle">
             <input
@@ -375,19 +371,19 @@
                 patchProfile({ axes: on ? defaultAxesConfig() : undefined });
               }}
             />
-            Override per-axis output
+            {t('post.per_axis.override')}
           </label>
           {#if draft.axes}
             {@const axes = draft.axes}
             <div class="axes-table">
               <div class="axes-row axes-head">
-                <span>Axis</span>
-                <span>On</span>
-                <span>Name</span>
-                <span>Format</span>
-                <span>Scale</span>
+                <span>{t('post.axes.axis')}</span>
+                <span>{t('post.axes.on')}</span>
+                <span>{t('post.axes.name')}</span>
+                <span>{t('post.axes.format')}</span>
+                <span>{t('post.axes.scale')}</span>
               </div>
-              {#each [{ key: 'x' as const, label: 'X' }, { key: 'y' as const, label: 'Y' }, { key: 'z' as const, label: 'Z' }, { key: 'i' as const, label: 'I (arc)' }, { key: 'j' as const, label: 'J (arc)' }, { key: 'feed' as const, label: 'Feed' }, { key: 'speed' as const, label: 'Spindle' }] as row (row.key)}
+              {#each [{ key: 'x' as const, label: 'X' }, { key: 'y' as const, label: 'Y' }, { key: 'z' as const, label: 'Z' }, { key: 'i' as const, label: t('post.axes.i_arc') }, { key: 'j' as const, label: t('post.axes.j_arc') }, { key: 'feed' as const, label: t('post.axes.feed') }, { key: 'speed' as const, label: t('post.axes.spindle') }] as row (row.key)}
                 {@const af = axes[row.key]}
                 {@const def = AXIS_DEFAULTS[row.key]}
                 <div class="axes-row" class:dimmed={!af.enabled}>
@@ -403,7 +399,7 @@
                       checked={af.enabled}
                       onchange={(e) =>
                         patchAxis(row.key, { enabled: (e.target as HTMLInputElement).checked })}
-                      aria-label="Enable {row.label}"
+                      aria-label={t('post.axes.enable_aria', { axis: row.label })}
                     />
                   </span>
                   <span>
@@ -413,7 +409,7 @@
                       size="3"
                       oninput={(e) =>
                         patchAxis(row.key, { name: (e.target as HTMLInputElement).value })}
-                      aria-label="{row.label} name"
+                      aria-label={t('post.axes.name_aria', { axis: row.label })}
                     />
                   </span>
                   <span>
@@ -423,7 +419,7 @@
                       size="6"
                       oninput={(e) =>
                         patchAxis(row.key, { format: (e.target as HTMLInputElement).value })}
-                      aria-label="{row.label} format"
+                      aria-label={t('post.axes.format_aria', { axis: row.label })}
                     />
                   </span>
                   <span>
@@ -431,7 +427,7 @@
                       type="number"
                       step="0.001"
                       value={af.scale}
-                      title="Linear multiplier applied to the axis value before formatting. -1 flips Z-up vs Z-down; 0.0393701 converts mm to inch. 0 is rejected — it would emit a constant axis word."
+                      title={t('post.axes.scale.title')}
                       oninput={(e) => {
                         const v = (e.target as HTMLInputElement).valueAsNumber;
                         // Reject zero — `scale: 0` produces a constant
@@ -440,7 +436,7 @@
                         // (flip-Z) so we explicitly check `!== 0`.
                         if (Number.isFinite(v) && v !== 0) patchAxis(row.key, { scale: v });
                       }}
-                      aria-label="{row.label} scale"
+                      aria-label={t('post.axes.scale_aria', { axis: row.label })}
                     />
                   </span>
                 </div>
@@ -456,11 +452,8 @@
 
       <div class="pp-preview">
         <div class="preview-head">
-          Live preview
-          <span class="preview-sub"
-            >synthetic 2-pass toolpath: header → tool change → move + plunge + arc + retract →
-            footer · re-renders on every edit</span
-          >
+          {t('post.preview')}
+          <span class="preview-sub">{t('post.preview.sub')}</span>
         </div>
         <pre class="preview-pane">{preview}</pre>
       </div>
@@ -468,18 +461,20 @@
 
     <footer>
       {#if dd.confirmingDiscard}
-        <span class="discard-prompt">Discard unsaved profile edits?</span>
-        <button class="btn-secondary" onclick={() => dd.cancelDiscard()}>Keep editing</button>
-        <button class="btn-danger" onclick={close}>Discard</button>
+        <span class="discard-prompt">{t('post.discard_prompt')}</span>
+        <button class="btn-secondary" onclick={() => dd.cancelDiscard()}
+          >{t('post.keep_editing')}</button
+        >
+        <button class="btn-danger" onclick={close}>{t('common.discard')}</button>
       {:else}
         <label class="btn-secondary import-btn">
-          Import JSON…
+          {t('post.import_json')}
           <input type="file" accept="application/json" onchange={onImportChange} hidden />
         </label>
-        <button class="btn-secondary" onclick={exportJson}>Export JSON</button>
+        <button class="btn-secondary" onclick={exportJson}>{t('post.export_json')}</button>
         <span class="spacer"></span>
-        <button class="btn-secondary" onclick={close}>Cancel</button>
-        <button class="btn-primary" onclick={save}>Save</button>
+        <button class="btn-secondary" onclick={close}>{t('common.cancel')}</button>
+        <button class="btn-primary" onclick={save}>{t('post.save')}</button>
       {/if}
     </footer>
   </Modal>

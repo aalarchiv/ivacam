@@ -27,6 +27,7 @@
     type GcodeChapter,
   } from '../state/gcode_chapters';
   import type { SimWarning } from '../api/types';
+  import { t } from '../i18n';
 
   let speed = $state(1.0);
   let playing = $state(false);
@@ -175,19 +176,21 @@
 
   const hasChapters = $derived(chapterTicks.length > 0);
   const prevOpLabel = $derived.by<string>(() => {
-    if (!hasChapters) return 'Previous op';
+    if (!hasChapters) return t('playback.prev_op');
     const cur = activeTickIdx;
     const target =
       cur > 0 && project.playhead - chapterTicks[cur].fraction <= 0.005
         ? chapterTicks[cur - 1]
         : (chapterTicks[Math.max(0, cur)] ?? chapterTicks[0]);
-    return `Previous op (${target.chapter.name})`;
+    return t('playback.prev_op.named', { name: target.chapter.name });
   });
   const nextOpLabel = $derived.by<string>(() => {
-    if (!hasChapters) return 'Next op';
+    if (!hasChapters) return t('playback.next_op');
     const cur = activeTickIdx;
     const target = chapterTicks[cur + 1];
-    return target ? `Next op (${target.chapter.name})` : 'Next op';
+    return target
+      ? t('playback.next_op.named', { name: target.chapter.name })
+      : t('playback.next_op');
   });
 </script>
 
@@ -209,8 +212,8 @@
       class="play"
       onclick={togglePlay}
       disabled={!project.gen.generated}
-      aria-label={playing ? 'Pause' : 'Play'}
-      title={playing ? 'Pause' : 'Play'}
+      aria-label={playing ? t('playback.pause') : t('playback.play')}
+      title={playing ? t('playback.pause') : t('playback.play')}
     >
       {playing ? '❚❚' : '▶'}
     </button>
@@ -232,26 +235,31 @@
         step="0.001"
         value={project.playhead}
         oninput={onScrub}
-        aria-label="Toolpath playback position"
+        aria-label={t('playback.position')}
         aria-valuetext={chapterTicks.length > 0 && activeTickIdx >= 0
-          ? `${Math.round(project.playhead * 100)} percent · ${chapterTicks[activeTickIdx].chapter.name}`
-          : `${Math.round(project.playhead * 100)} percent`}
+          ? t('playback.valuetext.named', {
+              percent: Math.round(project.playhead * 100),
+              name: chapterTicks[activeTickIdx].chapter.name,
+            })
+          : t('playback.valuetext', { percent: Math.round(project.playhead * 100) })}
         title={project.data.settings.exactSimRewind
-          ? 'Scrub: the 3D heightfield exactly tracks the playhead — backstep restores the nearest checkpoint and replays only the remainder. Toggle "Exact 3D rewind" off in Settings → Performance for the fastest scrubbing at the price of time-accurate rewind.'
-          : 'Scrub: the 3D heightfield is forward-only — backstep is a no-op for the sim. Cells retain their deepest-ever cuts. After Generate the playhead sits at 1.0 so the terrain may read as end-of-program until you re-scrub forward. Toggle "Exact 3D rewind" ON in Settings → Performance for time-accurate backstep.'}
+          ? t('playback.scrub.exact')
+          : t('playback.scrub.forward')}
       />
       {#if chapterTicks.length > 0}
         <div class="chapter-ticks" aria-hidden="true">
-          {#each chapterTicks as t, i (i)}
+          {#each chapterTicks as tick, i (i)}
             <button
               type="button"
               class="chapter-tick"
-              class:disabled={t.chapter.disabled}
+              class:disabled={tick.chapter.disabled}
               class:active={activeTickIdx === i}
-              style:left={`${(t.fraction * 100).toFixed(2)}%`}
-              title={`${t.chapter.name}${t.chapter.disabled ? ' (silenced)' : ''}`}
-              aria-label={`Jump to ${t.chapter.name}`}
-              onclick={() => jumpToTick(t)}
+              style:left={`${(tick.fraction * 100).toFixed(2)}%`}
+              title={tick.chapter.disabled
+                ? t('playback.tick.silenced', { name: tick.chapter.name })
+                : tick.chapter.name}
+              aria-label={t('playback.tick.jump', { name: tick.chapter.name })}
+              onclick={() => jumpToTick(tick)}
             ></button>
           {/each}
         </div>
@@ -281,8 +289,8 @@
         step="0.5"
         min="0.1"
         max="10"
-        title="Playback speed"
-        aria-label="Playback speed multiplier"
+        title={t('playback.speed')}
+        aria-label={t('playback.speed.aria')}
       /></label
     >
     <span class="counter">

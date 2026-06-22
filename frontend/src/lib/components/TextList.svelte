@@ -15,6 +15,7 @@
   import type { TextLayer, TextLayerKind, TextAlignment } from '../state/project.svelte';
   import { selectionOrigin } from '../canvas/selection-geometry';
   import { parseFiniteNumber } from '../cam/units';
+  import { t } from '../i18n';
 
   /// Bottom-left of the current object selection's bbox, or null when
   /// nothing is selected. Drives the per-text "snap origin to selection"
@@ -126,30 +127,29 @@
     <button
       class="caret-btn"
       onclick={onActivate}
-      title={active ? 'Collapse text panel (return to previous panel)' : 'Expand text panel'}
-      aria-label={active ? 'Collapse text panel' : 'Activate text panel'}
+      title={active ? t('textlist.collapse.title') : t('textlist.expand.title')}
+      aria-label={active ? t('textlist.collapse.aria') : t('textlist.activate.aria')}
       >{active ? '▾' : '▸'}</button
     >
-    <span class="group-name">Text</span>
+    <span class="group-name">{t('textlist.title')}</span>
     <span class="group-count">{project.data.textLayers.length}</span>
     {#if onAddText}
       <button
         type="button"
         class="add-btn"
         onclick={() => onAddText?.()}
-        title="Add text engraving (T)"
-        aria-label="Add text"
+        title={t('textlist.add.title')}
+        aria-label={t('textlist.add.aria')}
       >
-        + Add
+        {t('textlist.add')}
       </button>
     {/if}
   </div>
   {#if !collapsed}
     <div class="group-body">
       {#if project.data.textLayers.length === 0}
-        <p class="empty">
-          No text yet. Click <strong>+ Add</strong> to create an editable text engraving.
-        </p>
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -- static, translator-authored markup (only <strong>) -->
+        <p class="empty">{@html t('textlist.empty')}</p>
       {:else}
         <ul>
           {#each project.data.textLayers as layer (layer.id)}
@@ -160,7 +160,7 @@
                   class="caret-btn"
                   onclick={() => select(layer.id)}
                   aria-expanded={isSelected(layer.id)}
-                  aria-label={`Toggle edit form for ${layer.name}`}
+                  aria-label={t('textlist.toggle_form.aria', { name: layer.name })}
                 >
                   {isSelected(layer.id) ? '▾' : '▸'}
                 </button>
@@ -179,8 +179,8 @@
                   type="button"
                   class="del-btn"
                   onclick={() => remove(layer.id)}
-                  title="Delete text layer (also deletes ops targeting it)"
-                  aria-label="Delete text layer"
+                  title={t('textlist.delete.title')}
+                  aria-label={t('textlist.delete.aria')}
                 >
                   ×
                 </button>
@@ -188,7 +188,7 @@
               {#if isSelected(layer.id)}
                 <div class="edit-form">
                   <label class="full">
-                    <span>Text</span>
+                    <span>{t('textlist.field.text')}</span>
                     <textarea
                       class:multiline={layer.text.includes('\n')}
                       rows={layer.text.includes('\n') ? 4 : 1}
@@ -197,11 +197,11 @@
                     ></textarea>
                   </label>
                   <div class="field-pair">
-                    <span class="field-label">Font</span>
+                    <span class="field-label">{t('textlist.field.font')}</span>
                     <span class="readout" title={fontLabel(layer)}>{fontLabel(layer)}</span>
                   </div>
                   <label>
-                    <span>Size (mm)</span>
+                    <span>{t('textlist.field.size')}</span>
                     <input
                       type="number"
                       step="0.5"
@@ -219,7 +219,7 @@
                     />
                   </label>
                   <label>
-                    <span>X (mm)</span>
+                    <span>{t('textlist.field.x')}</span>
                     <input
                       type="number"
                       step="0.5"
@@ -235,7 +235,7 @@
                     />
                   </label>
                   <label>
-                    <span>Y (mm)</span>
+                    <span>{t('textlist.field.y')}</span>
                     <input
                       type="number"
                       step="0.5"
@@ -259,13 +259,16 @@
                     onclick={() => snapOriginToSelection(layer.id)}
                     disabled={!selOrigin}
                     title={selOrigin
-                      ? `Move origin to the bottom-left of the selection bbox (${selOrigin.x.toFixed(1)}, ${selOrigin.y.toFixed(1)})`
-                      : 'Select geometry in the canvas first, then snap the text origin to its bottom-left corner'}
+                      ? t('textlist.snap_origin.title', {
+                          x: selOrigin.x.toFixed(1),
+                          y: selOrigin.y.toFixed(1),
+                        })
+                      : t('textlist.snap_origin.title_disabled')}
                   >
-                    Snap origin to selection
+                    {t('textlist.snap_origin')}
                   </button>
                   <label>
-                    <span>Rotation (°)</span>
+                    <span>{t('textlist.field.rotation')}</span>
                     <input
                       type="number"
                       step="5"
@@ -281,7 +284,7 @@
                     />
                   </label>
                   <label>
-                    <span>Letter gap</span>
+                    <span>{t('textlist.field.letter_gap')}</span>
                     <input
                       type="number"
                       step="0.1"
@@ -296,8 +299,8 @@
                         )}
                     />
                   </label>
-                  <label title="Horizontal stretch (50–200 %). 100 % = natural font width.">
-                    <span>Width %</span>
+                  <label title={t('textlist.field.width.title')}>
+                    <span>{t('textlist.field.width')}</span>
                     <input
                       type="number"
                       step="5"
@@ -316,7 +319,7 @@
                     />
                   </label>
                   <label class:hidden={layer.kind !== 'MTEXT'}>
-                    <span>Line spacing</span>
+                    <span>{t('textlist.field.line_spacing')}</span>
                     <input
                       type="number"
                       step="0.5"
@@ -334,7 +337,7 @@
                     />
                   </label>
                   <label>
-                    <span>Align</span>
+                    <span>{t('textlist.field.align')}</span>
                     <select
                       value={layer.alignment}
                       onchange={(e) =>
@@ -342,9 +345,9 @@
                           alignment: (e.currentTarget as HTMLSelectElement).value as TextAlignment,
                         })}
                     >
-                      <option value="left">left</option>
-                      <option value="center">center</option>
-                      <option value="right">right</option>
+                      <option value="left">{t('textlist.align.left')}</option>
+                      <option value="center">{t('textlist.align.center')}</option>
+                      <option value="right">{t('textlist.align.right')}</option>
                     </select>
                   </label>
                 </div>
@@ -500,7 +503,10 @@
     color: var(--text-muted);
     line-height: 1.4;
   }
-  .empty strong {
+  /* The empty-state copy is injected via {@html t(...)} (it carries a
+     <strong>), so the <strong> gets no scoping class — reach it with
+     :global, scoped under .empty so it stays local in intent. */
+  .empty :global(strong) {
     color: var(--text-strong);
   }
   .edit-form {

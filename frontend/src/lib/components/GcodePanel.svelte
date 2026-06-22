@@ -24,6 +24,7 @@
   /// mounts ~60 nodes instead of 100k+ — see `state/gcode_window.ts`.
 
   import { project, playheadToSegment } from '../state/project.svelte';
+  import { t } from '../i18n';
   import { parseGcodeChapters, NO_SEGMENT } from '../state/gcode_chapters';
   import { buildRowOffsets, computeWindow } from '../state/gcode_window';
 
@@ -253,17 +254,14 @@
     class:stale={project.data.dirty}
     bind:this={host}
     role="listbox"
-    aria-label="G-code"
+    aria-label={t('gcode.label')}
     tabindex="0"
     onkeydown={onPanelKey}
     onscroll={onScroll}
   >
     {#if project.data.dirty}
-      <div
-        class="stale-badge"
-        title="The project has been edited since this G-code was generated. Click Generate G-code to refresh."
-      >
-        ⚠ Stale — re-Generate to refresh
+      <div class="stale-badge" title={t('gcode.stale.title')}>
+        ⚠ {t('gcode.stale')}
       </div>
     {/if}
     <div class="gcode-inner">
@@ -279,10 +277,8 @@
             <span class="chapter-caret">▾</span>
             <span class="chapter-name">{ch.name}</span>
             {#if ch.disabled}
-              <span
-                class="chapter-tag"
-                title="This op is disabled — commented-out below and hidden in 3D. Toggle the checkbox in the operations list to re-enable. Click Generate to bake the change into the G-code."
-                >silenced</span
+              <span class="chapter-tag" title={t('gcode.silenced.title')}
+                >{t('gcode.silenced')}</span
               >
             {/if}
           </div>

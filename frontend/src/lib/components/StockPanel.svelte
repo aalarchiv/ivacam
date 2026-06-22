@@ -12,6 +12,7 @@
   ///   but the UI doesn't expose adding them any more.
 
   import { project } from '../state/project.svelte';
+  import { t } from '../i18n';
   import { computeFootprint } from '../sim/driver';
   import { parseFiniteNumber } from '../cam/units';
   import { inferDefaultWorkOffset, type Wcs, type WorkOffset } from '../state/project-types';
@@ -101,7 +102,7 @@
 
 <div class="stock">
   <fieldset class="mode">
-    <legend>Mode</legend>
+    <legend>{t('stock.mode')}</legend>
     <label class="radio">
       <input
         type="radio"
@@ -110,7 +111,7 @@
         checked={project.data.stock.mode === 'auto'}
         onchange={() => patch({ mode: 'auto' })}
       />
-      <span>Auto (fit to drawing)</span>
+      <span>{t('stock.mode.auto')}</span>
     </label>
     <label class="radio">
       <input
@@ -120,14 +121,14 @@
         checked={project.data.stock.mode === 'manual'}
         onchange={() => patch({ mode: 'manual' })}
       />
-      <span>Manual</span>
+      <span>{t('stock.mode.manual')}</span>
     </label>
   </fieldset>
 
   <fieldset class="dims">
-    <legend>Dimensions</legend>
+    <legend>{t('stock.dimensions')}</legend>
     <label>
-      <span>Length</span>
+      <span>{t('stock.length')}</span>
       <span class="field">
         {#if project.data.stock.mode === 'auto'}
           <input type="number" value={computedLength.toFixed(1)} readonly tabindex="-1" />
@@ -145,7 +146,7 @@
       </span>
     </label>
     <label>
-      <span>Width</span>
+      <span>{t('stock.width')}</span>
       <span class="field">
         {#if project.data.stock.mode === 'auto'}
           <input type="number" value={computedWidth.toFixed(1)} readonly tabindex="-1" />
@@ -163,7 +164,7 @@
       </span>
     </label>
     <label>
-      <span>Thickness</span>
+      <span>{t('stock.thickness')}</span>
       <span class="field">
         <input
           type="number"
@@ -178,7 +179,7 @@
     </label>
     {#if project.data.stock.mode === 'auto'}
       <label>
-        <span>Margin</span>
+        <span>{t('stock.margin')}</span>
         <span class="field">
           <input
             type="number"
@@ -187,7 +188,7 @@
             value={project.data.stock.margin}
             class:invalid={invalidKey === 'margin'}
             onchange={(e) => onStockNumberChange('margin', e, { min: 0 })}
-            title="Adds to Length + Width (auto-fit case); Thickness is unaffected."
+            title={t('stock.margin.title')}
           />
           <span class="unit">mm</span>
         </span>
@@ -196,7 +197,7 @@
   </fieldset>
 
   <fieldset class="origin">
-    <legend>Origin offset</legend>
+    <legend>{t('stock.origin_offset')}</legend>
     <label>
       <span>X</span>
       <span class="field">
@@ -238,7 +239,7 @@
           value={project.data.stock.offsetZ ?? 0}
           class:invalid={invalidKey === 'offsetZ'}
           onchange={(e) => onStockNumberChange('offsetZ', e, { allowNegative: true })}
-          title="Z of the stock top plane (mm). 0 = top at the WCS origin (zeroed on the stock top). Positive raises the stock above z=0 — e.g. set it to the stock thickness if you zeroed on the bed. Shifts the 3D stock box, sim heightmap, and out-of-stock check."
+          title={t('stock.offset_z.title')}
         />
         <span class="unit">mm</span>
       </span>
@@ -250,12 +251,9 @@
        to bbox bottom-left; this section lets the user pick a
        different WCS slot (G54..G59) or nudge the origin manually. -->
   <fieldset class="wcs">
-    <legend
-      title="The WCS origin — where on the imported drawing the operator zeroed the machine. Cuts are emitted relative to this point; if it falls outside the geometry bbox the simulator warns. Auto-defaults to the bbox bottom-left on fresh import."
-      >Work origin (WCS)</legend
-    >
+    <legend title={t('stock.work_origin.title')}>{t('stock.work_origin')}</legend>
     <label>
-      <span>WCS</span>
+      <span>{t('stock.wcs')}</span>
       <span class="field">
         <select
           value={project.data.workOffset.wcs}
@@ -306,9 +304,9 @@
       class="snap-btn"
       onclick={snapWorkOffsetToBboxMin}
       disabled={!project.transformedImport}
-      title="Snap the WCS origin to the bottom-left of the imported drawing's bounding box — the canonical CNC zeroing convention."
+      title={t('stock.snap_bbox.title')}
     >
-      Snap to bbox bottom-left
+      {t('stock.snap_bbox')}
     </button>
   </fieldset>
 </div>

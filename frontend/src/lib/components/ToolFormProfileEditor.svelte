@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { FormProfileSample } from '../state/project.svelte';
   import { dovetailProfile, tslotProfile } from '../state/tool_form_profiles';
+  import { t } from '../i18n';
 
   // Form / profile cutter cross-section editor: the (z, r) sample table
   // plus the dovetail and T-slot generators that overwrite it. Owns the
@@ -39,46 +40,44 @@
 </script>
 
 <div class="holder-row pass-overrides">
-  <span
-    class="holder-label"
-    title="Form / profile cutter cross-section (cove / ogee / dovetail / T-slot / custom). The (z, r) table — height above the tip vs radius — drives the simulator's cut shape. Needs ≥2 rows; otherwise the sim falls back to a tip→diameter taper. Use a preset below or edit rows directly."
-    >Form profile</span
+  <span class="holder-label" title={t('toolform.form_profile.title')}
+    >{t('toolform.form_profile')}</span
   >
 </div>
 <div class="holder-row dovetail-gen">
   <label>
-    <span>Dovetail ⌀ (mm)</span>
+    <span>{t('toolform.dovetail_dia')}</span>
     <input
       type="number"
       step="0.1"
       min="0"
       value={dovetail.diaMm}
-      title="Widest cutting diameter (at the bottom face) of a dovetail bit."
+      title={t('toolform.dovetail_dia.title')}
       onchange={(e) =>
         (dovetail.diaMm = parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
     />
   </label>
   <label>
-    <span>Angle (°)</span>
+    <span>{t('toolform.angle')}</span>
     <input
       type="number"
       step="1"
       min="0"
       max="89"
       value={dovetail.angleDeg}
-      title="Flank angle from the tool axis. The radius narrows by tan(angle) per mm of rise. 7°–14° typical."
+      title={t('toolform.angle.title')}
       onchange={(e) =>
         (dovetail.angleDeg = parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
     />
   </label>
   <label>
-    <span>Cut height (mm)</span>
+    <span>{t('toolform.cut_height')}</span>
     <input
       type="number"
       step="0.5"
       min="0"
       value={dovetail.heightMm}
-      title="Flute / cutting height — how tall the angled profile is from the bottom face up to the neck."
+      title={t('toolform.cut_height.title')}
       onchange={(e) =>
         (dovetail.heightMm = parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
     />
@@ -86,55 +85,55 @@
   <button
     type="button"
     class="profile-btn"
-    title="Overwrite the sample table below with a 2-row dovetail profile generated from these inputs."
-    onclick={() => onChange(dovetailProfile(dovetail))}>Generate dovetail</button
+    title={t('toolform.generate_dovetail.title')}
+    onclick={() => onChange(dovetailProfile(dovetail))}>{t('toolform.generate_dovetail')}</button
   >
 </div>
 <div class="holder-row dovetail-gen">
   <label>
-    <span>T-slot head ⌀ (mm)</span>
+    <span>{t('toolform.tslot_head_dia')}</span>
     <input
       type="number"
       step="0.1"
       min="0"
       value={tslot.headDiaMm}
-      title="Widest cutting-disk diameter at the tip of a T-slot / keyway cutter."
+      title={t('toolform.tslot_head_dia.title')}
       onchange={(e) =>
         (tslot.headDiaMm = parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
     />
   </label>
   <label>
-    <span>Head thick (mm)</span>
+    <span>{t('toolform.head_thick')}</span>
     <input
       type="number"
       step="0.5"
       min="0"
       value={tslot.headThickMm}
-      title="Height of the cutting disk (how tall the wide undercut head is)."
+      title={t('toolform.head_thick.title')}
       onchange={(e) =>
         (tslot.headThickMm = parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
     />
   </label>
   <label>
-    <span>Neck ⌀ (mm)</span>
+    <span>{t('toolform.neck_dia')}</span>
     <input
       type="number"
       step="0.1"
       min="0"
       value={tslot.neckDiaMm}
-      title="Diameter of the narrow neck above the head — must be smaller than the head ⌀."
+      title={t('toolform.neck_dia.title')}
       onchange={(e) =>
         (tslot.neckDiaMm = parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
     />
   </label>
   <label>
-    <span>Neck length (mm)</span>
+    <span>{t('toolform.neck_length')}</span>
     <input
       type="number"
       step="0.5"
       min="0"
       value={tslot.neckLenMm}
-      title="Length of the narrow neck above the head, up to where the shank begins."
+      title={t('toolform.neck_length.title')}
       onchange={(e) =>
         (tslot.neckLenMm = parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
     />
@@ -142,14 +141,14 @@
   <button
     type="button"
     class="profile-btn"
-    title="Overwrite the sample table below with a 4-row T-slot profile (wide disk → narrow neck) generated from these inputs."
-    onclick={() => onChange(tslotProfile(tslot))}>Generate T-slot</button
+    title={t('toolform.generate_tslot.title')}
+    onclick={() => onChange(tslotProfile(tslot))}>{t('toolform.generate_tslot')}</button
   >
 </div>
 <div class="profile-table">
   <div class="profile-table-head">
-    <span>z above tip (mm)</span>
-    <span>radius (mm)</span>
+    <span>{t('toolform.z_above_tip')}</span>
+    <span>{t('toolform.radius')}</span>
     <span></span>
   </div>
   {#each rows as row, r (r)}
@@ -159,7 +158,7 @@
         step="0.1"
         min="0"
         value={row.zMm}
-        aria-label="z above tip (mm)"
+        aria-label={t('toolform.z_above_tip')}
         onchange={(e) =>
           updateRow(r, 'zMm', parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
       />
@@ -168,24 +167,22 @@
         step="0.1"
         min="0"
         value={row.rMm}
-        aria-label="radius (mm)"
+        aria-label={t('toolform.radius')}
         onchange={(e) =>
           updateRow(r, 'rMm', parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
       />
       <button
         type="button"
         class="profile-btn del"
-        title="Delete this sample row"
+        title={t('toolform.delete_row.title')}
         onclick={() => removeRow(r)}>✕</button
       >
     </div>
   {/each}
   <div class="profile-actions">
-    <button type="button" class="profile-btn" onclick={addRow}>+ Add row</button>
+    <button type="button" class="profile-btn" onclick={addRow}>{t('toolform.add_row')}</button>
     {#if rows.length < 2}
-      <span class="profile-hint"
-        >Add at least 2 rows (tip → top) for the sim to carve the real profile.</span
-      >
+      <span class="profile-hint">{t('toolform.min_rows_hint')}</span>
     {/if}
   </div>
 </div>

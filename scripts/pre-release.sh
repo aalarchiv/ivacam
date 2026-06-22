@@ -88,6 +88,13 @@ step "codegen drift"           bash -c '
   git diff --exit-code -- src/lib/api/generated.ts
 '
 
+# i18n keys drift guard: regenerate keys.ts from messages/en.json; the
+# typed MsgKey union must stay in sync with the base catalog.
+step "i18n keys drift"         bash -c '
+  pnpm run i18n:codegen >/dev/null
+  git diff --exit-code -- src/lib/i18n/keys.ts
+'
+
 step "pnpm run lint"           pnpm run lint
 step "pnpm run check"          pnpm run check
 step "pnpm run test"           pnpm run test

@@ -32,6 +32,11 @@ const LEGACY_THEME_KEY = 'ivac.theme';
 
 export interface AppSettings {
   theme: 'auto' | 'light' | 'dark';
+  /// UI language. `auto` follows the system / browser locale (see
+  /// `detectLocale` in lib/i18n); `en` / `de` force a specific language.
+  /// Language is a display-only preference — project files stay
+  /// language-agnostic (they store enum keys, never translated labels).
+  language: 'auto' | 'en' | 'de';
   previewMode: 'wireframe' | 'solid' | 'both';
   solidColor: string;
   solidOpacity: number;
@@ -103,6 +108,7 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'auto',
+  language: 'auto',
   previewMode: 'both',
   solidColor: '#c8b48a',
   solidOpacity: 0.5,

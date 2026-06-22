@@ -1,0 +1,5 @@
+{
+  "settings.appearance.language": "Language",
+  "settings.appearance.language.auto": "Automatic",
+  "settings.appearance.language.help": "Interface language. Automatic follows your system or browser language."
+}

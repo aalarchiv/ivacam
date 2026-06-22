@@ -12,7 +12,9 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "codegen": "openapi-typescript ../schema/openapi.yaml -o src/lib/api/generated.ts"
+    "codegen": "openapi-typescript ../schema/openapi.yaml -o src/lib/api/generated.ts",
+    "i18n:codegen": "node scripts/i18n-codegen.mjs",
+    "i18n:report": "node scripts/i18n-codegen.mjs --report"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

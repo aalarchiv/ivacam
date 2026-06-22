@@ -1,0 +1,5 @@
+{
+  "settings.appearance.language": "Sprache",
+  "settings.appearance.language.auto": "Automatisch",
+  "settings.appearance.language.help": "Sprache der Benutzeroberfläche. Automatisch übernimmt die System- bzw. Browsersprache."
+}

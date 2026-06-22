@@ -5,3 +5,5 @@ node_modules
 pnpm-lock.yaml
 # Codegen output — regenerated from schema/openapi.yaml. Don't reformat.
 src/lib/api/generated.ts
+# Codegen output — regenerated from messages/en.json by i18n-codegen.mjs.
+src/lib/i18n/keys.ts

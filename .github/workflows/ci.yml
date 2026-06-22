@@ -102,6 +102,14 @@ jobs:
         run: |
           pnpm run codegen
           git diff --exit-code -- src/lib/api/generated.ts
+      - name: i18n keys drift guard
+        # Regenerate keys.ts from messages/en.json; the checked-in file must
+        # not diff. Same pattern as the openapi codegen guard above — keeps
+        # the typed MsgKey union in sync with the base catalog so every
+        # t('…') call site stays type-checked.
+        run: |
+          pnpm run i18n:codegen
+          git diff --exit-code -- src/lib/i18n/keys.ts
       - name: prettier
         run: pnpm run lint
       - name: type-check

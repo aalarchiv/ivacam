@@ -9,6 +9,7 @@
   /// close button just dismisses the dialog.
   import { project, type AppSettings } from '../state/project.svelte';
   import { layout } from '../state/layout.svelte';
+  import { t } from '../i18n';
   import Modal from './Modal.svelte';
 
   interface Props {
@@ -155,7 +156,27 @@
             >
           </div>
         </label>
+
+        <label
+          >{t('settings.appearance.language')}
+          <!-- Language endonyms (English / Deutsch) are shown in their own
+               language by convention and stay untranslated; only the label,
+               the Automatic option, and the hint go through t(). -->
+          <select
+            value={project.data.settings.language}
+            onchange={(e) =>
+              update(
+                'language',
+                (e.currentTarget as HTMLSelectElement).value as AppSettings['language'],
+              )}
+          >
+            <option value="auto">{t('settings.appearance.language.auto')}</option>
+            <option value="en">English</option>
+            <option value="de">Deutsch</option>
+          </select>
+        </label>
       </div>
+      <p class="hint">{t('settings.appearance.language.help')}</p>
     </section>
 
     <section class:group-hidden={groupHidden('preview')}>

@@ -36,6 +36,11 @@ they must load/save identically regardless of the active language.
 - **Estlcam wording:** lives only in `refs/Estlcam_64_13004.exe`. Extract with
   `strings` and/or by inspecting the installed Estlcam UI; reconcile the seed
   glossary to Estlcam terms in `docs/i18n/glossary-de.md`.
+- **`docs/i18n/QNA_I18N.md` (terminology Q&A):** a structured list of specific
+  questions / translation requests — English term + UI context + a blank
+  "Estlcam wording" field — generated from `en.json` once the extraction
+  sweeps land. An Estlcam user fills in the exact wording Estlcam uses, so
+  `de.json` stays within well-known Estlcam terms. QNA → glossary → de.json.
 
 ## Target architecture (frontend)
 

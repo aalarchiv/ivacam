@@ -17,6 +17,7 @@ export default [
       'dist/**',
       'node_modules/**',
       'src/lib/api/generated.ts', // codegen output — don't lint
+      'src/lib/i18n/keys.ts', // codegen output (i18n-codegen.mjs) — don't lint
       '.svelte-kit/**',
       'eslint.config.js',
     ],

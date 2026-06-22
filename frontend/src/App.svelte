@@ -132,6 +132,7 @@
   import { isTauri } from './lib/api/env';
   const isTauriEnv = isTauri();
   import { project } from './lib/state/project.svelte';
+  import { i18n, resolveLocale } from './lib/i18n';
   import { workspace } from './lib/state/workspace.svelte';
   import ConfirmPrompt from './lib/components/ConfirmPrompt.svelte';
   import {
@@ -249,6 +250,8 @@
 
   onMount(() => {
     document.documentElement.dataset.theme = project.data.settings.theme;
+    i18n.setPreference(project.data.settings.language);
+    document.documentElement.lang = resolveLocale(project.data.settings.language);
 
     // Global error capture. Silent throws inside Svelte 5 $effect bodies
     // can abort the reactivity scheduler — every button still fires its
@@ -382,6 +385,15 @@
 
   $effect(() => {
     document.documentElement.dataset.theme = project.data.settings.theme;
+  });
+
+  // Apply the language preference live. Reads only settings.language (not
+  // i18n.locale) so the idempotent setPreference write doesn't re-trigger
+  // this effect. `auto` resolves against the system/browser locale.
+  $effect(() => {
+    const pref = project.data.settings.language;
+    i18n.setPreference(pref);
+    document.documentElement.lang = resolveLocale(pref);
   });
 
   let activePane = $state<'2d' | '3d'>('2d');

@@ -131,6 +131,9 @@ impl Error {
     }
     /// Add one `{key}` value the localized template can interpolate. Values
     /// are stringified to keep the wire map `string → string`.
+    // by-value `value` is the ergonomic builder shape — callers pass owned
+    // `format!(…)`/ids straight in; it's stringified, not stored as-is.
+    #[allow(clippy::needless_pass_by_value)]
     #[must_use]
     pub fn with_param(mut self, key: impl Into<String>, value: impl ToString) -> Self {
         self.params.insert(key.into(), value.to_string());

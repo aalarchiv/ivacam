@@ -404,8 +404,9 @@ mod tests {
         let value: serde_json::Value =
             serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {path:?}: {e}"));
         let once = serde_json::to_string(&value).unwrap();
-        let twice = serde_json::to_string(&serde_json::from_str::<serde_json::Value>(&once).unwrap())
-            .unwrap();
+        let twice =
+            serde_json::to_string(&serde_json::from_str::<serde_json::Value>(&once).unwrap())
+                .unwrap();
         assert_eq!(once, twice, "project serialization must be deterministic");
     }
 }

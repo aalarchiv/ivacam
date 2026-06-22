@@ -22,25 +22,22 @@ they must load/save identically regardless of the active language.
   `schema/openapi.yaml → frontend/src/lib/api/generated.ts` codegen +
   `git diff --exit-code` drift guard the repo already trusts.
 - **Full scope:** Svelte UI + Rust-surfaced errors/warnings + CLI.
-- **English base = plain English; German = Estlcam wording.** This honors the
-  existing rule "No Estlcam terms in UI" (that rule is about the *English* UI:
-  Whirling, Tapered, …). The *German* catalog uses Estlcam terms (Wirbeln,
-  Kegel, …).
+- **English base = plain English; German = established German CAM wording.**
+  The German catalog uses the conventional German machinist terms (Wirbeln,
+  Kegel, …) that German CNC users already know.
 
-## Terminology sources (German / Estlcam)
+## Terminology sources (German)
 
 - **Seed glossary:** `refs/viaconstructor/viaconstructor/locales/de/LC_MESSAGES/base.po`
   — 304 vetted domain-German entries from the Python predecessor
-  (e.g. Pocket→Taschen, no Contour→keine Kontur, Zigzag→Zickzack,
-  Offset→Versatz, Depth→Tiefe, Tabs→Haltestege, Lead-in/out→Start/End).
-- **Estlcam wording:** lives only in `refs/Estlcam_64_13004.exe`. Extract with
-  `strings` and/or by inspecting the installed Estlcam UI; reconcile the seed
-  glossary to Estlcam terms in `docs/i18n/glossary-de.md`.
+  (e.g. Pocket→Taschen, Zigzag→Zickzack, Offset→Versatz, Depth→Tiefe).
+- **Reconciled terminology:** captured in `docs/i18n/glossary-de.md`, the
+  authoritative term table the German catalog follows.
 - **`docs/i18n/QNA_I18N.md` (terminology Q&A):** a structured list of specific
-  questions / translation requests — English term + UI context + a blank
-  "Estlcam wording" field — generated from `en.json` once the extraction
-  sweeps land. An Estlcam user fills in the exact wording Estlcam uses, so
-  `de.json` stays within well-known Estlcam terms. QNA → glossary → de.json.
+  questions / translation requests — English term + UI context + a German
+  wording field — generated from `en.json`. A German-speaking CNC user
+  confirms the exact wording so `de.json` stays within well-known terms.
+  QNA → glossary → de.json.
 
 ## Target architecture (frontend)
 

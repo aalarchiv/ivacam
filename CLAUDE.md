@@ -25,9 +25,13 @@ bd close <id>         # Complete work
 ## Session Completion
 
 **This repo now has a git remote** — `origin` →
-`git@github.com:aalarchiv/ivacam.git`. Commits land on `main` locally
-and must be pushed at session end. (Earlier guidance described the repo
-as local-only; that is no longer true now that the remote exists.)
+`git@github.com:aalarchiv/ivacam.git`. Commits land on `main` locally.
+**Pushing is manual and human-gated** — the maintainer reviews local
+commits and pushes to `origin/main` themselves before anything spreads.
+Do NOT push automatically (a global PreToolUse hook hard-blocks `git
+push` from the agent; see the note below). Earlier guidance said work
+"must be pushed at session end" — that is superseded: stop at a clean,
+committed local tree and hand off.
 
 **MANDATORY WORKFLOW:**
 
@@ -39,11 +43,13 @@ as local-only; that is no longer true now that the remote exists.)
 4. **Commit locally** — Every logical change should land as its own
    commit on `main`. NEVER stop with uncommitted work in the working
    tree (that's the failure mode ivac-5kcj documented).
-5. **Push** — `git pull --rebase && git push` to `origin/main`.
-   Confirm with a fresh `git fetch` that local HEAD == `origin/main`.
-6. **Verify** — `git status` shows clean working tree; `bd list
+5. **Do NOT push** — Leave `origin/main` alone. Summarize what is ready
+   to push so the maintainer can review and push manually. Only run
+   `git push` if the user explicitly asks in that session (and note the
+   global hook will block it unless they've lifted it).
+6. **Verify** — `git status` shows a clean working tree; `bd list
    --status=in_progress` is empty or accurately reflects active work
-7. **Hand off** — Provide a brief context summary for the next session
+7. **Hand off** — Brief context summary + which commits await a push
 
 ### Pre-release ritual (bb8q)
 
@@ -56,7 +62,7 @@ those binaries are on `$PATH`. Fail-fast — only ship when every gate
 reports green. This is the local stand-in for CI, not a per-commit
 hook (the routine session-completion "run quality gates" step above
 is the lighter check).
-<!-- END BEADS INTEGRATION (block edited locally — ivac-uqvd; bd init may regenerate, re-apply the push-at-session-end workflow if so) -->
+<!-- END BEADS INTEGRATION (block edited locally — ivac-uqvd; bd init may regenerate, re-apply the manual/human-gated push workflow if so) -->
 
 
 ## Build & Test

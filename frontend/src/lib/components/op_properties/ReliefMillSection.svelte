@@ -72,7 +72,7 @@
 <fieldset>
   <legend>{t('ops.relief.source.legend')}</legend>
   <label class="row">
-    <span>Image</span>
+    <span>{t('ops.relief_mill.image.label')}</span>
     <div class="num-cell">
       <select
         value={op.sourceId}
@@ -96,17 +96,14 @@
     onchange={onImagePicked}
   />
   <button type="button" onclick={() => fileInput?.click()} disabled={loading}>
-    {loading ? 'Decoding…' : 'Load image…'}
+    {loading ? t('ops.relief_mill.decoding') : t('ops.relief_mill.load_image')}
   </button>
   {#if loadError}
-    <p class="err" role="alert">Couldn’t load image: {loadError}</p>
+    <p class="err" role="alert">{t('ops.relief_mill.load_error.hint', { error: loadError })}</p>
   {/if}
   {#if source}
-    <label
-      class="row"
-      title="Physical width of the relief on the workpiece. Height follows the image aspect ratio."
-    >
-      <span>Width</span>
+    <label class="row" title={t('ops.relief_mill.width.help')}>
+      <span>{t('ops.relief_mill.width.label')}</span>
       <div class="num-cell">
         <input
           type="number"
@@ -119,15 +116,20 @@
       </div>
     </label>
     <p class="hint">
-      {source.cols}×{source.rows} px → {widthMm.toFixed(0)} × {heightMm.toFixed(0)} mm
+      {t('ops.relief_mill.dimensions.hint', {
+        cols: source.cols,
+        rows: source.rows,
+        widthMm: widthMm.toFixed(0),
+        heightMm: heightMm.toFixed(0),
+      })}
     </p>
   {/if}
 </fieldset>
 
 <fieldset>
   <legend>{t('ops.relief.depth.legend')}</legend>
-  <label class="row" title="Deepest cut — where the darkest pixels map (negative).">
-    <span>Min Z</span>
+  <label class="row" title={t('ops.relief_mill.z_min.help')}>
+    <span>{t('ops.relief_mill.z_min.label')}</span>
     <div class="num-cell">
       <input
         type="number"
@@ -142,11 +144,8 @@
       <span class="unit">mm</span>
     </div>
   </label>
-  <label
-    class="row"
-    title="Shallowest cut — where the brightest pixels map (usually 0 = stock top)."
-  >
-    <span>Max Z</span>
+  <label class="row" title={t('ops.relief_mill.z_max.help')}>
+    <span>{t('ops.relief_mill.z_max.label')}</span>
     <div class="num-cell">
       <input
         type="number"
@@ -161,11 +160,8 @@
       <span class="unit">mm</span>
     </div>
   </label>
-  <label
-    class="row"
-    title="Swap the mapping so dark areas become high and light areas become deep."
-  >
-    <span>Invert</span>
+  <label class="row" title={t('ops.relief_mill.invert.help')}>
+    <span>{t('ops.relief_mill.invert.label')}</span>
     <input
       type="checkbox"
       checked={op.invert}
@@ -176,11 +172,8 @@
 
 <fieldset>
   <legend>{t('ops.relief.finish.legend')}</legend>
-  <label
-    class="row"
-    title="Allowed ridge height left between adjacent passes. Smaller = finer finish, longer cut."
-  >
-    <span>Scallop</span>
+  <label class="row" title={t('ops.relief_mill.scallop.help')}>
+    <span>{t('ops.relief_mill.scallop.label')}</span>
     <div class="num-cell">
       <input
         type="number"
@@ -195,17 +188,14 @@
       <span class="unit">mm</span>
     </div>
   </label>
-  <label
-    class="row"
-    title="Override the stepover directly instead of deriving it from the scallop height. Empty = auto (from scallop)."
-  >
-    <span>Stepover</span>
+  <label class="row" title={t('ops.relief_mill.stepover.help')}>
+    <span>{t('ops.relief_mill.stepover.label')}</span>
     <div class="num-cell">
       <input
         type="number"
         step="0.1"
         min="0"
-        placeholder="auto"
+        placeholder={t('ops.relief_mill.stepover.placeholder')}
         value={op.stepoverMm ?? ''}
         onchange={(e) => {
           const v = numFromEvent(e);
@@ -216,7 +206,7 @@
     </div>
   </label>
   <label class="row">
-    <span>Scan</span>
+    <span>{t('ops.relief_mill.scan.label')}</span>
     <div class="num-cell">
       <select
         value={op.scanDirection}
@@ -231,8 +221,8 @@
       </select>
     </div>
   </label>
-  <label class="row" title="Point spacing along each scanline. Finer = smoother path, more G-code.">
-    <span>Step</span>
+  <label class="row" title={t('ops.relief_mill.step.help')}>
+    <span>{t('ops.relief_mill.step.label')}</span>
     <div class="num-cell">
       <input
         type="number"
@@ -248,8 +238,7 @@
     </div>
   </label>
   <p class="hint">
-    Relief surfacing is a finish pass — rough the bulk first with a flat endmill (Pocket / Profile),
-    then this ball-nose pass cleans the surface.
+    {t('ops.relief_mill.surfacing.hint')}
   </p>
 </fieldset>
 

@@ -20,7 +20,7 @@
 <fieldset>
   <legend>{t('ops.profile.legend')}</legend>
   <label class="row">
-    <span>Tool offset</span>
+    <span>{t('ops.profile.offset.label')}</span>
     <select
       value={op.offset}
       onchange={(e) =>
@@ -35,11 +35,8 @@
 
 <fieldset>
   <legend>{t('ops.profile.leads.legend')}</legend>
-  <label
-    class="row"
-    title="Lead-in style. Off: rapid + plunge directly to the contour start. Straight: rapid to a point perpendicular to the start, then linear into the contour. Arc: tangent quarter-arc roll-on so the cutter eases into the cut without dwelling at the start."
-  >
-    <span>Lead in</span>
+  <label class="row" title={t('ops.profile.lead_in.help')}>
+    <span>{t('ops.profile.lead_in.label')}</span>
     <select
       value={op.leadInKind ?? 'off'}
       onchange={(e) =>
@@ -57,10 +54,14 @@
     <label
       class="row"
       title={op.leadInKind === 'arc'
-        ? 'Roll-on arc RADIUS (mm). The arc is a quarter-circle tangent to the contour at the entry point.'
-        : 'Straight-line LENGTH (mm) of the perpendicular hop into the contour.'}
+        ? t('ops.profile.lead_in_radius.help')
+        : t('ops.profile.lead_in_length.help')}
     >
-      <span>{op.leadInKind === 'arc' ? 'Radius' : 'Length'}</span>
+      <span
+        >{op.leadInKind === 'arc'
+          ? t('ops.profile.radius.label')
+          : t('ops.profile.length.label')}</span
+      >
       <div class="num-cell">
         <input
           type="number"
@@ -80,11 +81,8 @@
       </div>
     </label>
   {/if}
-  <label
-    class="row"
-    title="Lead-out style. Mirror of lead-in: how the cutter departs the contour at the END of the cut path. Arc gives a tangent roll-off; Straight a perpendicular exit; Off ends the cut at the contour end with a vertical retract."
-  >
-    <span>Lead out</span>
+  <label class="row" title={t('ops.profile.lead_out.help')}>
+    <span>{t('ops.profile.lead_out.label')}</span>
     <select
       value={op.leadOutKind ?? 'off'}
       onchange={(e) =>
@@ -102,10 +100,14 @@
     <label
       class="row"
       title={op.leadOutKind === 'arc'
-        ? 'Roll-off arc RADIUS (mm). Quarter-circle tangent to the contour at the exit point.'
-        : 'Straight-line LENGTH (mm) of the perpendicular exit from the contour.'}
+        ? t('ops.profile.lead_out_radius.help')
+        : t('ops.profile.lead_out_length.help')}
     >
-      <span>{op.leadOutKind === 'arc' ? 'Radius' : 'Length'}</span>
+      <span
+        >{op.leadOutKind === 'arc'
+          ? t('ops.profile.radius.label')
+          : t('ops.profile.length.label')}</span
+      >
       <div class="num-cell">
         <input
           type="number"

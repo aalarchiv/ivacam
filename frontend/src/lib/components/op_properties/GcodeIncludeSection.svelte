@@ -4,6 +4,7 @@
   /// unsim-warning toggle.
   /// Styles inherited from OpPropertiesPanel's :global(.props ...) rules.
   import type { GcodeIncludeOp, OpField, OpFieldValue } from '../../state/project.svelte';
+  import { t } from '../../i18n';
 
   interface Props {
     op: GcodeIncludeOp;
@@ -13,18 +14,15 @@
 </script>
 
 <label class="row">
-  <span>Name</span>
+  <span>{t('ops.gcode_include.name.label')}</span>
   <input
     type="text"
     value={op.name}
     oninput={(e) => patch('name', (e.currentTarget as HTMLInputElement).value)}
   />
 </label>
-<label
-  class="row"
-  title="Pick a .nc / .ngc / .gcode file. Its contents are loaded into the op (project stays self-contained); the path is kept as a label so you can see what was picked."
->
-  <span>File</span>
+<label class="row" title={t('ops.gcode_include.file.help')}>
+  <span>{t('ops.gcode_include.file.label')}</span>
   <input
     type="file"
     accept=".nc,.ngc,.gcode,.tap,.cnc,text/plain"
@@ -41,42 +39,43 @@
 </label>
 {#if op.path}
   <p class="hint">
-    Loaded from <code>{op.path}</code> · {op.content?.length ?? 0} characters,
-    {op.content?.split('\n').length ?? 0} lines.
+    {t('ops.gcode_include.loaded_from.hint')} <code>{op.path}</code> · {t(
+      'ops.gcode_include.loaded_stats.hint',
+      {
+        characters: op.content?.length ?? 0,
+        lines: op.content?.split('\n').length ?? 0,
+      },
+    )}
   </p>
 {/if}
-<label
-  class="row"
-  title="The G-code that ships in the program. Edit by hand if you need to tweak after loading. Variable tokens are substituted at Generate time."
->
-  <span>Content</span>
+<label class="row" title={t('ops.gcode_include.content.help')}>
+  <span>{t('ops.gcode_include.content.label')}</span>
   <textarea
     rows="10"
     spellcheck="false"
     value={op.content ?? ''}
-    placeholder="G-code text — edit by hand or pick a file above."
+    placeholder={t('ops.gcode_include.content.placeholder')}
     oninput={(e) => patch('content', (e.currentTarget as HTMLTextAreaElement).value)}
     style="font-family: ui-monospace, monospace; white-space: pre;"
   ></textarea>
 </label>
 <p class="hint hint-pause">
-  The pipeline emits the content verbatim at this slot after substituting these tokens:
+  {t('ops.gcode_include.tokens_intro.hint')}
   <code>{'{x}'}</code> <code>{'{y}'}</code> <code>{'{z}'}</code>
-  (last commanded XYZ),
-  <code>{'{f}'}</code> (last feed),
-  <code>{'{s}'}</code> (last spindle RPM),
-  <code>{'{safe_z}'}</code> (this op's fast-Z). Unknown <code>{'{tokens}'}</code> pass through and surface
-  a warning. The sim carves G0/G1/G2/G3 and canned cycles G73/G81/G82/G83; anything else fires a counted
-  "lines skipped" warning so you know what the heightmap won't show.
+  {t('ops.gcode_include.token_xyz.hint')}
+  <code>{'{f}'}</code>
+  {t('ops.gcode_include.token_feed.hint')}
+  <code>{'{s}'}</code>
+  {t('ops.gcode_include.token_spindle.hint')}
+  <code>{'{safe_z}'}</code>
+  {t('ops.gcode_include.token_safez.hint')} <code>{'{tokens}'}</code>
+  {t('ops.gcode_include.tokens_outro.hint')}
 </p>
 <!-- Verbose per-line warning toggle. Off by default; users
      debugging an exotic block flip it on to see exactly which
      lines were skipped and why. -->
-<label
-  class="row"
-  title="When on, each unsimulated line fires its own warning with the line offset and reason — useful for debugging an exotic block. When off (default), only the counted summary fires."
->
-  <span>Verbose unsim warnings</span>
+<label class="row" title={t('ops.gcode_include.verbose_unsim_warnings.help')}>
+  <span>{t('ops.gcode_include.verbose_unsim_warnings.label')}</span>
   <input
     type="checkbox"
     checked={op.verboseUnsimWarnings ?? false}

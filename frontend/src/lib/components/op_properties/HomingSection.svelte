@@ -4,6 +4,7 @@
   /// No tool, no source, no Z schedule.
   /// Styles inherited from OpPropertiesPanel's :global(.props ...) rules.
   import type { HomingOp, OpField, OpFieldValue } from '../../state/project.svelte';
+  import { t } from '../../i18n';
 
   interface Props {
     op: HomingOp;
@@ -13,18 +14,15 @@
 </script>
 
 <label class="row">
-  <span>Name</span>
+  <span>{t('ops.homing.name.label')}</span>
   <input
     type="text"
     value={op.name}
     oninput={(e) => patch('name', (e.currentTarget as HTMLInputElement).value)}
   />
 </label>
-<label
-  class="row"
-  title="When checked, the pipeline follows the G28 with a rapid G0 Z<safe> at the op's fastMoveZ so the next op starts from a known clearance. Most controllers leave the spindle wherever machine zero puts it, so the default is on."
->
-  <span>Retract to safe Z after G28</span>
+<label class="row" title={t('ops.homing.retract_safe_z.help')}>
+  <span>{t('ops.homing.retract_safe_z.label')}</span>
   <input
     type="checkbox"
     checked={op.retractToSafeZ ?? true}
@@ -32,7 +30,7 @@
   />
 </label>
 <p class="hint hint-pause">
-  The pipeline emits <code>G28</code> (move to machine home){(op.retractToSafeZ ?? true)
-    ? ' and a rapid Z lift to safe height'
-    : ''}. No motion in X / Y other than the homing itself. The cutter does not engage.
+  {t('ops.homing.pipeline.hint_prefix')}<code>G28</code>{t('ops.homing.pipeline.hint_suffix', {
+    suffix: (op.retractToSafeZ ?? true) ? t('ops.homing.pipeline.safe_z_suffix') : '',
+  })}
 </p>

@@ -25,7 +25,7 @@
 <fieldset>
   <legend>{t('ops.drill.legend')}</legend>
   <label class="row">
-    <span>Cycle</span>
+    <span>{t('ops.drill.cycle.label')}</span>
     <select
       value={op.drillCycle?.kind ?? 'simple'}
       onchange={(e) => {
@@ -50,16 +50,13 @@
         }
       }}
     >
-      <option value="simple" title="G81 — single plunge to depth, retract.">
+      <option value="simple" title={t('ops.drill.cycle.simple.help')}>
         {t('ops.drill.cycle.simple')}
       </option>
-      <option value="peck" title="G83 — peck with full retract to clearance plane between pecks.">
+      <option value="peck" title={t('ops.drill.cycle.peck.help')}>
         {t('ops.drill.cycle.peck')}
       </option>
-      <option
-        value="chip_break"
-        title="G73 — peck with chip-break (small partial retract between pecks)."
-      >
+      <option value="chip_break" title={t('ops.drill.cycle.chip_break.help')}>
         {t('ops.drill.cycle.chip_break')}
       </option>
     </select>
@@ -68,7 +65,7 @@
     <details class="subsection" open>
       <summary>{t('ops.drill.cycle_options')}</summary>
       <label class="row">
-        <span>Peck step</span>
+        <span>{t('ops.drill.peck_step.label')}</span>
         <div class="num-cell">
           <input
             type="number"
@@ -94,7 +91,7 @@
     </details>
   {/if}
   <label class="row">
-    <span>Dwell</span>
+    <span>{t('ops.drill.dwell.label')}</span>
     <div class="num-cell">
       <input
         type="number"
@@ -112,11 +109,8 @@
       <span class="unit">s</span>
     </div>
   </label>
-  <label
-    class="row"
-    title="Countersink: after drilling each hole, the cutter walks a constant-Z revolution at the rim to break the edge. Depth is computed from the cutter's V-bit tip angle. Set Finish tool below to swap to a dedicated chamfer cutter (drill, then T<n> M6, then chamfer). Empty / 0 = no countersink."
-  >
-    <span>Chamfer width</span>
+  <label class="row" title={t('ops.drill.chamfer_width.help')}>
+    <span>{t('ops.drill.chamfer_width.label')}</span>
     <div class="num-cell">
       <input
         type="number"
@@ -132,11 +126,8 @@
       <span class="unit">mm</span>
     </div>
   </label>
-  <label
-    class="row"
-    title="Spot pre-pass: before the main drill, the machine spots each hole with a shallow centre mark using a stiffer tool, so a twist drill doesn't walk on hard or polished stock. Drill, then T<n> M6 to the spot tool, spot every hole, then back to the drill."
-  >
-    <span>Spot pre-pass</span>
+  <label class="row" title={t('ops.drill.spot_first.help')}>
+    <span>{t('ops.drill.spot_first.label')}</span>
     <input
       type="checkbox"
       checked={op.spotFirst !== undefined}
@@ -158,14 +149,14 @@
     <details class="subsection" open>
       <summary>{t('ops.drill.spot_options')}</summary>
       <label class="row">
-        <span>Spot depth</span>
+        <span>{t('ops.drill.spot_depth.label')}</span>
         <div class="num-cell">
           <input
             type="number"
             step="0.1"
             max="0"
             value={op.spotFirst.spotDepthMm}
-            title="Depth of the centre spot below the stock top. Negative number, mm — just deep enough to start the drill (e.g. -0.5)."
+            title={t('ops.drill.spot_depth.help')}
             onchange={(e) => {
               const v = parseFloat((e.currentTarget as HTMLInputElement).value);
               if (!isNaN(v) && v < 0 && op.spotFirst) {
@@ -177,7 +168,7 @@
         </div>
       </label>
       <label class="row">
-        <span>Spot tool</span>
+        <span>{t('ops.drill.spot_tool.label')}</span>
         <select
           value={op.spotFirst.spotToolId}
           onchange={(e) => {

@@ -35,41 +35,35 @@
     `fullMedialAxis: boolean | undefined` field — undefined means the
     default perimeter-only mode.
   -->
-  <div
-    class="row"
-    title="Perimeter (default, Estlcam-style): the cutter traces the boundary offset inward by Max width / 2 at constant depth, leaving the centre plateau untouched. Medial axis (Aspire-style): depth varies along an interior spine through the widest parts of the region; useful for depth-gradient relief, but typically NOT what you want for sign-making."
-  >
-    <span>Mode</span>
+  <div class="row" title={t('ops.vcarve.mode.help')}>
+    <span>{t('ops.vcarve.mode.label')}</span>
     <div class="segmented">
       <button
         type="button"
         class:active={!(op.fullMedialAxis ?? false)}
         onclick={() => patch('fullMedialAxis', undefined)}
       >
-        Perimeter
+        {t('ops.vcarve.mode.perimeter')}
       </button>
       <button
         type="button"
         class:active={op.fullMedialAxis ?? false}
         onclick={() => patch('fullMedialAxis', true)}
       >
-        Medial axis
+        {t('ops.vcarve.mode.medial_axis')}
       </button>
     </div>
   </div>
   <details class="subsection" open>
     <summary>{t('ops.vcarve.advanced.summary')}</summary>
-    <label
-      class="row"
-      title="Optional cap on the inscribed-circle radius (mm). Leave empty for no cap. Useful when a wide region would otherwise drive the V deeper than the bit's usable shoulder."
-    >
-      <span>Max width</span>
+    <label class="row" title={t('ops.vcarve.max_width.help')}>
+      <span>{t('ops.vcarve.max_width.label')}</span>
       <div class="num-cell">
         <input
           type="number"
           step="0.1"
           min="0"
-          placeholder="no cap"
+          placeholder={t('ops.vcarve.max_width.placeholder')}
           value={op.carveMaxWidthMm ?? ''}
           onchange={(e) => {
             const v = parseFloat((e.currentTarget as HTMLInputElement).value);
@@ -79,11 +73,8 @@
         <span class="unit">mm</span>
       </div>
     </label>
-    <label
-      class="row"
-      title="Inlay plug clearance. Shrinks the source region inward by this amount before the V-Carve pass, so the plug ends up that much smaller per side than the pocket. Pocket side leaves this empty / 0; plug side typically uses 0.05–0.2 mm. Set both halves to the SAME value for a proper wedge fit."
-    >
-      <span>Source inset</span>
+    <label class="row" title={t('ops.vcarve.source_inset.help')}>
+      <span>{t('ops.vcarve.source_inset.label')}</span>
       <div class="num-cell">
         <input
           type="number"
@@ -99,11 +90,8 @@
         <span class="unit">mm</span>
       </div>
     </label>
-    <label
-      class="row"
-      title="Duplicates this V-Carve op as an inlay plug. The new op gets a 0.1 mm source inset by default — the plug is 0.1 mm smaller per side than the pocket. Cut the pocket on your base material; cut the plug on contrasting stock (flipped); glue together. Adjust 'Source inset' on either side to match — both halves need the SAME gap value for a proper wedge fit."
-    >
-      <span>Inlay plug</span>
+    <label class="row" title={t('ops.vcarve.inlay_plug.help')}>
+      <span>{t('ops.vcarve.inlay_plug.label')}</span>
       <button
         type="button"
         class="inlay-btn"
@@ -116,16 +104,13 @@
           });
         }}
       >
-        Duplicate as inlay plug
+        {t('ops.vcarve.duplicate_as_inlay_plug')}
       </button>
     </label>
-    <label
-      class="row"
-      title="Planned for a future release: re-cut only the points whose first pass fell short of the geometric target depth. The control is disabled until the refinement pass ships."
-    >
-      <span>Refine pass</span>
+    <label class="row" title={t('ops.vcarve.refine_pass.help')}>
+      <span>{t('ops.vcarve.refine_pass.label')}</span>
       <input type="checkbox" checked={false} disabled />
-      <span class="hint hint-trailing">not yet implemented</span>
+      <span class="hint hint-trailing">{t('ops.vcarve.refine_pass.not_implemented')}</span>
     </label>
   </details>
 </fieldset>

@@ -27,19 +27,18 @@
   <fieldset>
     <legend>{t('ops.pocket.outside.legend')}</legend>
     <p class="hint">
-      Convert this Pocket into a Pocket Outside operation: the pipeline auto-derives a frame around
-      the selection at generate time and carves the area BETWEEN the frame and the selection.
+      {t('ops.pocket.outside.hint')}
     </p>
     <button
       type="button"
       class="reset-link"
-      title="Convert this op to a Pocket Outside by attaching a synthetic frame around its source selection."
+      title={t('ops.pocket.outside.help')}
       onclick={() => {
         const diameter = opTool ? opTool.diameter : 3;
         patch('frameShape', 'rectangle');
         patch('framePaddingMm', 3 * diameter);
         patch('sourceCombine', 'difference');
-      }}>Convert to Pocket Outside →</button
+      }}>{t('ops.pocket.outside.convert')}</button
     >
   </fieldset>
 {/if}
@@ -48,11 +47,8 @@
     <legend>{t('ops.pocket.frame.legend')}</legend>
     <details class="subsection" open>
       <summary>{t('ops.pocket.frame.summary')}</summary>
-      <label
-        class="row"
-        title="Shape of the synthetic frame the pipeline derives from your selection at generate time."
-      >
-        <span>Shape</span>
+      <label class="row" title={t('ops.pocket.frame_shape.help')}>
+        <span>{t('ops.pocket.frame_shape.label')}</span>
         <select
           value={op.frameShape}
           onchange={(e) =>
@@ -62,11 +58,8 @@
           <option value="rounded_rectangle">{t('ops.pocket.frame.shape.rounded_rectangle')}</option>
         </select>
       </label>
-      <label
-        class="row"
-        title="Padding (mm) added on every side of the selection bbox to size the frame. Default is 3 × tool diameter; once you type a value it stays manual."
-      >
-        <span>Padding</span>
+      <label class="row" title={t('ops.pocket.frame_padding.help')}>
+        <span>{t('ops.pocket.frame_padding.label')}</span>
         <div class="num-cell">
           <input
             type="number"
@@ -82,17 +75,14 @@
         </div>
       </label>
       {#if op.frameShape === 'rounded_rectangle'}
-        <label
-          class="row"
-          title="Corner radius (mm) for the rounded rectangle. Empty = same as padding."
-        >
-          <span>Corner radius</span>
+        <label class="row" title={t('ops.pocket.frame_corner_radius.help')}>
+          <span>{t('ops.pocket.frame_corner_radius.label')}</span>
           <div class="num-cell">
             <input
               type="number"
               step="0.5"
               min="0"
-              placeholder="same as padding"
+              placeholder={t('ops.pocket.frame_corner_radius.placeholder')}
               value={op.frameCornerRadiusMm ?? ''}
               onchange={(e) => {
                 const v = parseFloat((e.currentTarget as HTMLInputElement).value);
@@ -109,7 +99,7 @@
 <fieldset>
   <legend>{t('ops.pocket.legend')}</legend>
   <label class="row">
-    <span>Strategy</span>
+    <span>{t('ops.pocket.strategy.label')}</span>
     <select
       value={op.pocketStrategy ?? 'cascade'}
       onchange={(e) => {
@@ -135,17 +125,11 @@
   {#if op.pocketStrategy === 'halfpipe'}
     <details class="subsection" open>
       <summary>{t('ops.pocket.halfpipe.summary')}</summary>
-      <p
-        class="hint"
-        title="Halfpipe walks the slot's medial axis at varying Z so the cut floor matches the chosen profile. Tool kind: ball-nose for circular_arc, V-bit for v_bottom."
-      >
-        Slot floor profile.
+      <p class="hint" title={t('ops.pocket.halfpipe_profile.help')}>
+        {t('ops.pocket.halfpipe_profile.hint')}
       </p>
-      <label
-        class="row"
-        title="Pipe profile: circular_arc gives a ball-bottom slot; v_bottom matches V-Carve."
-      >
-        <span>Profile</span>
+      <label class="row" title={t('ops.pocket.profile.help')}>
+        <span>{t('ops.pocket.profile.label')}</span>
         <select
           value={op.halfpipeProfile?.kind ?? 'circular_arc'}
           onchange={(e) => {
@@ -172,11 +156,8 @@
         </select>
       </label>
       {#if op.halfpipeProfile?.kind === 'circular_arc'}
-        <label
-          class="row"
-          title="Pipe radius in mm. Match this to the ball-nose cutter's radius for a true half-pipe."
-        >
-          <span>Radius</span>
+        <label class="row" title={t('ops.pocket.radius.help')}>
+          <span>{t('ops.pocket.radius.label')}</span>
           <div class="num-cell">
             <input
               type="number"
@@ -194,11 +175,8 @@
         </label>
       {/if}
       {#if op.halfpipeProfile?.kind === 'v_bottom'}
-        <label
-          class="row"
-          title="V-bit included angle in degrees. Same semantics as the V-Carve tip angle."
-        >
-          <span>Included angle</span>
+        <label class="row" title={t('ops.pocket.included_angle.help')}>
+          <span>{t('ops.pocket.included_angle.label')}</span>
           <div class="num-cell">
             <input
               type="number"
@@ -224,11 +202,8 @@
   {#if op.pocketStrategy === 'zigzag'}
     <details class="subsection" open>
       <summary>{t('ops.pocket.zigzag.summary')}</summary>
-      <label
-        class="row"
-        title="Rotates the raster sweep. 0° = horizontal sweeps (default); 90° = vertical; 45° = diagonal. Long-thin pockets cut faster + cleaner when the sweep runs ALONG the long axis."
-      >
-        <span>Angle</span>
+      <label class="row" title={t('ops.pocket.zigzag_angle.help')}>
+        <span>{t('ops.pocket.zigzag_angle.label')}</span>
         <div class="range-cell">
           <span class="range-min">0°</span>
           <input
@@ -255,7 +230,7 @@
             class="quick-btn"
             class:active={(op.pocketZigzagAngleDeg ?? 0) === a}
             onclick={() => patch('pocketZigzagAngleDeg', a === 0 ? undefined : a)}
-            title={`Set raster angle to ${a}°`}
+            title={t('ops.pocket.zigzag_angle_quick.help', { angle: a })}
           >
             {a}°
           </button>
@@ -266,11 +241,8 @@
   {#if op.pocketStrategy === 'trochoidal'}
     <details class="subsection" open>
       <summary>{t('ops.pocket.trochoidal.summary')}</summary>
-      <label
-        class="row"
-        title="Engagement arc angle in degrees. Lower = lighter cut, more loops; higher = aggressive. Drives centerline pitch."
-      >
-        <span>Engagement angle</span>
+      <label class="row" title={t('ops.pocket.engagement_angle.help')}>
+        <span>{t('ops.pocket.engagement_angle.label')}</span>
         <div class="range-cell">
           <span class="range-min">5°</span>
           <input
@@ -288,11 +260,8 @@
           <span class="num">{op.engagementAngleDeg ?? 30}°</span>
         </div>
       </label>
-      <label
-        class="row"
-        title="Loop radius as a fraction of tool radius. 0.6 is a balanced default; 0.3 = tiny loops (very light), 1.0 = loops as large as the cutter."
-      >
-        <span>Loop radius factor</span>
+      <label class="row" title={t('ops.pocket.loop_radius_factor.help')}>
+        <span>{t('ops.pocket.loop_radius_factor.label')}</span>
         <div class="range-cell">
           <span class="range-min">0.3×</span>
           <input
@@ -312,14 +281,14 @@
       </label>
       {#if op.cutDirection === 'climb' || op.cutDirection === undefined || op.cutDirection === 'conventional'}
         {#if (op.cutDirection ?? 'conventional') === 'conventional'}
-          <p class="hint warn">Trochoidal usually pairs with climb.</p>
+          <p class="hint warn">{t('ops.pocket.trochoidal_climb.hint')}</p>
         {/if}
       {/if}
       {#if op.plunge && op.plunge.kind !== 'helix'}
-        <p class="hint warn">Trochoidal will override plunge to Helix.</p>
+        <p class="hint warn">{t('ops.pocket.trochoidal_plunge.hint')}</p>
       {/if}
       {#if (op.tabPlacements && op.tabPlacements.length > 0) || (op.tabMode && op.tabMode.kind !== 'off')}
-        <p class="hint warn">Tabs ignored on trochoidal pockets.</p>
+        <p class="hint warn">{t('ops.pocket.trochoidal_tabs.hint')}</p>
       {/if}
     </details>
   {:else}
@@ -329,10 +298,26 @@
     <label
       class="row"
       title={opOverlap === undefined
-        ? `XY overlap between consecutive pocket cuts. Empty = inherit from the tool (${toolDefault !== undefined ? `${toolDefault} from "${opTool?.name}"` : '0.5 global default'}). 0.5 = 50 % overlap (step is half the tool diameter). Higher = tighter cascade rings, cleaner fill but slower; lower = bigger steps, faster but may leave stripes.`
-        : `XY overlap between consecutive pocket cuts. 0.5 = 50 % overlap (step is half the tool diameter). Higher = tighter cascade rings, cleaner fill but slower; lower = bigger steps, faster but may leave stripes. Clear the field to inherit ${toolDefault !== undefined ? `${toolDefault} from tool "${opTool?.name}"` : 'the 0.5 global default'}.`}
+        ? t('ops.pocket.xy_overlap.help_empty', {
+            source:
+              toolDefault !== undefined
+                ? t('ops.pocket.xy_overlap.source_tool', {
+                    value: toolDefault,
+                    tool: opTool?.name ?? '',
+                  })
+                : t('ops.pocket.xy_overlap.source_global'),
+          })
+        : t('ops.pocket.xy_overlap.help_set', {
+            source:
+              toolDefault !== undefined
+                ? t('ops.pocket.xy_overlap.inherit_tool', {
+                    value: toolDefault,
+                    tool: opTool?.name ?? '',
+                  })
+                : t('ops.pocket.xy_overlap.inherit_global'),
+          })}
     >
-      <span>XY overlap</span>
+      <span>{t('ops.pocket.xy_overlap.label')}</span>
       <div class="num-cell">
         <input
           type="number"
@@ -352,7 +337,7 @@
             if (!isNaN(v)) patch('xyOverlap', Math.max(0.05, Math.min(0.95, v)));
           }}
         />
-        <span class="unit" title="Unitless fraction between 0 and 1.">fraction</span>
+        <span class="unit" title={t('ops.pocket.xy_overlap.unit_help')}>fraction</span>
       </div>
     </label>
   {/if}

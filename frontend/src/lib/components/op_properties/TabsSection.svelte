@@ -33,9 +33,8 @@
   let tabHeightInvalid = $state(false);
 
   const TAB_TYPE_HELP: Record<string, string> = {
-    rectangle:
-      'Rectangular tab: cutter steps up to tab Z, walks the tab span at constant height, steps back down. Standard hold-down.',
-    ramp: 'Triangular ramp tab: cutter ramps up to tab Z, then back down — no constant-Z section. Easier to clean off than rectangles.',
+    rectangle: t('ops.tabs.type.rectangle.help'),
+    ramp: t('ops.tabs.type.ramp.help'),
   };
 
   /// Count tab placements whose object id is no longer reachable from
@@ -67,11 +66,8 @@
 
 <fieldset>
   <legend>{t('ops.tabs.legend')}</legend>
-  <div
-    class="row"
-    title="How tab positions are sourced for this op. Off ignores tabs entirely. Auto evenly spaces N tabs on each closed contour. Manual lets you click on the 2D canvas to place individual tabs. Mixed combines both."
-  >
-    <span>Mode</span>
+  <div class="row" title={t('ops.tabs.mode.help')}>
+    <span>{t('ops.tabs.mode.label')}</span>
     <div class="segmented">
       {#each ['off', 'auto', 'manual', 'mixed'] as mk (mk)}
         <button
@@ -109,8 +105,8 @@
     </div>
   </div>
   {#if op.tabMode?.kind === 'auto' || op.tabMode?.kind === 'mixed'}
-    <label class="row" title="Number of tabs to auto-place evenly around each closed contour.">
-      <span>Count</span>
+    <label class="row" title={t('ops.tabs.count.help')}>
+      <span>{t('ops.tabs.count.label')}</span>
       <div class="num-cell">
         <input
           type="number"
@@ -128,30 +124,25 @@
     </label>
   {/if}
   {#if op.tabMode?.kind === 'manual' || op.tabMode?.kind === 'mixed'}
-    <p
-      class="hint"
-      title="Click on a closed contour in the 2D canvas to place a tab. Click on an existing tab to remove it."
-    >
-      Click the 2D canvas to add or remove tabs.
+    <p class="hint" title={t('ops.tabs.manual.help')}>
+      {t('ops.tabs.manual.hint')}
       {#if op.tabPlacements && op.tabPlacements.length > 0}
-        ({op.tabPlacements.length} placed)
+        {t('ops.tabs.manual.placed', { count: op.tabPlacements.length })}
       {/if}
     </p>
     {@const disconnected = disconnectedTabCount(op)}
     {#if disconnected > 0}
-      <p
-        class="hint warn"
-        title="These tabs reference objects that are no longer in this op's source set (either removed from the import or no longer selected). The pipeline silently drops them; clear them out to keep the data tidy."
-      >
-        <strong>{disconnected}</strong> tab{disconnected === 1 ? '' : 's'} disconnected
+      <p class="hint warn" title={t('ops.tabs.disconnected.help')}>
+        <strong>{disconnected}</strong>
+        {t('ops.tabs.disconnected.hint', { count: disconnected })}
         <button type="button" class="reset-link" onclick={() => clearDisconnectedTabs(op)}
-          >clear</button
+          >{t('ops.tabs.clear')}</button
         >
       </p>
     {/if}
   {/if}
-  <label class="row" title="Width of each bridge along the cut path. Default 10 mm.">
-    <span>Width</span>
+  <label class="row" title={t('ops.tabs.width.help')}>
+    <span>{t('ops.tabs.width.label')}</span>
     <div class="num-cell">
       <input
         type="number"
@@ -172,8 +163,8 @@
       <span class="unit">mm</span>
     </div>
   </label>
-  <label class="row" title="Z clearance the cutter lifts to over each tab. Default 1 mm.">
-    <span>Height</span>
+  <label class="row" title={t('ops.tabs.height.help')}>
+    <span>{t('ops.tabs.height.label')}</span>
     <div class="num-cell">
       <input
         type="number"
@@ -195,7 +186,7 @@
     </div>
   </label>
   <label class="row" title={TAB_TYPE_HELP[op.tabType ?? 'rectangle']}>
-    <span>Type</span>
+    <span>{t('ops.tabs.type.label')}</span>
     <select
       value={op.tabType ?? 'rectangle'}
       onchange={(e) => {
@@ -215,11 +206,8 @@
   {#if op.tabType === 'ramp'}
     <details class="subsection" open>
       <summary>{t('ops.tabs.ramp.summary')}</summary>
-      <label
-        class="row"
-        title="Ramp angle in degrees. 30° (default) gives a 1:√3 slope. Smaller = gentler, longer ramps; larger = steeper, more like a Rectangle tab. Horizontal ramp length = tabs.height / tan(angle)."
-      >
-        <span>Ramp angle</span>
+      <label class="row" title={t('ops.tabs.ramp_angle.help')}>
+        <span>{t('ops.tabs.ramp_angle.label')}</span>
         <div class="num-cell">
           <input
             type="number"

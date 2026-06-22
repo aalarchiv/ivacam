@@ -50,16 +50,9 @@
 
 <fieldset>
   <legend>{t('ops.pattern.legend')}</legend>
-  <p class="hint">
-    Run this operation once per pattern instance with the source geometry translated or rotated. The
-    original geometry stays at the (0, 0) / 0° instance — single-count patterns are equivalent to no
-    pattern.
-  </p>
-  <label
-    class="row"
-    title="Pattern shape — Linear array, rectangular Grid, or Polar (rotational) array."
-  >
-    <span>Pattern</span>
+  <p class="hint">{t('ops.pattern.intro.hint')}</p>
+  <label class="row" title={t('ops.pattern.kind.help')}>
+    <span>{t('ops.pattern.kind.label')}</span>
     <select
       value={op.pattern?.kind ?? 'none'}
       onchange={(e) => {
@@ -89,11 +82,8 @@
   </label>
   {#if op.pattern?.kind === 'linear'}
     {@const lin = op.pattern}
-    <label
-      class="row"
-      title="Total number of instances along the array, including the original at offset (0, 0)."
-    >
-      <span>Count</span>
+    <label class="row" title={t('ops.pattern.linear_count.help')}>
+      <span>{t('ops.pattern.linear_count.label')}</span>
       <input
         type="number"
         min="1"
@@ -105,7 +95,7 @@
         }}
       />
     </label>
-    <label class="row" title="X offset between consecutive instances (mm).">
+    <label class="row" title={t('ops.pattern.linear_dx.help')}>
       <span>Δx</span>
       <div class="num-cell">
         <input
@@ -120,7 +110,7 @@
         <span class="unit">mm</span>
       </div>
     </label>
-    <label class="row" title="Y offset between consecutive instances (mm).">
+    <label class="row" title={t('ops.pattern.linear_dy.help')}>
       <span>Δy</span>
       <div class="num-cell">
         <input
@@ -137,8 +127,8 @@
     </label>
   {:else if op.pattern?.kind === 'grid'}
     {@const grid = op.pattern}
-    <label class="row" title="Instances along the X axis.">
-      <span>Count X</span>
+    <label class="row" title={t('ops.pattern.count_x.help')}>
+      <span>{t('ops.pattern.count_x.label')}</span>
       <input
         type="number"
         min="1"
@@ -150,8 +140,8 @@
         }}
       />
     </label>
-    <label class="row" title="Instances along the Y axis.">
-      <span>Count Y</span>
+    <label class="row" title={t('ops.pattern.count_y.help')}>
+      <span>{t('ops.pattern.count_y.label')}</span>
       <input
         type="number"
         min="1"
@@ -163,7 +153,7 @@
         }}
       />
     </label>
-    <label class="row" title="X spacing between grid columns (mm).">
+    <label class="row" title={t('ops.pattern.grid_dx.help')}>
       <span>Δx</span>
       <div class="num-cell">
         <input
@@ -178,7 +168,7 @@
         <span class="unit">mm</span>
       </div>
     </label>
-    <label class="row" title="Y spacing between grid rows (mm).">
+    <label class="row" title={t('ops.pattern.grid_dy.help')}>
       <span>Δy</span>
       <div class="num-cell">
         <input
@@ -195,8 +185,8 @@
     </label>
   {:else if op.pattern?.kind === 'polar'}
     {@const pol = op.pattern}
-    <label class="row" title="Total instances around the center, including the original at 0°.">
-      <span>Count</span>
+    <label class="row" title={t('ops.pattern.polar_count.help')}>
+      <span>{t('ops.pattern.polar_count.label')}</span>
       <input
         type="number"
         min="1"
@@ -208,8 +198,8 @@
         }}
       />
     </label>
-    <label class="row" title="X coordinate of the rotation center (mm).">
-      <span>Center X</span>
+    <label class="row" title={t('ops.pattern.center_x.help')}>
+      <span>{t('ops.pattern.center_x.label')}</span>
       <div class="num-cell">
         <input
           type="number"
@@ -223,8 +213,8 @@
         <span class="unit">mm</span>
       </div>
     </label>
-    <label class="row" title="Y coordinate of the rotation center (mm).">
-      <span>Center Y</span>
+    <label class="row" title={t('ops.pattern.center_y.help')}>
+      <span>{t('ops.pattern.center_y.label')}</span>
       <div class="num-cell">
         <input
           type="number"
@@ -238,11 +228,8 @@
         <span class="unit">mm</span>
       </div>
     </label>
-    <label
-      class="row"
-      title="Angle between consecutive instances (degrees). 360 / count for a full revolution."
-    >
-      <span>Step</span>
+    <label class="row" title={t('ops.pattern.step.help')}>
+      <span>{t('ops.pattern.step.label')}</span>
       <div class="num-cell">
         <input
           type="number"
@@ -256,11 +243,8 @@
         <span class="unit">°</span>
       </div>
     </label>
-    <label
-      class="row"
-      title="Angle of the first instance — shifts the whole ring so it doesn't have to start at 0°."
-    >
-      <span>Start</span>
+    <label class="row" title={t('ops.pattern.start.help')}>
+      <span>{t('ops.pattern.start.label')}</span>
       <div class="num-cell">
         <input
           type="number"
@@ -282,10 +266,10 @@
         onclick={() => setCenterFromSelection(pol)}
         disabled={project.sel.selectedObjects.size === 0}
         title={project.sel.selectedObjects.size === 0
-          ? 'Select one or more objects on the canvas first.'
-          : 'Compute center X / Y as the bbox center of the currently selected objects.'}
+          ? t('ops.pattern.set_center.disabled_help')
+          : t('ops.pattern.set_center.help')}
       >
-        Set center from selection
+        {t('ops.pattern.set_center')}
       </button>
     </div>
   {/if}

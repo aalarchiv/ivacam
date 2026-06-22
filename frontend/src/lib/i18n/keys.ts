@@ -650,13 +650,52 @@ export type MsgKey =
   | "opprops.tool.title.relief"
   | "opprops.wear.effective_diameter"
   | "opprops.wear.title"
+  | "ops.chamfer.finish_pass.help"
+  | "ops.chamfer.finish_pass.label"
   | "ops.chamfer.legend"
+  | "ops.chamfer.width.help"
+  | "ops.chamfer.width.label"
+  | "ops.cycle_marker.emits.hint"
+  | "ops.cycle_marker.label.help"
+  | "ops.cycle_marker.label.label"
+  | "ops.cycle_marker.label.placeholder"
+  | "ops.cycle_marker.name.label"
+  | "ops.cycle_marker.no_motion.hint"
+  | "ops.drill.chamfer_width.help"
+  | "ops.drill.chamfer_width.label"
   | "ops.drill.cycle.chip_break"
+  | "ops.drill.cycle.chip_break.help"
+  | "ops.drill.cycle.label"
   | "ops.drill.cycle.peck"
+  | "ops.drill.cycle.peck.help"
   | "ops.drill.cycle.simple"
+  | "ops.drill.cycle.simple.help"
   | "ops.drill.cycle_options"
+  | "ops.drill.dwell.label"
   | "ops.drill.legend"
+  | "ops.drill.peck_step.label"
+  | "ops.drill.spot_depth.help"
+  | "ops.drill.spot_depth.label"
+  | "ops.drill.spot_first.help"
+  | "ops.drill.spot_first.label"
   | "ops.drill.spot_options"
+  | "ops.drill.spot_tool.label"
+  | "ops.gcode_include.content.help"
+  | "ops.gcode_include.content.label"
+  | "ops.gcode_include.content.placeholder"
+  | "ops.gcode_include.file.help"
+  | "ops.gcode_include.file.label"
+  | "ops.gcode_include.loaded_from.hint"
+  | "ops.gcode_include.loaded_stats.hint"
+  | "ops.gcode_include.name.label"
+  | "ops.gcode_include.token_feed.hint"
+  | "ops.gcode_include.token_safez.hint"
+  | "ops.gcode_include.token_spindle.hint"
+  | "ops.gcode_include.token_xyz.hint"
+  | "ops.gcode_include.tokens_intro.hint"
+  | "ops.gcode_include.tokens_outro.hint"
+  | "ops.gcode_include.verbose_unsim_warnings.help"
+  | "ops.gcode_include.verbose_unsim_warnings.label"
   | "ops.help.chamfer"
   | "ops.help.cycle_marker"
   | "ops.help.dovetail"
@@ -675,6 +714,12 @@ export type MsgKey =
   | "ops.help.t_slot"
   | "ops.help.thread"
   | "ops.help.vcarve"
+  | "ops.homing.name.label"
+  | "ops.homing.pipeline.hint_prefix"
+  | "ops.homing.pipeline.hint_suffix"
+  | "ops.homing.pipeline.safe_z_suffix"
+  | "ops.homing.retract_safe_z.help"
+  | "ops.homing.retract_safe_z.label"
   | "ops.image.none_loaded"
   | "ops.kind.chamfer"
   | "ops.kind.cycle_marker"
@@ -694,35 +739,126 @@ export type MsgKey =
   | "ops.kind.t_slot"
   | "ops.kind.thread"
   | "ops.kind.vcarve"
+  | "ops.pattern.center_x.help"
+  | "ops.pattern.center_x.label"
+  | "ops.pattern.center_y.help"
+  | "ops.pattern.center_y.label"
+  | "ops.pattern.count_x.help"
+  | "ops.pattern.count_x.label"
+  | "ops.pattern.count_y.help"
+  | "ops.pattern.count_y.label"
+  | "ops.pattern.grid_dx.help"
+  | "ops.pattern.grid_dy.help"
+  | "ops.pattern.intro.hint"
   | "ops.pattern.kind.grid"
+  | "ops.pattern.kind.help"
+  | "ops.pattern.kind.label"
   | "ops.pattern.kind.linear"
   | "ops.pattern.kind.none"
   | "ops.pattern.kind.polar"
   | "ops.pattern.legend"
+  | "ops.pattern.linear_count.help"
+  | "ops.pattern.linear_count.label"
+  | "ops.pattern.linear_dx.help"
+  | "ops.pattern.linear_dy.help"
+  | "ops.pattern.polar_count.help"
+  | "ops.pattern.polar_count.label"
+  | "ops.pattern.set_center"
+  | "ops.pattern.set_center.disabled_help"
+  | "ops.pattern.set_center.help"
+  | "ops.pattern.start.help"
+  | "ops.pattern.start.label"
+  | "ops.pattern.step.help"
+  | "ops.pattern.step.label"
+  | "ops.pause.emits.hint"
+  | "ops.pause.emits_and.hint"
+  | "ops.pause.emits_message.hint"
+  | "ops.pause.emits_slot.hint"
+  | "ops.pause.message.help"
+  | "ops.pause.message.label"
+  | "ops.pause.message.placeholder"
+  | "ops.pause.name.label"
   | "ops.picker.add_aria"
   | "ops.picker.select_first"
+  | "ops.pocket.engagement_angle.help"
+  | "ops.pocket.engagement_angle.label"
   | "ops.pocket.frame.legend"
   | "ops.pocket.frame.shape.rectangle"
   | "ops.pocket.frame.shape.rounded_rectangle"
   | "ops.pocket.frame.summary"
+  | "ops.pocket.frame_corner_radius.help"
+  | "ops.pocket.frame_corner_radius.label"
+  | "ops.pocket.frame_corner_radius.placeholder"
+  | "ops.pocket.frame_padding.help"
+  | "ops.pocket.frame_padding.label"
+  | "ops.pocket.frame_shape.help"
+  | "ops.pocket.frame_shape.label"
   | "ops.pocket.halfpipe.profile.circular_arc"
   | "ops.pocket.halfpipe.profile.v_bottom"
   | "ops.pocket.halfpipe.summary"
+  | "ops.pocket.halfpipe_profile.help"
+  | "ops.pocket.halfpipe_profile.hint"
+  | "ops.pocket.included_angle.help"
+  | "ops.pocket.included_angle.label"
   | "ops.pocket.legend"
+  | "ops.pocket.loop_radius_factor.help"
+  | "ops.pocket.loop_radius_factor.label"
+  | "ops.pocket.outside.convert"
+  | "ops.pocket.outside.help"
+  | "ops.pocket.outside.hint"
   | "ops.pocket.outside.legend"
+  | "ops.pocket.profile.help"
+  | "ops.pocket.profile.label"
+  | "ops.pocket.radius.help"
+  | "ops.pocket.radius.label"
   | "ops.pocket.strategy.cascade"
   | "ops.pocket.strategy.halfpipe"
+  | "ops.pocket.strategy.label"
   | "ops.pocket.strategy.spiral"
   | "ops.pocket.strategy.trochoidal"
   | "ops.pocket.strategy.zigzag"
   | "ops.pocket.trochoidal.summary"
+  | "ops.pocket.trochoidal_climb.hint"
+  | "ops.pocket.trochoidal_plunge.hint"
+  | "ops.pocket.trochoidal_tabs.hint"
+  | "ops.pocket.xy_overlap.help_empty"
+  | "ops.pocket.xy_overlap.help_set"
+  | "ops.pocket.xy_overlap.inherit_global"
+  | "ops.pocket.xy_overlap.inherit_tool"
+  | "ops.pocket.xy_overlap.label"
+  | "ops.pocket.xy_overlap.source_global"
+  | "ops.pocket.xy_overlap.source_tool"
+  | "ops.pocket.xy_overlap.unit_help"
   | "ops.pocket.zigzag.summary"
+  | "ops.pocket.zigzag_angle.help"
+  | "ops.pocket.zigzag_angle.label"
+  | "ops.pocket.zigzag_angle_quick.help"
+  | "ops.probe.axis.help"
+  | "ops.probe.axis.label"
+  | "ops.probe.distance.help"
+  | "ops.probe.distance.label"
+  | "ops.probe.emits.hint"
+  | "ops.probe.feed.help"
+  | "ops.probe.feed.label"
+  | "ops.probe.halts.hint"
+  | "ops.probe.name.label"
   | "ops.profile.lead.off"
   | "ops.profile.lead.straight"
   | "ops.profile.lead_in.arc"
+  | "ops.profile.lead_in.help"
+  | "ops.profile.lead_in.label"
+  | "ops.profile.lead_in_length.help"
+  | "ops.profile.lead_in_radius.help"
   | "ops.profile.lead_out.arc"
+  | "ops.profile.lead_out.help"
+  | "ops.profile.lead_out.label"
+  | "ops.profile.lead_out_length.help"
+  | "ops.profile.lead_out_radius.help"
   | "ops.profile.leads.legend"
   | "ops.profile.legend"
+  | "ops.profile.length.label"
+  | "ops.profile.offset.label"
+  | "ops.profile.radius.label"
   | "ops.profile.side.inside"
   | "ops.profile.side.on"
   | "ops.profile.side.outside"
@@ -733,20 +869,119 @@ export type MsgKey =
   | "ops.raster.scan.legend"
   | "ops.raster.scan.lift_between"
   | "ops.raster.source.legend"
+  | "ops.raster_engrave.decoding"
+  | "ops.raster_engrave.dimensions.hint"
+  | "ops.raster_engrave.direction.label"
+  | "ops.raster_engrave.estimate.label"
+  | "ops.raster_engrave.estimate_rough"
+  | "ops.raster_engrave.histogram.hint"
+  | "ops.raster_engrave.histogram_level.hint"
+  | "ops.raster_engrave.image.label"
+  | "ops.raster_engrave.intro.hint"
+  | "ops.raster_engrave.level.help"
+  | "ops.raster_engrave.level.label"
+  | "ops.raster_engrave.link.help"
+  | "ops.raster_engrave.link.label"
+  | "ops.raster_engrave.load_error.hint"
+  | "ops.raster_engrave.load_image"
+  | "ops.raster_engrave.matrix.help"
+  | "ops.raster_engrave.matrix.label"
+  | "ops.raster_engrave.max_s.help"
+  | "ops.raster_engrave.max_s.label"
+  | "ops.raster_engrave.min_s.help"
+  | "ops.raster_engrave.min_s.label"
+  | "ops.raster_engrave.overscan.help"
+  | "ops.raster_engrave.overscan.label"
+  | "ops.raster_engrave.power_curve.bayer"
+  | "ops.raster_engrave.power_curve.floyd_steinberg"
+  | "ops.raster_engrave.power_curve.label"
+  | "ops.raster_engrave.power_curve.linear"
+  | "ops.raster_engrave.power_curve.threshold"
+  | "ops.raster_engrave.power_s.help"
+  | "ops.raster_engrave.power_s.label"
+  | "ops.raster_engrave.preview.help"
+  | "ops.raster_engrave.resolution.help"
+  | "ops.raster_engrave.resolution.label"
+  | "ops.raster_engrave.width.help"
+  | "ops.raster_engrave.width.label"
   | "ops.relief.depth.legend"
   | "ops.relief.finish.legend"
   | "ops.relief.scan.along_x"
   | "ops.relief.scan.along_y"
   | "ops.relief.source.legend"
+  | "ops.relief_mill.decoding"
+  | "ops.relief_mill.dimensions.hint"
+  | "ops.relief_mill.image.label"
+  | "ops.relief_mill.invert.help"
+  | "ops.relief_mill.invert.label"
+  | "ops.relief_mill.load_error.hint"
+  | "ops.relief_mill.load_image"
+  | "ops.relief_mill.scallop.help"
+  | "ops.relief_mill.scallop.label"
+  | "ops.relief_mill.scan.label"
+  | "ops.relief_mill.step.help"
+  | "ops.relief_mill.step.label"
+  | "ops.relief_mill.stepover.help"
+  | "ops.relief_mill.stepover.label"
+  | "ops.relief_mill.stepover.placeholder"
+  | "ops.relief_mill.surfacing.hint"
+  | "ops.relief_mill.width.help"
+  | "ops.relief_mill.width.label"
+  | "ops.relief_mill.z_max.help"
+  | "ops.relief_mill.z_max.label"
+  | "ops.relief_mill.z_min.help"
+  | "ops.relief_mill.z_min.label"
+  | "ops.tabs.clear"
+  | "ops.tabs.count.help"
+  | "ops.tabs.count.label"
+  | "ops.tabs.disconnected.help"
+  | "ops.tabs.disconnected.hint"
+  | "ops.tabs.height.help"
+  | "ops.tabs.height.label"
   | "ops.tabs.legend"
+  | "ops.tabs.manual.help"
+  | "ops.tabs.manual.hint"
+  | "ops.tabs.manual.placed"
+  | "ops.tabs.mode.help"
+  | "ops.tabs.mode.label"
   | "ops.tabs.ramp.summary"
+  | "ops.tabs.ramp_angle.help"
+  | "ops.tabs.ramp_angle.label"
+  | "ops.tabs.type.label"
   | "ops.tabs.type.ramp"
+  | "ops.tabs.type.ramp.help"
   | "ops.tabs.type.rectangle"
+  | "ops.tabs.type.rectangle.help"
+  | "ops.tabs.width.help"
+  | "ops.tabs.width.label"
+  | "ops.thread.climb.help"
+  | "ops.thread.climb.label"
+  | "ops.thread.direction.help"
+  | "ops.thread.direction.label"
   | "ops.thread.legend"
+  | "ops.thread.pitch.help"
+  | "ops.thread.pitch.label"
   | "ops.thread.side.external"
   | "ops.thread.side.internal"
+  | "ops.thread.source.help"
+  | "ops.thread.source.hint"
   | "ops.vcarve.advanced.summary"
+  | "ops.vcarve.duplicate_as_inlay_plug"
+  | "ops.vcarve.inlay_plug.help"
+  | "ops.vcarve.inlay_plug.label"
   | "ops.vcarve.legend"
+  | "ops.vcarve.max_width.help"
+  | "ops.vcarve.max_width.label"
+  | "ops.vcarve.max_width.placeholder"
+  | "ops.vcarve.mode.help"
+  | "ops.vcarve.mode.label"
+  | "ops.vcarve.mode.medial_axis"
+  | "ops.vcarve.mode.perimeter"
+  | "ops.vcarve.refine_pass.help"
+  | "ops.vcarve.refine_pass.label"
+  | "ops.vcarve.refine_pass.not_implemented"
+  | "ops.vcarve.source_inset.help"
+  | "ops.vcarve.source_inset.label"
   | "panel.drag_to_move"
   | "panel.drag_to_resize"
   | "panel.header.aria"
@@ -1902,13 +2137,52 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "opprops.tool.title.relief",
   "opprops.wear.effective_diameter",
   "opprops.wear.title",
+  "ops.chamfer.finish_pass.help",
+  "ops.chamfer.finish_pass.label",
   "ops.chamfer.legend",
+  "ops.chamfer.width.help",
+  "ops.chamfer.width.label",
+  "ops.cycle_marker.emits.hint",
+  "ops.cycle_marker.label.help",
+  "ops.cycle_marker.label.label",
+  "ops.cycle_marker.label.placeholder",
+  "ops.cycle_marker.name.label",
+  "ops.cycle_marker.no_motion.hint",
+  "ops.drill.chamfer_width.help",
+  "ops.drill.chamfer_width.label",
   "ops.drill.cycle.chip_break",
+  "ops.drill.cycle.chip_break.help",
+  "ops.drill.cycle.label",
   "ops.drill.cycle.peck",
+  "ops.drill.cycle.peck.help",
   "ops.drill.cycle.simple",
+  "ops.drill.cycle.simple.help",
   "ops.drill.cycle_options",
+  "ops.drill.dwell.label",
   "ops.drill.legend",
+  "ops.drill.peck_step.label",
+  "ops.drill.spot_depth.help",
+  "ops.drill.spot_depth.label",
+  "ops.drill.spot_first.help",
+  "ops.drill.spot_first.label",
   "ops.drill.spot_options",
+  "ops.drill.spot_tool.label",
+  "ops.gcode_include.content.help",
+  "ops.gcode_include.content.label",
+  "ops.gcode_include.content.placeholder",
+  "ops.gcode_include.file.help",
+  "ops.gcode_include.file.label",
+  "ops.gcode_include.loaded_from.hint",
+  "ops.gcode_include.loaded_stats.hint",
+  "ops.gcode_include.name.label",
+  "ops.gcode_include.token_feed.hint",
+  "ops.gcode_include.token_safez.hint",
+  "ops.gcode_include.token_spindle.hint",
+  "ops.gcode_include.token_xyz.hint",
+  "ops.gcode_include.tokens_intro.hint",
+  "ops.gcode_include.tokens_outro.hint",
+  "ops.gcode_include.verbose_unsim_warnings.help",
+  "ops.gcode_include.verbose_unsim_warnings.label",
   "ops.help.chamfer",
   "ops.help.cycle_marker",
   "ops.help.dovetail",
@@ -1927,6 +2201,12 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "ops.help.t_slot",
   "ops.help.thread",
   "ops.help.vcarve",
+  "ops.homing.name.label",
+  "ops.homing.pipeline.hint_prefix",
+  "ops.homing.pipeline.hint_suffix",
+  "ops.homing.pipeline.safe_z_suffix",
+  "ops.homing.retract_safe_z.help",
+  "ops.homing.retract_safe_z.label",
   "ops.image.none_loaded",
   "ops.kind.chamfer",
   "ops.kind.cycle_marker",
@@ -1946,35 +2226,126 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "ops.kind.t_slot",
   "ops.kind.thread",
   "ops.kind.vcarve",
+  "ops.pattern.center_x.help",
+  "ops.pattern.center_x.label",
+  "ops.pattern.center_y.help",
+  "ops.pattern.center_y.label",
+  "ops.pattern.count_x.help",
+  "ops.pattern.count_x.label",
+  "ops.pattern.count_y.help",
+  "ops.pattern.count_y.label",
+  "ops.pattern.grid_dx.help",
+  "ops.pattern.grid_dy.help",
+  "ops.pattern.intro.hint",
   "ops.pattern.kind.grid",
+  "ops.pattern.kind.help",
+  "ops.pattern.kind.label",
   "ops.pattern.kind.linear",
   "ops.pattern.kind.none",
   "ops.pattern.kind.polar",
   "ops.pattern.legend",
+  "ops.pattern.linear_count.help",
+  "ops.pattern.linear_count.label",
+  "ops.pattern.linear_dx.help",
+  "ops.pattern.linear_dy.help",
+  "ops.pattern.polar_count.help",
+  "ops.pattern.polar_count.label",
+  "ops.pattern.set_center",
+  "ops.pattern.set_center.disabled_help",
+  "ops.pattern.set_center.help",
+  "ops.pattern.start.help",
+  "ops.pattern.start.label",
+  "ops.pattern.step.help",
+  "ops.pattern.step.label",
+  "ops.pause.emits.hint",
+  "ops.pause.emits_and.hint",
+  "ops.pause.emits_message.hint",
+  "ops.pause.emits_slot.hint",
+  "ops.pause.message.help",
+  "ops.pause.message.label",
+  "ops.pause.message.placeholder",
+  "ops.pause.name.label",
   "ops.picker.add_aria",
   "ops.picker.select_first",
+  "ops.pocket.engagement_angle.help",
+  "ops.pocket.engagement_angle.label",
   "ops.pocket.frame.legend",
   "ops.pocket.frame.shape.rectangle",
   "ops.pocket.frame.shape.rounded_rectangle",
   "ops.pocket.frame.summary",
+  "ops.pocket.frame_corner_radius.help",
+  "ops.pocket.frame_corner_radius.label",
+  "ops.pocket.frame_corner_radius.placeholder",
+  "ops.pocket.frame_padding.help",
+  "ops.pocket.frame_padding.label",
+  "ops.pocket.frame_shape.help",
+  "ops.pocket.frame_shape.label",
   "ops.pocket.halfpipe.profile.circular_arc",
   "ops.pocket.halfpipe.profile.v_bottom",
   "ops.pocket.halfpipe.summary",
+  "ops.pocket.halfpipe_profile.help",
+  "ops.pocket.halfpipe_profile.hint",
+  "ops.pocket.included_angle.help",
+  "ops.pocket.included_angle.label",
   "ops.pocket.legend",
+  "ops.pocket.loop_radius_factor.help",
+  "ops.pocket.loop_radius_factor.label",
+  "ops.pocket.outside.convert",
+  "ops.pocket.outside.help",
+  "ops.pocket.outside.hint",
   "ops.pocket.outside.legend",
+  "ops.pocket.profile.help",
+  "ops.pocket.profile.label",
+  "ops.pocket.radius.help",
+  "ops.pocket.radius.label",
   "ops.pocket.strategy.cascade",
   "ops.pocket.strategy.halfpipe",
+  "ops.pocket.strategy.label",
   "ops.pocket.strategy.spiral",
   "ops.pocket.strategy.trochoidal",
   "ops.pocket.strategy.zigzag",
   "ops.pocket.trochoidal.summary",
+  "ops.pocket.trochoidal_climb.hint",
+  "ops.pocket.trochoidal_plunge.hint",
+  "ops.pocket.trochoidal_tabs.hint",
+  "ops.pocket.xy_overlap.help_empty",
+  "ops.pocket.xy_overlap.help_set",
+  "ops.pocket.xy_overlap.inherit_global",
+  "ops.pocket.xy_overlap.inherit_tool",
+  "ops.pocket.xy_overlap.label",
+  "ops.pocket.xy_overlap.source_global",
+  "ops.pocket.xy_overlap.source_tool",
+  "ops.pocket.xy_overlap.unit_help",
   "ops.pocket.zigzag.summary",
+  "ops.pocket.zigzag_angle.help",
+  "ops.pocket.zigzag_angle.label",
+  "ops.pocket.zigzag_angle_quick.help",
+  "ops.probe.axis.help",
+  "ops.probe.axis.label",
+  "ops.probe.distance.help",
+  "ops.probe.distance.label",
+  "ops.probe.emits.hint",
+  "ops.probe.feed.help",
+  "ops.probe.feed.label",
+  "ops.probe.halts.hint",
+  "ops.probe.name.label",
   "ops.profile.lead.off",
   "ops.profile.lead.straight",
   "ops.profile.lead_in.arc",
+  "ops.profile.lead_in.help",
+  "ops.profile.lead_in.label",
+  "ops.profile.lead_in_length.help",
+  "ops.profile.lead_in_radius.help",
   "ops.profile.lead_out.arc",
+  "ops.profile.lead_out.help",
+  "ops.profile.lead_out.label",
+  "ops.profile.lead_out_length.help",
+  "ops.profile.lead_out_radius.help",
   "ops.profile.leads.legend",
   "ops.profile.legend",
+  "ops.profile.length.label",
+  "ops.profile.offset.label",
+  "ops.profile.radius.label",
   "ops.profile.side.inside",
   "ops.profile.side.on",
   "ops.profile.side.outside",
@@ -1985,20 +2356,119 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "ops.raster.scan.legend",
   "ops.raster.scan.lift_between",
   "ops.raster.source.legend",
+  "ops.raster_engrave.decoding",
+  "ops.raster_engrave.dimensions.hint",
+  "ops.raster_engrave.direction.label",
+  "ops.raster_engrave.estimate.label",
+  "ops.raster_engrave.estimate_rough",
+  "ops.raster_engrave.histogram.hint",
+  "ops.raster_engrave.histogram_level.hint",
+  "ops.raster_engrave.image.label",
+  "ops.raster_engrave.intro.hint",
+  "ops.raster_engrave.level.help",
+  "ops.raster_engrave.level.label",
+  "ops.raster_engrave.link.help",
+  "ops.raster_engrave.link.label",
+  "ops.raster_engrave.load_error.hint",
+  "ops.raster_engrave.load_image",
+  "ops.raster_engrave.matrix.help",
+  "ops.raster_engrave.matrix.label",
+  "ops.raster_engrave.max_s.help",
+  "ops.raster_engrave.max_s.label",
+  "ops.raster_engrave.min_s.help",
+  "ops.raster_engrave.min_s.label",
+  "ops.raster_engrave.overscan.help",
+  "ops.raster_engrave.overscan.label",
+  "ops.raster_engrave.power_curve.bayer",
+  "ops.raster_engrave.power_curve.floyd_steinberg",
+  "ops.raster_engrave.power_curve.label",
+  "ops.raster_engrave.power_curve.linear",
+  "ops.raster_engrave.power_curve.threshold",
+  "ops.raster_engrave.power_s.help",
+  "ops.raster_engrave.power_s.label",
+  "ops.raster_engrave.preview.help",
+  "ops.raster_engrave.resolution.help",
+  "ops.raster_engrave.resolution.label",
+  "ops.raster_engrave.width.help",
+  "ops.raster_engrave.width.label",
   "ops.relief.depth.legend",
   "ops.relief.finish.legend",
   "ops.relief.scan.along_x",
   "ops.relief.scan.along_y",
   "ops.relief.source.legend",
+  "ops.relief_mill.decoding",
+  "ops.relief_mill.dimensions.hint",
+  "ops.relief_mill.image.label",
+  "ops.relief_mill.invert.help",
+  "ops.relief_mill.invert.label",
+  "ops.relief_mill.load_error.hint",
+  "ops.relief_mill.load_image",
+  "ops.relief_mill.scallop.help",
+  "ops.relief_mill.scallop.label",
+  "ops.relief_mill.scan.label",
+  "ops.relief_mill.step.help",
+  "ops.relief_mill.step.label",
+  "ops.relief_mill.stepover.help",
+  "ops.relief_mill.stepover.label",
+  "ops.relief_mill.stepover.placeholder",
+  "ops.relief_mill.surfacing.hint",
+  "ops.relief_mill.width.help",
+  "ops.relief_mill.width.label",
+  "ops.relief_mill.z_max.help",
+  "ops.relief_mill.z_max.label",
+  "ops.relief_mill.z_min.help",
+  "ops.relief_mill.z_min.label",
+  "ops.tabs.clear",
+  "ops.tabs.count.help",
+  "ops.tabs.count.label",
+  "ops.tabs.disconnected.help",
+  "ops.tabs.disconnected.hint",
+  "ops.tabs.height.help",
+  "ops.tabs.height.label",
   "ops.tabs.legend",
+  "ops.tabs.manual.help",
+  "ops.tabs.manual.hint",
+  "ops.tabs.manual.placed",
+  "ops.tabs.mode.help",
+  "ops.tabs.mode.label",
   "ops.tabs.ramp.summary",
+  "ops.tabs.ramp_angle.help",
+  "ops.tabs.ramp_angle.label",
+  "ops.tabs.type.label",
   "ops.tabs.type.ramp",
+  "ops.tabs.type.ramp.help",
   "ops.tabs.type.rectangle",
+  "ops.tabs.type.rectangle.help",
+  "ops.tabs.width.help",
+  "ops.tabs.width.label",
+  "ops.thread.climb.help",
+  "ops.thread.climb.label",
+  "ops.thread.direction.help",
+  "ops.thread.direction.label",
   "ops.thread.legend",
+  "ops.thread.pitch.help",
+  "ops.thread.pitch.label",
   "ops.thread.side.external",
   "ops.thread.side.internal",
+  "ops.thread.source.help",
+  "ops.thread.source.hint",
   "ops.vcarve.advanced.summary",
+  "ops.vcarve.duplicate_as_inlay_plug",
+  "ops.vcarve.inlay_plug.help",
+  "ops.vcarve.inlay_plug.label",
   "ops.vcarve.legend",
+  "ops.vcarve.max_width.help",
+  "ops.vcarve.max_width.label",
+  "ops.vcarve.max_width.placeholder",
+  "ops.vcarve.mode.help",
+  "ops.vcarve.mode.label",
+  "ops.vcarve.mode.medial_axis",
+  "ops.vcarve.mode.perimeter",
+  "ops.vcarve.refine_pass.help",
+  "ops.vcarve.refine_pass.label",
+  "ops.vcarve.refine_pass.not_implemented",
+  "ops.vcarve.source_inset.help",
+  "ops.vcarve.source_inset.label",
   "panel.drag_to_move",
   "panel.drag_to_resize",
   "panel.header.aria",

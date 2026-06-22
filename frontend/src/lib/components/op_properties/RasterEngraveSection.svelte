@@ -209,7 +209,7 @@
 <fieldset>
   <legend>{t('ops.raster.source.legend')}</legend>
   <label class="row">
-    <span>Image</span>
+    <span>{t('ops.raster_engrave.image.label')}</span>
     <div class="num-cell">
       <select
         value={op.sourceId}
@@ -233,17 +233,14 @@
     onchange={onImagePicked}
   />
   <button type="button" onclick={() => fileInput?.click()} disabled={loading}>
-    {loading ? 'Decoding…' : 'Load image…'}
+    {loading ? t('ops.raster_engrave.decoding') : t('ops.raster_engrave.load_image')}
   </button>
   {#if loadError}
-    <p class="err" role="alert">Couldn’t load image: {loadError}</p>
+    <p class="err" role="alert">{t('ops.raster_engrave.load_error.hint', { error: loadError })}</p>
   {/if}
   {#if source}
-    <label
-      class="row"
-      title="Physical width of the engrave on the workpiece. Height follows the image aspect ratio."
-    >
-      <span>Width</span>
+    <label class="row" title={t('ops.raster_engrave.width.help')}>
+      <span>{t('ops.raster_engrave.width.label')}</span>
       <div class="num-cell">
         <input
           type="number"
@@ -256,7 +253,12 @@
       </div>
     </label>
     <p class="hint">
-      {source.cols}×{source.rows} px → {widthMm.toFixed(0)} × {heightMm.toFixed(0)} mm
+      {t('ops.raster_engrave.dimensions.hint', {
+        cols: source.cols,
+        rows: source.rows,
+        width: widthMm.toFixed(0),
+        height: heightMm.toFixed(0),
+      })}
     </p>
   {/if}
 </fieldset>
@@ -264,8 +266,12 @@
 {#if source}
   <fieldset>
     <legend>{t('ops.raster.power_curve.legend')}</legend>
-    <div class="curve-radios" role="radiogroup" aria-label="Power curve">
-      {#each [['linear', 'Linear'], ['threshold', 'Threshold'], ['floyd_steinberg', 'Floyd–Steinberg'], ['bayer', 'Bayer']] as [k, label] (k)}
+    <div
+      class="curve-radios"
+      role="radiogroup"
+      aria-label={t('ops.raster_engrave.power_curve.label')}
+    >
+      {#each [['linear', t('ops.raster_engrave.power_curve.linear')], ['threshold', t('ops.raster_engrave.power_curve.threshold')], ['floyd_steinberg', t('ops.raster_engrave.power_curve.floyd_steinberg')], ['bayer', t('ops.raster_engrave.power_curve.bayer')]] as [k, label] (k)}
         <label class="radio">
           <input
             type="radio"
@@ -279,8 +285,8 @@
     </div>
 
     {#if op.powerCurve.kind === 'linear'}
-      <label class="row" title="Laser S at white (brightest pixels). Usually 0 = off.">
-        <span>Min S</span>
+      <label class="row" title={t('ops.raster_engrave.min_s.help')}>
+        <span>{t('ops.raster_engrave.min_s.label')}</span>
         <div class="num-cell">
           <input
             type="number"
@@ -294,8 +300,8 @@
           />
         </div>
       </label>
-      <label class="row" title="Laser S at black (darkest pixels) — the hottest burn.">
-        <span>Max S</span>
+      <label class="row" title={t('ops.raster_engrave.max_s.help')}>
+        <span>{t('ops.raster_engrave.max_s.label')}</span>
         <div class="num-cell">
           <input
             type="number"
@@ -310,11 +316,8 @@
         </div>
       </label>
     {:else if op.powerCurve.kind === 'threshold' || op.powerCurve.kind === 'floyd_steinberg'}
-      <label
-        class="row"
-        title="Binarization point on brightness [0,1]. Pixels darker than this burn; lighter pixels stay off."
-      >
-        <span>Level</span>
+      <label class="row" title={t('ops.raster_engrave.level.help')}>
+        <span>{t('ops.raster_engrave.level.label')}</span>
         <div class="num-cell">
           <input
             type="number"
@@ -329,8 +332,8 @@
           />
         </div>
       </label>
-      <label class="row" title="Laser S emitted for an 'on' (burning) pixel.">
-        <span>Power S</span>
+      <label class="row" title={t('ops.raster_engrave.power_s.help')}>
+        <span>{t('ops.raster_engrave.power_s.label')}</span>
         <div class="num-cell">
           <input
             type="number"
@@ -345,11 +348,8 @@
         </div>
       </label>
     {:else if op.powerCurve.kind === 'bayer'}
-      <label
-        class="row"
-        title="Ordered-dither tile size. Larger = finer tonal steps, coarser tile."
-      >
-        <span>Matrix</span>
+      <label class="row" title={t('ops.raster_engrave.matrix.help')}>
+        <span>{t('ops.raster_engrave.matrix.label')}</span>
         <div class="num-cell">
           <select
             value={op.powerCurve.matrixSize}
@@ -364,8 +364,8 @@
           </select>
         </div>
       </label>
-      <label class="row" title="Laser S emitted for an 'on' (burning) pixel.">
-        <span>Power S</span>
+      <label class="row" title={t('ops.raster_engrave.power_s.help')}>
+        <span>{t('ops.raster_engrave.power_s.label')}</span>
         <div class="num-cell">
           <input
             type="number"
@@ -381,21 +381,23 @@
       </label>
     {/if}
 
-    <div class="preview-wrap" title="Live preview of the engrave: darker = hotter burn.">
+    <div class="preview-wrap" title={t('ops.raster_engrave.preview.help')}>
       <canvas bind:this={previewCanvas} class="preview"></canvas>
     </div>
     <div class="hist-wrap">
       <canvas bind:this={histCanvas} class="hist"></canvas>
       <p class="hint">
-        Brightness histogram (dark ← → light){thresholdLevel != null ? ' — line = level' : ''}
+        {t('ops.raster_engrave.histogram.hint')}{thresholdLevel != null
+          ? t('ops.raster_engrave.histogram_level.hint')
+          : ''}
       </p>
     </div>
   </fieldset>
 
   <fieldset>
     <legend>{t('ops.raster.scan.legend')}</legend>
-    <label class="row" title="Per-pixel scan resolution (row pitch). Finer = sharper, slower.">
-      <span>Resolution</span>
+    <label class="row" title={t('ops.raster_engrave.resolution.help')}>
+      <span>{t('ops.raster_engrave.resolution.label')}</span>
       <div class="num-cell">
         <input
           type="number"
@@ -422,7 +424,7 @@
       <p class="hint">≈ {dpi} DPI ({effectiveResMm.toFixed(3)} mm/px)</p>
     {/if}
     <label class="row">
-      <span>Direction</span>
+      <span>{t('ops.raster_engrave.direction.label')}</span>
       <div class="num-cell">
         <select
           value={op.scanDirection}
@@ -437,11 +439,8 @@
         </select>
       </div>
     </label>
-    <label
-      class="row"
-      title="Lift-between: every row scans the same way (artifact-free, slower). Bidirectional: alternate rows reverse (faster; prefer Bayer dither to avoid alignment artifacts)."
-    >
-      <span>Link</span>
+    <label class="row" title={t('ops.raster_engrave.link.help')}>
+      <span>{t('ops.raster_engrave.link.label')}</span>
       <div class="num-cell">
         <select
           value={op.link}
@@ -456,11 +455,8 @@
         </select>
       </div>
     </label>
-    <label
-      class="row"
-      title="Overscan past each row edge as a fraction of the row length, so the head reaches commanded power before crossing pixels. 0 = none."
-    >
-      <span>Overscan</span>
+    <label class="row" title={t('ops.raster_engrave.overscan.help')}>
+      <span>{t('ops.raster_engrave.overscan.label')}</span>
       <div class="num-cell">
         <input
           type="number"
@@ -476,12 +472,14 @@
       </div>
     </label>
     <p class="hint estimate">
-      Estimated burn time: <strong>{formatDuration(burnSeconds)}</strong>
-      {#if burnSeconds > 0}<span class="approx"> (rough)</span>{/if}
+      {t('ops.raster_engrave.estimate.label')}
+      <strong>{formatDuration(burnSeconds)}</strong>
+      {#if burnSeconds > 0}<span class="approx">
+          {t('ops.raster_engrave.estimate_rough')}</span
+        >{/if}
     </p>
     <p class="hint">
-      Raster engraving burns a grayscale image row-by-row — dark pixels burn hotter. Tune the power
-      curve so the preview matches the contrast you want before kicking off a long run.
+      {t('ops.raster_engrave.intro.hint')}
     </p>
   </fieldset>
 {/if}

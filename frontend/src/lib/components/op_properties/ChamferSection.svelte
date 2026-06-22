@@ -20,11 +20,8 @@
   <!-- Tool-kind warning is now emitted by OpPropertiesPanel against
        the central op_tool_constraint helper — see k94n. -->
 
-  <label
-    class="row"
-    title="Horizontal width of the chamfer cut on the workpiece. The Z depth is computed automatically from the V-bit's apex angle: depth = -width / tan(tipAngle/2). Default 1 mm."
-  >
-    <span>Width</span>
+  <label class="row" title={t('ops.chamfer.width.help')}>
+    <span>{t('ops.chamfer.width.label')}</span>
     <div class="num-cell">
       <input
         type="number"
@@ -40,11 +37,8 @@
       <span class="unit">mm</span>
     </div>
   </label>
-  <label
-    class="row"
-    title="Cut the chamfer twice — once at the rough feed (cleanup) and once at the tool's finish-set feed for surface quality."
-  >
-    <span>Finish pass</span>
+  <label class="row" title={t('ops.chamfer.finish_pass.help')}>
+    <span>{t('ops.chamfer.finish_pass.label')}</span>
     <input
       type="checkbox"
       checked={op.chamferFinishPass ?? false}

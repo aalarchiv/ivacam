@@ -3,6 +3,7 @@
   /// No tool / source needed — the operator wires the probe to the machine.
   /// Styles inherited from OpPropertiesPanel's :global(.props ...) rules.
   import type { OpField, OpFieldValue, ProbeOp } from '../../state/project.svelte';
+  import { t } from '../../i18n';
 
   interface Props {
     op: ProbeOp;
@@ -12,18 +13,15 @@
 </script>
 
 <label class="row">
-  <span>Name</span>
+  <span>{t('ops.probe.name.label')}</span>
   <input
     type="text"
     value={op.name}
     oninput={(e) => patch('name', (e.currentTarget as HTMLInputElement).value)}
   />
 </label>
-<label
-  class="row"
-  title="Which axis to probe along. Z is the common case (zero the WCS Z against the stock top); X / Y are edge-finder cycles."
->
-  <span>Axis</span>
+<label class="row" title={t('ops.probe.axis.help')}>
+  <span>{t('ops.probe.axis.label')}</span>
   <select
     value={op.axis ?? 'z'}
     onchange={(e) => patch('axis', (e.currentTarget as HTMLSelectElement).value as 'x' | 'y' | 'z')}
@@ -33,11 +31,8 @@
     <option value="z">Z</option>
   </select>
 </label>
-<label
-  class="row"
-  title="Search distance, mm. Sign follows the controller — NEGATIVE Z probes DOWN into stock; positive X / Y probes outward. The controller halts at the trigger; this is the maximum search."
->
-  <span>Distance (mm)</span>
+<label class="row" title={t('ops.probe.distance.help')}>
+  <span>{t('ops.probe.distance.label')}</span>
   <input
     type="number"
     step="0.1"
@@ -46,11 +41,8 @@
       patch('distanceMm', Number.parseFloat((e.currentTarget as HTMLInputElement).value))}
   />
 </label>
-<label
-  class="row"
-  title="Probe feed rate (mm/min). 50–200 mm/min is typical for a touch-trigger probe — slow enough to trip repeatably."
->
-  <span>Feed (mm/min)</span>
+<label class="row" title={t('ops.probe.feed.help')}>
+  <span>{t('ops.probe.feed.label')}</span>
   <input
     type="number"
     step="10"
@@ -61,7 +53,7 @@
   />
 </label>
 <p class="hint hint-pause">
-  The pipeline emits <code
-    >G38.2 {(op.axis ?? 'z').toUpperCase()}{op.distanceMm ?? -10} F{op.feedMmMin ?? 100}</code
-  >. The controller halts at the trigger.
+  {t('ops.probe.emits.hint')}
+  <code>G38.2 {(op.axis ?? 'z').toUpperCase()}{op.distanceMm ?? -10} F{op.feedMmMin ?? 100}</code
+  >{t('ops.probe.halts.hint')}
 </p>

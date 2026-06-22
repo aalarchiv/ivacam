@@ -10,6 +10,7 @@
     type OpFieldValue,
     type ReliefMillOp,
   } from '../../state/project.svelte';
+  import { t } from '../../i18n';
   import { decodeImageFile } from '../../state/relief_image';
 
   interface Props {
@@ -69,7 +70,7 @@
 </script>
 
 <fieldset>
-  <legend>Relief source</legend>
+  <legend>{t('ops.relief.source.legend')}</legend>
   <label class="row">
     <span>Image</span>
     <div class="num-cell">
@@ -79,7 +80,7 @@
           patch('sourceId', parseInt((e.currentTarget as HTMLSelectElement).value, 10))}
       >
         {#if project.data.reliefSources.length === 0}
-          <option value={0}>— none loaded —</option>
+          <option value={0}>{t('ops.image.none_loaded')}</option>
         {/if}
         {#each project.data.reliefSources as s (s.id)}
           <option value={s.id}>{s.name} ({s.cols}×{s.rows})</option>
@@ -124,7 +125,7 @@
 </fieldset>
 
 <fieldset>
-  <legend>Depth</legend>
+  <legend>{t('ops.relief.depth.legend')}</legend>
   <label class="row" title="Deepest cut — where the darkest pixels map (negative).">
     <span>Min Z</span>
     <div class="num-cell">
@@ -174,7 +175,7 @@
 </fieldset>
 
 <fieldset>
-  <legend>Finish</legend>
+  <legend>{t('ops.relief.finish.legend')}</legend>
   <label
     class="row"
     title="Allowed ridge height left between adjacent passes. Smaller = finer finish, longer cut."
@@ -225,8 +226,8 @@
             (e.currentTarget as HTMLSelectElement).value as 'along_x' | 'along_y',
           )}
       >
-        <option value="along_x">Along X</option>
-        <option value="along_y">Along Y</option>
+        <option value="along_x">{t('ops.relief.scan.along_x')}</option>
+        <option value="along_y">{t('ops.relief.scan.along_y')}</option>
       </select>
     </div>
   </label>

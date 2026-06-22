@@ -9,6 +9,7 @@
     type OpFieldValue,
     type PatternConfig,
   } from '../../state/project.svelte';
+  import { t } from '../../i18n';
 
   interface Props {
     op: OpEntry;
@@ -48,7 +49,7 @@
 </script>
 
 <fieldset>
-  <legend>Pattern (repeat this op)</legend>
+  <legend>{t('ops.pattern.legend')}</legend>
   <p class="hint">
     Run this operation once per pattern instance with the source geometry translated or rotated. The
     original geometry stays at the (0, 0) / 0° instance — single-count patterns are equivalent to no
@@ -80,10 +81,10 @@
         }
       }}
     >
-      <option value="none">None</option>
-      <option value="linear">Linear array</option>
-      <option value="grid">Rectangular grid</option>
-      <option value="polar">Polar array</option>
+      <option value="none">{t('ops.pattern.kind.none')}</option>
+      <option value="linear">{t('ops.pattern.kind.linear')}</option>
+      <option value="grid">{t('ops.pattern.kind.grid')}</option>
+      <option value="polar">{t('ops.pattern.kind.polar')}</option>
     </select>
   </label>
   {#if op.pattern?.kind === 'linear'}

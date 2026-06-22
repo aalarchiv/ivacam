@@ -8,6 +8,7 @@
     type ProfileOffset,
     type ProfileOp,
   } from '../../state/project.svelte';
+  import { t } from '../../i18n';
 
   interface Props {
     op: ProfileOp;
@@ -17,7 +18,7 @@
 </script>
 
 <fieldset>
-  <legend>Profile</legend>
+  <legend>{t('ops.profile.legend')}</legend>
   <label class="row">
     <span>Tool offset</span>
     <select
@@ -25,15 +26,15 @@
       onchange={(e) =>
         patch('offset', (e.currentTarget as HTMLSelectElement).value as ProfileOffset)}
     >
-      <option value="outside">outside</option>
-      <option value="inside">inside</option>
-      <option value="on">on path</option>
+      <option value="outside">{t('ops.profile.side.outside')}</option>
+      <option value="inside">{t('ops.profile.side.inside')}</option>
+      <option value="on">{t('ops.profile.side.on')}</option>
     </select>
   </label>
 </fieldset>
 
 <fieldset>
-  <legend>Leads</legend>
+  <legend>{t('ops.profile.leads.legend')}</legend>
   <label
     class="row"
     title="Lead-in style. Off: rapid + plunge directly to the contour start. Straight: rapid to a point perpendicular to the start, then linear into the contour. Arc: tangent quarter-arc roll-on so the cutter eases into the cut without dwelling at the start."
@@ -47,9 +48,9 @@
           (e.currentTarget as HTMLSelectElement).value as 'off' | 'straight' | 'arc',
         )}
     >
-      <option value="off">off</option>
-      <option value="straight">straight</option>
-      <option value="arc">arc (roll-on)</option>
+      <option value="off">{t('ops.profile.lead.off')}</option>
+      <option value="straight">{t('ops.profile.lead.straight')}</option>
+      <option value="arc">{t('ops.profile.lead_in.arc')}</option>
     </select>
   </label>
   {#if op.leadInKind && op.leadInKind !== 'off'}
@@ -92,9 +93,9 @@
           (e.currentTarget as HTMLSelectElement).value as 'off' | 'straight' | 'arc',
         )}
     >
-      <option value="off">off</option>
-      <option value="straight">straight</option>
-      <option value="arc">arc (roll-off)</option>
+      <option value="off">{t('ops.profile.lead.off')}</option>
+      <option value="straight">{t('ops.profile.lead.straight')}</option>
+      <option value="arc">{t('ops.profile.lead_out.arc')}</option>
     </select>
   </label>
   {#if op.leadOutKind && op.leadOutKind !== 'off'}

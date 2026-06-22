@@ -15,6 +15,7 @@
     type PowerCurveKind,
     type RasterEngraveOp,
   } from '../../state/project.svelte';
+  import { t } from '../../i18n';
   import { decodeImageFile } from '../../state/relief_image';
   import {
     powerGrid,
@@ -206,7 +207,7 @@
 </script>
 
 <fieldset>
-  <legend>Engrave source</legend>
+  <legend>{t('ops.raster.source.legend')}</legend>
   <label class="row">
     <span>Image</span>
     <div class="num-cell">
@@ -216,7 +217,7 @@
           patch('sourceId', parseInt((e.currentTarget as HTMLSelectElement).value, 10))}
       >
         {#if project.data.reliefSources.length === 0}
-          <option value={0}>— none loaded —</option>
+          <option value={0}>{t('ops.image.none_loaded')}</option>
         {/if}
         {#each project.data.reliefSources as s (s.id)}
           <option value={s.id}>{s.name} ({s.cols}×{s.rows})</option>
@@ -262,7 +263,7 @@
 
 {#if source}
   <fieldset>
-    <legend>Power curve</legend>
+    <legend>{t('ops.raster.power_curve.legend')}</legend>
     <div class="curve-radios" role="radiogroup" aria-label="Power curve">
       {#each [['linear', 'Linear'], ['threshold', 'Threshold'], ['floyd_steinberg', 'Floyd–Steinberg'], ['bayer', 'Bayer']] as [k, label] (k)}
         <label class="radio">
@@ -392,7 +393,7 @@
   </fieldset>
 
   <fieldset>
-    <legend>Scan</legend>
+    <legend>{t('ops.raster.scan.legend')}</legend>
     <label class="row" title="Per-pixel scan resolution (row pitch). Finer = sharper, slower.">
       <span>Resolution</span>
       <div class="num-cell">
@@ -431,8 +432,8 @@
               (e.currentTarget as HTMLSelectElement).value as 'along_x' | 'along_y',
             )}
         >
-          <option value="along_x">Along X</option>
-          <option value="along_y">Along Y</option>
+          <option value="along_x">{t('ops.raster.scan.along_x')}</option>
+          <option value="along_y">{t('ops.raster.scan.along_y')}</option>
         </select>
       </div>
     </label>
@@ -450,8 +451,8 @@
               (e.currentTarget as HTMLSelectElement).value as 'lift_between' | 'bidirectional',
             )}
         >
-          <option value="lift_between">Lift between</option>
-          <option value="bidirectional">Bidirectional</option>
+          <option value="lift_between">{t('ops.raster.scan.lift_between')}</option>
+          <option value="bidirectional">{t('ops.raster.scan.bidirectional')}</option>
         </select>
       </div>
     </label>

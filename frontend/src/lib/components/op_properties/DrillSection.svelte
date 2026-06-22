@@ -10,6 +10,7 @@
     type OpField,
     type OpFieldValue,
   } from '../../state/project.svelte';
+  import { t } from '../../i18n';
 
   interface Props {
     op: DrillOp;
@@ -22,7 +23,7 @@
 </script>
 
 <fieldset>
-  <legend>Drill cycle</legend>
+  <legend>{t('ops.drill.legend')}</legend>
   <label class="row">
     <span>Cycle</span>
     <select
@@ -49,21 +50,23 @@
         }
       }}
     >
-      <option value="simple" title="G81 — single plunge to depth, retract."> simple (G81) </option>
+      <option value="simple" title="G81 — single plunge to depth, retract.">
+        {t('ops.drill.cycle.simple')}
+      </option>
       <option value="peck" title="G83 — peck with full retract to clearance plane between pecks.">
-        peck (G83)
+        {t('ops.drill.cycle.peck')}
       </option>
       <option
         value="chip_break"
         title="G73 — peck with chip-break (small partial retract between pecks)."
       >
-        chip-break (G73)
+        {t('ops.drill.cycle.chip_break')}
       </option>
     </select>
   </label>
   {#if op.drillCycle && (op.drillCycle.kind === 'peck' || op.drillCycle.kind === 'chip_break')}
     <details class="subsection" open>
-      <summary>Cycle options</summary>
+      <summary>{t('ops.drill.cycle_options')}</summary>
       <label class="row">
         <span>Peck step</span>
         <div class="num-cell">
@@ -153,7 +156,7 @@
   </label>
   {#if op.spotFirst}
     <details class="subsection" open>
-      <summary>Spot options</summary>
+      <summary>{t('ops.drill.spot_options')}</summary>
       <label class="row">
         <span>Spot depth</span>
         <div class="num-cell">

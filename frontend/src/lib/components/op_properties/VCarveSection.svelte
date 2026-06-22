@@ -11,6 +11,7 @@
     type OpFieldValue,
     type VCarveOp,
   } from '../../state/project.svelte';
+  import { t } from '../../i18n';
   // `project` import kept for the inlay-plug Duplicate-as-plug button
   // below (line 99). The toolMismatch chip moved to OpPropertiesPanel.
 
@@ -23,7 +24,7 @@
 </script>
 
 <fieldset>
-  <legend>V-Carve</legend>
+  <legend>{t('ops.vcarve.legend')}</legend>
   <!-- Tool-kind warning is now emitted by OpPropertiesPanel against
        the central op_tool_constraint helper — see k94n. -->
 
@@ -57,7 +58,7 @@
     </div>
   </div>
   <details class="subsection" open>
-    <summary>Advanced</summary>
+    <summary>{t('ops.vcarve.advanced.summary')}</summary>
     <label
       class="row"
       title="Optional cap on the inscribed-circle radius (mm). Leave empty for no cap. Useful when a wide region would otherwise drive the V deeper than the bit's usable shoulder."

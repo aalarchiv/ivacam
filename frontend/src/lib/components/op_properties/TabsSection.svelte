@@ -15,6 +15,7 @@
     type PocketOp,
     type ProfileOp,
   } from '../../state/project.svelte';
+  import { t } from '../../i18n';
 
   interface Props {
     op: ProfileOp | PocketOp;
@@ -65,7 +66,7 @@
 </script>
 
 <fieldset>
-  <legend>Tabs</legend>
+  <legend>{t('ops.tabs.legend')}</legend>
   <div
     class="row"
     title="How tab positions are sourced for this op. Off ignores tabs entirely. Auto evenly spaces N tabs on each closed contour. Manual lets you click on the 2D canvas to place individual tabs. Mixed combines both."
@@ -205,13 +206,15 @@
         }
       }}
     >
-      <option value="rectangle" title={TAB_TYPE_HELP.rectangle}>rectangle</option>
-      <option value="ramp" title={TAB_TYPE_HELP.ramp}>ramp</option>
+      <option value="rectangle" title={TAB_TYPE_HELP.rectangle}
+        >{t('ops.tabs.type.rectangle')}</option
+      >
+      <option value="ramp" title={TAB_TYPE_HELP.ramp}>{t('ops.tabs.type.ramp')}</option>
     </select>
   </label>
   {#if op.tabType === 'ramp'}
     <details class="subsection" open>
-      <summary>Ramp</summary>
+      <summary>{t('ops.tabs.ramp.summary')}</summary>
       <label
         class="row"
         title="Ramp angle in degrees. 30° (default) gives a 1:√3 slope. Smaller = gentler, longer ramps; larger = steeper, more like a Rectangle tab. Horizontal ramp length = tabs.height / tan(angle)."

@@ -4,6 +4,7 @@
   /// `ThreadOp` rather than the full OpEntry union.
   /// Styles inherited from OpPropertiesPanel's :global(.props ...) rules.
   import type { OpField, OpFieldValue, ThreadOp } from '../../state/project.svelte';
+  import { t } from '../../i18n';
 
   interface Props {
     op: ThreadOp;
@@ -14,7 +15,7 @@
 </script>
 
 <fieldset>
-  <legend>Thread</legend>
+  <legend>{t('ops.thread.legend')}</legend>
   <p
     class="hint"
     title="Source must be a closed circle (drilled hole or stud diameter). The cutter walks a helix at one pitch of Z descent per revolution between Start depth and Depth."
@@ -53,8 +54,8 @@
         patch('threadInternal', v === 'internal');
       }}
     >
-      <option value="internal">Internal (bore)</option>
-      <option value="external">External (stud)</option>
+      <option value="internal">{t('ops.thread.side.internal')}</option>
+      <option value="external">{t('ops.thread.side.external')}</option>
     </select>
   </label>
   <label

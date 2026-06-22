@@ -12,6 +12,7 @@
     type PocketOp,
     type PocketStrategy,
   } from '../../state/project.svelte';
+  import { t } from '../../i18n';
 
   interface Props {
     op: PocketOp;
@@ -24,7 +25,7 @@
 
 {#if op.frameShape == null}
   <fieldset>
-    <legend>Pocket Outside</legend>
+    <legend>{t('ops.pocket.outside.legend')}</legend>
     <p class="hint">
       Convert this Pocket into a Pocket Outside operation: the pipeline auto-derives a frame around
       the selection at generate time and carves the area BETWEEN the frame and the selection.
@@ -44,9 +45,9 @@
 {/if}
 {#if op.frameShape != null}
   <fieldset>
-    <legend>Frame</legend>
+    <legend>{t('ops.pocket.frame.legend')}</legend>
     <details class="subsection" open>
-      <summary>Frame</summary>
+      <summary>{t('ops.pocket.frame.summary')}</summary>
       <label
         class="row"
         title="Shape of the synthetic frame the pipeline derives from your selection at generate time."
@@ -57,8 +58,8 @@
           onchange={(e) =>
             patch('frameShape', (e.currentTarget as HTMLSelectElement).value as FrameShape)}
         >
-          <option value="rectangle">rectangle</option>
-          <option value="rounded_rectangle">rounded rectangle</option>
+          <option value="rectangle">{t('ops.pocket.frame.shape.rectangle')}</option>
+          <option value="rounded_rectangle">{t('ops.pocket.frame.shape.rounded_rectangle')}</option>
         </select>
       </label>
       <label
@@ -106,7 +107,7 @@
   </fieldset>
 {/if}
 <fieldset>
-  <legend>Pocket</legend>
+  <legend>{t('ops.pocket.legend')}</legend>
   <label class="row">
     <span>Strategy</span>
     <select
@@ -124,16 +125,16 @@
         if (op) project.updateOperation(op.id, patches);
       }}
     >
-      <option value="cascade">cascade (concentric)</option>
-      <option value="zigzag">zigzag (raster fill)</option>
-      <option value="spiral">spiral</option>
-      <option value="trochoidal">Trochoidal (load-limiting)</option>
-      <option value="halfpipe">Halfpipe (slot, profiled floor)</option>
+      <option value="cascade">{t('ops.pocket.strategy.cascade')}</option>
+      <option value="zigzag">{t('ops.pocket.strategy.zigzag')}</option>
+      <option value="spiral">{t('ops.pocket.strategy.spiral')}</option>
+      <option value="trochoidal">{t('ops.pocket.strategy.trochoidal')}</option>
+      <option value="halfpipe">{t('ops.pocket.strategy.halfpipe')}</option>
     </select>
   </label>
   {#if op.pocketStrategy === 'halfpipe'}
     <details class="subsection" open>
-      <summary>Halfpipe</summary>
+      <summary>{t('ops.pocket.halfpipe.summary')}</summary>
       <p
         class="hint"
         title="Halfpipe walks the slot's medial axis at varying Z so the cut floor matches the chosen profile. Tool kind: ball-nose for circular_arc, V-bit for v_bottom."
@@ -166,8 +167,8 @@
             }
           }}
         >
-          <option value="circular_arc">circular arc (ball-bottom)</option>
-          <option value="v_bottom">V-bottom</option>
+          <option value="circular_arc">{t('ops.pocket.halfpipe.profile.circular_arc')}</option>
+          <option value="v_bottom">{t('ops.pocket.halfpipe.profile.v_bottom')}</option>
         </select>
       </label>
       {#if op.halfpipeProfile?.kind === 'circular_arc'}
@@ -222,7 +223,7 @@
   {/if}
   {#if op.pocketStrategy === 'zigzag'}
     <details class="subsection" open>
-      <summary>Zigzag direction</summary>
+      <summary>{t('ops.pocket.zigzag.summary')}</summary>
       <label
         class="row"
         title="Rotates the raster sweep. 0° = horizontal sweeps (default); 90° = vertical; 45° = diagonal. Long-thin pockets cut faster + cleaner when the sweep runs ALONG the long axis."
@@ -264,7 +265,7 @@
   {/if}
   {#if op.pocketStrategy === 'trochoidal'}
     <details class="subsection" open>
-      <summary>Trochoidal</summary>
+      <summary>{t('ops.pocket.trochoidal.summary')}</summary>
       <label
         class="row"
         title="Engagement arc angle in degrees. Lower = lighter cut, more loops; higher = aggressive. Drives centerline pitch."

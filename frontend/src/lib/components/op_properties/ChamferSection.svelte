@@ -2,6 +2,7 @@
   /// Chamfer op-properties fieldset. Shown only when op.kind === 'chamfer'.
   /// Styles inherited from OpPropertiesPanel's :global(.props ...) rules.
   import type { ChamferOp, OpField, OpFieldValue } from '../../state/project.svelte';
+  import { t } from '../../i18n';
 
   interface Props {
     op: ChamferOp;
@@ -15,7 +16,7 @@
 </script>
 
 <fieldset>
-  <legend>Chamfer</legend>
+  <legend>{t('ops.chamfer.legend')}</legend>
   <!-- Tool-kind warning is now emitted by OpPropertiesPanel against
        the central op_tool_constraint helper — see k94n. -->
 

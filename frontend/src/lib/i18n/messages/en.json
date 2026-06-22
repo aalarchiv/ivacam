@@ -264,5 +264,75 @@
   "menu.show_regions": "Show regions",
   "menu.recent_projects": "Recent projects",
   "menu.no_recent": "No recent projects yet",
-  "menu.exit": "Exit ivaCAM"
+  "menu.exit": "Exit ivaCAM",
+
+  "ops.image.none_loaded": "— none loaded —",
+
+  "ops.chamfer.legend": "Chamfer",
+
+  "ops.drill.legend": "Drill cycle",
+  "ops.drill.cycle.simple": "simple (G81)",
+  "ops.drill.cycle.peck": "peck (G83)",
+  "ops.drill.cycle.chip_break": "chip-break (G73)",
+  "ops.drill.cycle_options": "Cycle options",
+  "ops.drill.spot_options": "Spot options",
+
+  "ops.pattern.legend": "Pattern (repeat this op)",
+  "ops.pattern.kind.none": "None",
+  "ops.pattern.kind.linear": "Linear array",
+  "ops.pattern.kind.grid": "Rectangular grid",
+  "ops.pattern.kind.polar": "Polar array",
+
+  "ops.pocket.outside.legend": "Pocket Outside",
+  "ops.pocket.frame.legend": "Frame",
+  "ops.pocket.frame.summary": "Frame",
+  "ops.pocket.frame.shape.rectangle": "rectangle",
+  "ops.pocket.frame.shape.rounded_rectangle": "rounded rectangle",
+  "ops.pocket.legend": "Pocket",
+  "ops.pocket.strategy.cascade": "cascade (concentric)",
+  "ops.pocket.strategy.zigzag": "zigzag (raster fill)",
+  "ops.pocket.strategy.spiral": "spiral",
+  "ops.pocket.strategy.trochoidal": "Trochoidal (load-limiting)",
+  "ops.pocket.strategy.halfpipe": "Halfpipe (slot, profiled floor)",
+  "ops.pocket.halfpipe.summary": "Halfpipe",
+  "ops.pocket.halfpipe.profile.circular_arc": "circular arc (ball-bottom)",
+  "ops.pocket.halfpipe.profile.v_bottom": "V-bottom",
+  "ops.pocket.zigzag.summary": "Zigzag direction",
+  "ops.pocket.trochoidal.summary": "Trochoidal",
+
+  "ops.profile.legend": "Profile",
+  "ops.profile.side.outside": "outside",
+  "ops.profile.side.inside": "inside",
+  "ops.profile.side.on": "on path",
+  "ops.profile.leads.legend": "Leads",
+  "ops.profile.lead.off": "off",
+  "ops.profile.lead.straight": "straight",
+  "ops.profile.lead_in.arc": "arc (roll-on)",
+  "ops.profile.lead_out.arc": "arc (roll-off)",
+
+  "ops.raster.source.legend": "Engrave source",
+  "ops.raster.power_curve.legend": "Power curve",
+  "ops.raster.scan.legend": "Scan",
+  "ops.raster.scan.along_x": "Along X",
+  "ops.raster.scan.along_y": "Along Y",
+  "ops.raster.scan.lift_between": "Lift between",
+  "ops.raster.scan.bidirectional": "Bidirectional",
+
+  "ops.relief.source.legend": "Relief source",
+  "ops.relief.depth.legend": "Depth",
+  "ops.relief.finish.legend": "Finish",
+  "ops.relief.scan.along_x": "Along X",
+  "ops.relief.scan.along_y": "Along Y",
+
+  "ops.tabs.legend": "Tabs",
+  "ops.tabs.type.rectangle": "rectangle",
+  "ops.tabs.type.ramp": "ramp",
+  "ops.tabs.ramp.summary": "Ramp",
+
+  "ops.thread.legend": "Thread",
+  "ops.thread.side.internal": "Internal (bore)",
+  "ops.thread.side.external": "External (stud)",
+
+  "ops.vcarve.legend": "V-Carve",
+  "ops.vcarve.advanced.summary": "Advanced"
 }

@@ -149,6 +149,13 @@ export type MsgKey =
   | "menu.save_stl"
   | "menu.show_regions"
   | "menu.undo"
+  | "ops.chamfer.legend"
+  | "ops.drill.cycle.chip_break"
+  | "ops.drill.cycle.peck"
+  | "ops.drill.cycle.simple"
+  | "ops.drill.cycle_options"
+  | "ops.drill.legend"
+  | "ops.drill.spot_options"
   | "ops.help.chamfer"
   | "ops.help.cycle_marker"
   | "ops.help.dovetail"
@@ -167,6 +174,7 @@ export type MsgKey =
   | "ops.help.t_slot"
   | "ops.help.thread"
   | "ops.help.vcarve"
+  | "ops.image.none_loaded"
   | "ops.kind.chamfer"
   | "ops.kind.cycle_marker"
   | "ops.kind.dovetail"
@@ -185,8 +193,59 @@ export type MsgKey =
   | "ops.kind.t_slot"
   | "ops.kind.thread"
   | "ops.kind.vcarve"
+  | "ops.pattern.kind.grid"
+  | "ops.pattern.kind.linear"
+  | "ops.pattern.kind.none"
+  | "ops.pattern.kind.polar"
+  | "ops.pattern.legend"
   | "ops.picker.add_aria"
   | "ops.picker.select_first"
+  | "ops.pocket.frame.legend"
+  | "ops.pocket.frame.shape.rectangle"
+  | "ops.pocket.frame.shape.rounded_rectangle"
+  | "ops.pocket.frame.summary"
+  | "ops.pocket.halfpipe.profile.circular_arc"
+  | "ops.pocket.halfpipe.profile.v_bottom"
+  | "ops.pocket.halfpipe.summary"
+  | "ops.pocket.legend"
+  | "ops.pocket.outside.legend"
+  | "ops.pocket.strategy.cascade"
+  | "ops.pocket.strategy.halfpipe"
+  | "ops.pocket.strategy.spiral"
+  | "ops.pocket.strategy.trochoidal"
+  | "ops.pocket.strategy.zigzag"
+  | "ops.pocket.trochoidal.summary"
+  | "ops.pocket.zigzag.summary"
+  | "ops.profile.lead.off"
+  | "ops.profile.lead.straight"
+  | "ops.profile.lead_in.arc"
+  | "ops.profile.lead_out.arc"
+  | "ops.profile.leads.legend"
+  | "ops.profile.legend"
+  | "ops.profile.side.inside"
+  | "ops.profile.side.on"
+  | "ops.profile.side.outside"
+  | "ops.raster.power_curve.legend"
+  | "ops.raster.scan.along_x"
+  | "ops.raster.scan.along_y"
+  | "ops.raster.scan.bidirectional"
+  | "ops.raster.scan.legend"
+  | "ops.raster.scan.lift_between"
+  | "ops.raster.source.legend"
+  | "ops.relief.depth.legend"
+  | "ops.relief.finish.legend"
+  | "ops.relief.scan.along_x"
+  | "ops.relief.scan.along_y"
+  | "ops.relief.source.legend"
+  | "ops.tabs.legend"
+  | "ops.tabs.ramp.summary"
+  | "ops.tabs.type.ramp"
+  | "ops.tabs.type.rectangle"
+  | "ops.thread.legend"
+  | "ops.thread.side.external"
+  | "ops.thread.side.internal"
+  | "ops.vcarve.advanced.summary"
+  | "ops.vcarve.legend"
   | "settings.appearance.language"
   | "settings.appearance.language.auto"
   | "settings.appearance.language.help"
@@ -397,6 +456,13 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "menu.save_stl",
   "menu.show_regions",
   "menu.undo",
+  "ops.chamfer.legend",
+  "ops.drill.cycle.chip_break",
+  "ops.drill.cycle.peck",
+  "ops.drill.cycle.simple",
+  "ops.drill.cycle_options",
+  "ops.drill.legend",
+  "ops.drill.spot_options",
   "ops.help.chamfer",
   "ops.help.cycle_marker",
   "ops.help.dovetail",
@@ -415,6 +481,7 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "ops.help.t_slot",
   "ops.help.thread",
   "ops.help.vcarve",
+  "ops.image.none_loaded",
   "ops.kind.chamfer",
   "ops.kind.cycle_marker",
   "ops.kind.dovetail",
@@ -433,8 +500,59 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "ops.kind.t_slot",
   "ops.kind.thread",
   "ops.kind.vcarve",
+  "ops.pattern.kind.grid",
+  "ops.pattern.kind.linear",
+  "ops.pattern.kind.none",
+  "ops.pattern.kind.polar",
+  "ops.pattern.legend",
   "ops.picker.add_aria",
   "ops.picker.select_first",
+  "ops.pocket.frame.legend",
+  "ops.pocket.frame.shape.rectangle",
+  "ops.pocket.frame.shape.rounded_rectangle",
+  "ops.pocket.frame.summary",
+  "ops.pocket.halfpipe.profile.circular_arc",
+  "ops.pocket.halfpipe.profile.v_bottom",
+  "ops.pocket.halfpipe.summary",
+  "ops.pocket.legend",
+  "ops.pocket.outside.legend",
+  "ops.pocket.strategy.cascade",
+  "ops.pocket.strategy.halfpipe",
+  "ops.pocket.strategy.spiral",
+  "ops.pocket.strategy.trochoidal",
+  "ops.pocket.strategy.zigzag",
+  "ops.pocket.trochoidal.summary",
+  "ops.pocket.zigzag.summary",
+  "ops.profile.lead.off",
+  "ops.profile.lead.straight",
+  "ops.profile.lead_in.arc",
+  "ops.profile.lead_out.arc",
+  "ops.profile.leads.legend",
+  "ops.profile.legend",
+  "ops.profile.side.inside",
+  "ops.profile.side.on",
+  "ops.profile.side.outside",
+  "ops.raster.power_curve.legend",
+  "ops.raster.scan.along_x",
+  "ops.raster.scan.along_y",
+  "ops.raster.scan.bidirectional",
+  "ops.raster.scan.legend",
+  "ops.raster.scan.lift_between",
+  "ops.raster.source.legend",
+  "ops.relief.depth.legend",
+  "ops.relief.finish.legend",
+  "ops.relief.scan.along_x",
+  "ops.relief.scan.along_y",
+  "ops.relief.source.legend",
+  "ops.tabs.legend",
+  "ops.tabs.ramp.summary",
+  "ops.tabs.type.ramp",
+  "ops.tabs.type.rectangle",
+  "ops.thread.legend",
+  "ops.thread.side.external",
+  "ops.thread.side.internal",
+  "ops.vcarve.advanced.summary",
+  "ops.vcarve.legend",
   "settings.appearance.language",
   "settings.appearance.language.auto",
   "settings.appearance.language.help",

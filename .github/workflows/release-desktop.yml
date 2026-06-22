@@ -116,6 +116,15 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: cargo tauri build ${{ matrix.platform.args }}
 
+      # Drop the GStreamer core libs linuxdeploy bundles as WebKit transitive
+      # deps (the app uses no media); they shadow the host's GStreamer and
+      # cause "appsink not found" noise. Replaces the AppImage in place, so the
+      # upload step ships the stripped one. patchelf is installed above;
+      # APPIMAGE_EXTRACT_AND_RUN handles the FUSE-less runner. See docs/BUILDING.md.
+      - name: strip bundled GStreamer from AppImage
+        if: matrix.platform.name == 'linux'
+        run: scripts/strip-appimage-media.sh
+
       - name: list artifacts
         shell: bash
         run: |

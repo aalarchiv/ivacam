@@ -16,6 +16,7 @@
   import { autoFixToCommand } from '../state/commands';
   import { confirmStore } from '../state/confirm.svelte';
   import { t } from '../i18n';
+  import { errorMessage, errorHint, fixLabel } from './error-display';
   import type { WiacError } from '../api/types';
 
   type ToastError = string | WiacError;
@@ -105,20 +106,6 @@
     dismissHead();
   }
 
-  function fixLabel(fix: WiacError['auto_fix']): string {
-    if (!fix) return 'Apply fix';
-    switch (fix.kind) {
-      case 'assign_tool':
-        return `Assign tool ${fix.suggested_tool_id} to op ${fix.op_id}`;
-      case 'disable_op':
-        return `Disable op ${fix.op_id}`;
-      case 'change_profile_offset':
-        return `Set op ${fix.op_id} offset to ${fix.suggested}`;
-      case 'lower_sim_resolution':
-        return `Lower sim resolution to ${fix.suggested_cell_mm} mm`;
-    }
-  }
-
   function reportBug(structured: WiacError) {
     const body = encodeURIComponent(
       `Backend error:\n\n\`\`\`json\n${JSON.stringify(structured, null, 2)}\n\`\`\``,
@@ -154,7 +141,7 @@
     {#if structured}
       <div class={`toast kind-${structured.kind}`} role="alert" data-testid="error-toast">
         <div class="head">
-          <strong class="message">{structured.message}</strong>
+          <strong class="message">{errorMessage(structured, t)}</strong>
           <button
             type="button"
             class="dlg-close"
@@ -162,11 +149,13 @@
             aria-label={t('toast.dismiss')}>×</button
           >
         </div>
-        {#if structured.recovery_hint}
-          <em class="hint" data-testid="error-hint">{structured.recovery_hint}</em>
+        {#if errorHint(structured, t)}
+          <em class="hint" data-testid="error-hint">{errorHint(structured, t)}</em>
         {/if}
         {#if structured.span}
-          <small class="span">at {structured.span.file}:{structured.span.line}</small>
+          <small class="span"
+            >{t('error.span', { file: structured.span.file, line: structured.span.line })}</small
+          >
         {/if}
         {#if structured.auto_fix || structured.kind === 'internal'}
           <div class="actions">
@@ -177,7 +166,7 @@
                 onclick={() => applyFix(structured)}
                 data-testid="apply-fix"
               >
-                {fixLabel(structured.auto_fix)}
+                {fixLabel(structured.auto_fix, t)}
               </button>
             {/if}
             {#if structured.kind === 'internal'}

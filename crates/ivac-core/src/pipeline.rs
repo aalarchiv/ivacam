@@ -203,17 +203,22 @@ impl PipelineError {
     /// auto-fix is dropped.
     #[must_use]
     pub fn to_structured(&self, project: Option<&Project>) -> Option<crate::Error> {
-        use crate::errors::{AutoFix, Error as Structured};
+        use crate::errors::{AutoFix, Error as Structured, ErrorCode};
         match self {
             PipelineError::Cancelled => None,
             PipelineError::UnknownPostProcessor(name) => Some(
                 Structured::misconfigured(format!("unknown post_processor: {name}"))
+                    .with_code(ErrorCode::UnknownPostProcessor)
+                    .with_param("name", name)
                     .with_hint("Pick a known post: linuxcnc, grbl, or hpgl."),
             ),
             PipelineError::UnknownTool(op_id, tool_id) => {
                 let mut e = Structured::misconfigured(format!(
                     "op {op_id} references missing tool {tool_id}"
                 ))
+                .with_code(ErrorCode::MissingTool)
+                .with_param("op_id", op_id)
+                .with_param("tool_id", tool_id)
                 .with_hint("Pick a tool from the library.");
                 if let Some(suggested) = project.and_then(|p| p.tools.first().map(|t| t.id)) {
                     e = e.with_auto_fix(AutoFix::AssignTool {
@@ -225,10 +230,14 @@ impl PipelineError {
             }
             PipelineError::UnimplementedKind(kind) => Some(
                 Structured::unsupported(format!("operation kind {kind:?} is not implemented yet"))
+                    .with_code(ErrorCode::UnimplementedOpKind)
+                    .with_param("kind", format!("{kind:?}"))
                     .with_hint("This op kind is not available yet — disable it or pick another."),
             ),
             PipelineError::TextRender(msg) => Some(
                 Structured::misconfigured(format!("text render: {msg}"))
+                    .with_code(ErrorCode::TextRenderFailed)
+                    .with_param("detail", msg)
                     .with_hint("Pick a different font or fix the text contents."),
             ),
         }
@@ -261,6 +270,8 @@ pub fn run_pipeline_safe(
             let msg = panic_message(&panic);
             Err(Some(
                 crate::Error::internal(format!("panic: {msg}"))
+                    .with_code(crate::errors::ErrorCode::InternalPanic)
+                    .with_param("detail", &msg)
                     .with_hint("Please report this bug — see the toast for details."),
             ))
         }

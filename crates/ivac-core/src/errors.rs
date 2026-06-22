@@ -3,8 +3,20 @@
 //! ad-hoc `Result<T, String>` returns used by older pipeline code.
 //!
 //! The struct serializes as flat JSON; the frontend renders it via
-//! `ErrorToast.svelte`. `recovery_hint` is an English template; future
-//! i18n will resolve placeholders like `{op_name}` against the project.
+//! `ErrorToast.svelte`.
+//!
+//! ## Localization seam (i18n epic ivac-os2k.6)
+//!
+//! `code` is a stable, language-agnostic identifier (like the op enums) and
+//! `params` carries the structured values the message interpolates. The
+//! frontend renders the user-facing text from `error.code.<code>` /
+//! `error.hint.<code>` templates against `params`, so the German UI never
+//! depends on the English wording here. `message` (and `recovery_hint`)
+//! stay as the English fallback for the CLI, logs, and any error that has
+//! no `code` yet (e.g. import-parser failures that embed raw parser output).
+//! Codes therefore live ONLY in the wire shape — never in project files.
+
+use std::collections::BTreeMap;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -14,13 +26,43 @@ use crate::project::ToolOffset;
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 pub struct Error {
     pub kind: ErrorKind,
+    /// Stable localization key for the message + hint. `None` means the
+    /// frontend falls back to the English `message`/`recovery_hint`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<ErrorCode>,
+    /// Values the localized template interpolates (`{op_id}`, `{name}`, …).
+    /// Stringified so the wire shape stays a simple `string → string` map.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, String>,
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recovery_hint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_fix: Option<AutoFix>,
+    /// Boxed to keep `Error` small enough that `Result<_, Error>` doesn't trip
+    /// clippy's `result_large_err`; spans are rare (import-parse errors only),
+    /// so the indirection costs nothing on the common path. Box is transparent
+    /// to serde/schemars, so the wire shape is unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub span: Option<SourceSpan>,
+    pub span: Option<Box<SourceSpan>>,
+}
+
+/// Stable identifiers for the errors the GUI surfaces, so the frontend can
+/// localize them. Add a variant here + an `error.code.<snake>` (and optional
+/// `error.hint.<snake>`) entry in `frontend/src/lib/i18n/messages/en.json`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ErrorCode {
+    /// Requested post-processor name isn't one we ship.
+    UnknownPostProcessor,
+    /// An op references a tool id that's absent from the library.
+    MissingTool,
+    /// Op kind has no driver yet.
+    UnimplementedOpKind,
+    /// Text/font rendering failed for an engrave/text op.
+    TextRenderFailed,
+    /// The pipeline panicked — surfaced as a reportable internal error.
+    InternalPanic,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -54,6 +96,8 @@ impl Error {
     pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
         Self {
             kind,
+            code: None,
+            params: BTreeMap::new(),
             message: message.into(),
             recovery_hint: None,
             auto_fix: None,
@@ -78,6 +122,20 @@ impl Error {
     pub fn internal(msg: impl Into<String>) -> Self {
         Self::new(ErrorKind::Internal, msg)
     }
+    /// Attach the localization code + a `message` interpolation param in one
+    /// step, so call sites read `…with_code(MissingTool).with_param("op_id", id)`.
+    #[must_use]
+    pub fn with_code(mut self, code: ErrorCode) -> Self {
+        self.code = Some(code);
+        self
+    }
+    /// Add one `{key}` value the localized template can interpolate. Values
+    /// are stringified to keep the wire map `string → string`.
+    #[must_use]
+    pub fn with_param(mut self, key: impl Into<String>, value: impl ToString) -> Self {
+        self.params.insert(key.into(), value.to_string());
+        self
+    }
     #[must_use]
     pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
         self.recovery_hint = Some(hint.into());
@@ -90,7 +148,7 @@ impl Error {
     }
     #[must_use]
     pub fn with_span(mut self, span: SourceSpan) -> Self {
-        self.span = Some(span);
+        self.span = Some(Box::new(span));
         self
     }
 }
@@ -121,6 +179,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub(crate) fn register_schemas(map: &mut crate::schema::SchemaMap) {
     crate::schema::insert::<Error>(map, "WiacError");
     crate::schema::insert::<ErrorKind>(map, "WiacErrorKind");
+    crate::schema::insert::<ErrorCode>(map, "WiacErrorCode");
     crate::schema::insert::<AutoFix>(map, "WiacAutoFix");
     crate::schema::insert::<SourceSpan>(map, "WiacSourceSpan");
 }

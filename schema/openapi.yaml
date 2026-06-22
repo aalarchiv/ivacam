@@ -445,6 +445,29 @@ components:
       required:
       - error
       type: object
+    ErrorCode:
+      description: Stable identifiers for the errors the GUI surfaces, so the frontend can localize them. Add a variant here + an `error.code.<snake>` (and optional `error.hint.<snake>`) entry in `frontend/src/lib/i18n/messages/en.json`.
+      oneOf:
+      - description: Requested post-processor name isn't one we ship.
+        enum:
+        - unknown_post_processor
+        type: string
+      - description: An op references a tool id that's absent from the library.
+        enum:
+        - missing_tool
+        type: string
+      - description: Op kind has no driver yet.
+        enum:
+        - unimplemented_op_kind
+        type: string
+      - description: Text/font rendering failed for an engrave/text op.
+        enum:
+        - text_render_failed
+        type: string
+      - description: The pipeline panicked — surfaced as a reportable internal error.
+        enum:
+        - internal_panic
+        type: string
     ErrorKind:
       enum:
       - bad_input
@@ -3959,10 +3982,20 @@ components:
           anyOf:
           - $ref: '#/components/schemas/AutoFix'
           - type: 'null'
+        code:
+          anyOf:
+          - $ref: '#/components/schemas/ErrorCode'
+          - type: 'null'
+          description: Stable localization key for the message + hint. `None` means the frontend falls back to the English `message`/`recovery_hint`.
         kind:
           $ref: '#/components/schemas/ErrorKind'
         message:
           type: string
+        params:
+          additionalProperties:
+            type: string
+          description: Values the localized template interpolates (`{op_id}`, `{name}`, …). Stringified so the wire shape stays a simple `string → string` map.
+          type: object
         recovery_hint:
           type:
           - string
@@ -3975,6 +4008,29 @@ components:
       - kind
       - message
       type: object
+    WiacErrorCode:
+      description: Stable identifiers for the errors the GUI surfaces, so the frontend can localize them. Add a variant here + an `error.code.<snake>` (and optional `error.hint.<snake>`) entry in `frontend/src/lib/i18n/messages/en.json`.
+      oneOf:
+      - description: Requested post-processor name isn't one we ship.
+        enum:
+        - unknown_post_processor
+        type: string
+      - description: An op references a tool id that's absent from the library.
+        enum:
+        - missing_tool
+        type: string
+      - description: Op kind has no driver yet.
+        enum:
+        - unimplemented_op_kind
+        type: string
+      - description: Text/font rendering failed for an engrave/text op.
+        enum:
+        - text_render_failed
+        type: string
+      - description: The pipeline panicked — surfaced as a reportable internal error.
+        enum:
+        - internal_panic
+        type: string
     WiacErrorKind:
       enum:
       - bad_input

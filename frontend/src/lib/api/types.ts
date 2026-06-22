@@ -40,5 +40,6 @@ export type SimSeverity = components['schemas']['SimSeverity'];
 /// Surfaced through `project.error`; rendered by `ErrorToast.svelte`.
 export type WiacError = components['schemas']['WiacError'];
 export type WiacErrorKind = components['schemas']['WiacErrorKind'];
+export type WiacErrorCode = components['schemas']['WiacErrorCode'];
 export type WiacAutoFix = components['schemas']['WiacAutoFix'];
 export type WiacSourceSpan = components['schemas']['WiacSourceSpan'];

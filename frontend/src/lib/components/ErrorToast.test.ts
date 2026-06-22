@@ -6,7 +6,15 @@
 import { describe, expect, it } from 'vitest';
 import { tryParseStructuredError } from '../api/client';
 import { autoFixToCommand, type CommandTarget } from '../state/commands';
+import { errorMessage, errorHint, fixLabel, type Translate } from './error-display';
+import { lookup, type Locale } from '../i18n/i18n-core';
+import en from '../i18n/messages/en.json';
 import type { WiacError } from '../api/types';
+
+/// Authentic translate backed by the real English catalog, so these tests
+/// also fail if an `error.*` key is renamed/removed (keeps the seam honest).
+const t: Translate = (key, params) =>
+  lookup({ en, de: {} } as Record<Locale, Record<string, string>>, 'en', key, params);
 
 function blankCommandTarget(): CommandTarget {
   return {
@@ -77,6 +85,45 @@ describe('tryParseStructuredError', () => {
     expect(tryParseStructuredError(null)).toBeNull();
     expect(tryParseStructuredError(undefined)).toBeNull();
     expect(tryParseStructuredError(42)).toBeNull();
+  });
+});
+
+describe('error-display localization seam', () => {
+  it('renders message from code + params, ignoring the English message', () => {
+    const e: WiacError = {
+      kind: 'misconfigured',
+      code: 'missing_tool',
+      params: { op_id: '2', tool_id: '9' },
+      message: 'op 2 references missing tool 9',
+    };
+    expect(errorMessage(e, t)).toBe('Op 2 references missing tool 9');
+  });
+
+  it('falls back to the English message when no code is present', () => {
+    const e: WiacError = { kind: 'bad_input', message: 'dxf parse: unexpected EOF' };
+    expect(errorMessage(e, t)).toBe('dxf parse: unexpected EOF');
+  });
+
+  it('localizes the hint from code, and is null when there is no hint', () => {
+    const withHint: WiacError = {
+      kind: 'misconfigured',
+      code: 'unknown_post_processor',
+      params: { name: 'foo' },
+      message: 'unknown post_processor: foo',
+      recovery_hint: 'Pick a known post: linuxcnc, grbl, or hpgl.',
+    };
+    expect(errorHint(withHint, t)).toBe('Pick a known post: linuxcnc, grbl, or hpgl.');
+    expect(errorHint({ kind: 'bad_input', message: 'x' }, t)).toBeNull();
+  });
+
+  it('localizes auto-fix labels with params, and the generic fallback', () => {
+    expect(fixLabel({ kind: 'assign_tool', op_id: 1, suggested_tool_id: 99 }, t)).toBe(
+      'Assign tool 99 to op 1',
+    );
+    expect(fixLabel({ kind: 'lower_sim_resolution', suggested_cell_mm: 0.5 }, t)).toBe(
+      'Lower sim resolution to 0.5 mm',
+    );
+    expect(fixLabel(undefined, t)).toBe('Apply fix');
   });
 });
 

@@ -187,6 +187,22 @@ export type MsgKey =
   | "dialog.unsaved.dont_save"
   | "dialog.unsaved.save_continue"
   | "dialog.unsaved.title"
+  | "error.code.internal_panic"
+  | "error.code.missing_tool"
+  | "error.code.text_render_failed"
+  | "error.code.unimplemented_op_kind"
+  | "error.code.unknown_post_processor"
+  | "error.fix.apply"
+  | "error.fix.assign_tool"
+  | "error.fix.change_profile_offset"
+  | "error.fix.disable_op"
+  | "error.fix.lower_sim_resolution"
+  | "error.hint.internal_panic"
+  | "error.hint.missing_tool"
+  | "error.hint.text_render_failed"
+  | "error.hint.unimplemented_op_kind"
+  | "error.hint.unknown_post_processor"
+  | "error.span"
   | "gcode.label"
   | "gcode.silenced"
   | "gcode.silenced.title"
@@ -1423,6 +1439,22 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "dialog.unsaved.dont_save",
   "dialog.unsaved.save_continue",
   "dialog.unsaved.title",
+  "error.code.internal_panic",
+  "error.code.missing_tool",
+  "error.code.text_render_failed",
+  "error.code.unimplemented_op_kind",
+  "error.code.unknown_post_processor",
+  "error.fix.apply",
+  "error.fix.assign_tool",
+  "error.fix.change_profile_offset",
+  "error.fix.disable_op",
+  "error.fix.lower_sim_resolution",
+  "error.hint.internal_panic",
+  "error.hint.missing_tool",
+  "error.hint.text_render_failed",
+  "error.hint.unimplemented_op_kind",
+  "error.hint.unknown_post_processor",
+  "error.span",
   "gcode.label",
   "gcode.silenced",
   "gcode.silenced.title",

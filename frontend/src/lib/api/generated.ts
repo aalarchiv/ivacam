@@ -309,6 +309,8 @@ export interface components {
             details?: unknown;
             error: string;
         };
+        /** @description Stable identifiers for the errors the GUI surfaces, so the frontend can localize them. Add a variant here + an `error.code.<snake>` (and optional `error.hint.<snake>`) entry in `frontend/src/lib/i18n/messages/en.json`. */
+        ErrorCode: "unknown_post_processor" | "missing_tool" | "unimplemented_op_kind" | "text_render_failed" | "internal_panic";
         /** @enum {string} */
         ErrorKind: "bad_input" | "misconfigured" | "limit" | "unsupported" | "io" | "internal";
         /** @description A user-declared physical obstacle on the stock the cutter must miss. Lives in stock-relative XY (same frame as the imported geometry) and occupies a Z range; the sim collision test gates on that range first then falls back to a per-shape XY swept-region check. */
@@ -2400,11 +2402,19 @@ export interface components {
         };
         WiacError: {
             auto_fix?: components["schemas"]["AutoFix"] | null;
+            /** @description Stable localization key for the message + hint. `None` means the frontend falls back to the English `message`/`recovery_hint`. */
+            code?: components["schemas"]["ErrorCode"] | null;
             kind: components["schemas"]["ErrorKind"];
             message: string;
+            /** @description Values the localized template interpolates (`{op_id}`, `{name}`, …). Stringified so the wire shape stays a simple `string → string` map. */
+            params?: {
+                [key: string]: string;
+            };
             recovery_hint?: string | null;
             span?: components["schemas"]["SourceSpan"] | null;
         };
+        /** @description Stable identifiers for the errors the GUI surfaces, so the frontend can localize them. Add a variant here + an `error.code.<snake>` (and optional `error.hint.<snake>`) entry in `frontend/src/lib/i18n/messages/en.json`. */
+        WiacErrorCode: "unknown_post_processor" | "missing_tool" | "unimplemented_op_kind" | "text_render_failed" | "internal_panic";
         /** @enum {string} */
         WiacErrorKind: "bad_input" | "misconfigured" | "limit" | "unsupported" | "io" | "internal";
         WiacSourceSpan: {

@@ -52,6 +52,12 @@ jobs:
       - run: cargo test --workspace --exclude ivac-tauri --all-features
       - name: schema drift guard
         run: cargo run -p xtask -- schema-check
+      - name: version drift guard
+        # tauri.conf.json's version must match [workspace.package].version
+        # (single source of truth). Tauri can't resolve `version.workspace`,
+        # so the config carries an explicit copy that bump-version.sh writes;
+        # this fails the build if it drifts.
+        run: cargo run -p xtask -- version-check
 
   wasm:
     name: wasm-pack

@@ -32,6 +32,7 @@ fn main() -> ExitCode {
         Some("frontend-lint") => pnpm(&["run", "lint"]),
         Some("schema") => schema(false),
         Some("schema-check") => schema(true),
+        Some("version-check") => version_check(),
         Some("ci") => ci_all(),
         Some(unknown) => {
             eprintln!("xtask: unknown task '{unknown}'");
@@ -61,6 +62,7 @@ fn usage() {
            frontend-lint   pnpm run lint (prettier --check)\n\
            schema          regenerate schema/openapi.yaml's components/schemas\n\
            schema-check    fail if schema/openapi.yaml is out of date\n\
+           version-check   fail if tauri.conf.json version != workspace version\n\
            ci              run everything CI runs"
     );
 }
@@ -109,6 +111,7 @@ fn ci_all() -> ExitCode {
         // schema and the checked-in OpenAPI YAML must agree (ci.yml runs
         // this in the rust job).
         ("xtask schema-check", || schema(true)),
+        ("xtask version-check", version_check),
         ("frontend lint", || pnpm(&["run", "lint"])),
         ("frontend check", || pnpm(&["run", "check"])),
         ("frontend test", || pnpm(&["run", "test"])),
@@ -185,6 +188,20 @@ fn schema(check_only: bool) -> ExitCode {
             return ExitCode::from(1);
         }
     };
+    // Keep info.version in lockstep with the workspace crate version. xtask
+    // inherits it (version.workspace = true), so CARGO_PKG_VERSION here IS the
+    // single source of truth — Cargo.toml's [workspace.package] version. Writing
+    // it on every regen means schema-check fails the moment openapi.yaml drifts
+    // from Cargo.toml, so the version can never be hand-edited out of sync.
+    let info = doc
+        .get_mut("info")
+        .and_then(|c| c.as_mapping_mut())
+        .expect("info: missing in OpenAPI YAML");
+    info.insert(
+        serde_yaml::Value::String("version".into()),
+        serde_yaml::Value::String(env!("CARGO_PKG_VERSION").into()),
+    );
+
     let derived = ivac_core::schema::components_schemas();
     let derived_yaml = serde_yaml::to_value(&derived).unwrap();
     let components = doc
@@ -210,6 +227,51 @@ fn schema(check_only: bool) -> ExitCode {
     } else {
         eprintln!("regenerated {}", yaml_path.display());
         ExitCode::SUCCESS
+    }
+}
+
+/// Fail if `tauri.conf.json`'s `version` has drifted from the workspace crate
+/// version. The version's single source of truth is `[workspace.package].version`
+/// in the root Cargo.toml (xtask inherits it, so CARGO_PKG_VERSION is that
+/// value). Tauri can't resolve `version.workspace = true`, so its config must
+/// carry an explicit version — `scripts/bump-version.sh` writes it, and this
+/// guard makes a stale hand-edit a CI failure.
+fn version_check() -> ExitCode {
+    let expected = env!("CARGO_PKG_VERSION");
+    let workspace_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let conf_path = workspace_root.join("crates/ivac-tauri/tauri.conf.json");
+    let conf: serde_json::Value = match std::fs::read_to_string(&conf_path)
+        .map_err(|e| e.to_string())
+        .and_then(|s| serde_json::from_str(&s).map_err(|e| e.to_string()))
+    {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("read/parse {}: {e}", conf_path.display());
+            return ExitCode::from(1);
+        }
+    };
+    match conf.get("version").and_then(|v| v.as_str()) {
+        Some(found) if found == expected => {
+            eprintln!("tauri.conf.json version matches workspace ({expected})");
+            ExitCode::SUCCESS
+        }
+        Some(found) => {
+            eprintln!(
+                "version drift: tauri.conf.json says {found}, workspace is {expected}. \
+                 Run `scripts/bump-version.sh {expected}` to resync."
+            );
+            ExitCode::from(1)
+        }
+        None => {
+            eprintln!(
+                "tauri.conf.json has no `version` field — Tauri can't resolve the \
+                 workspace version, so it must be explicit. Run `scripts/bump-version.sh {expected}`."
+            );
+            ExitCode::from(1)
+        }
     }
 }
 

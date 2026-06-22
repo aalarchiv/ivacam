@@ -54,6 +54,23 @@ local tree and hand off.
    --status=in_progress` is empty or accurately reflects active work
 7. **Hand off** — Brief context summary + which commits await a push
 
+### Versioning (single source)
+
+The version has **one source of truth**: `[workspace.package].version`
+in the root `Cargo.toml`. Never hand-edit a version anywhere else — run
+[`scripts/bump-version.sh <semver>`](./scripts/bump-version.sh), which
+writes that one value and propagates it: Rust crates inherit it,
+`schema/openapi.yaml`'s `info.version` is rewritten by `cargo xtask
+schema` (guarded by `schema-check`), `tauri.conf.json` gets an explicit
+copy the script writes (Tauri can't resolve `version.workspace`; guarded
+by `cargo xtask version-check`), and `frontend/package.json` carries no
+version (private). Two CI guards make a drifted hand-edit a build
+failure. Android's APK version lives in the git-ignored
+`gen/android/app/tauri.properties`, which `android build` only writes
+when it's absent — **delete it after a bump** so the next build
+regenerates it at the new version (`android init` won't). See the
+Versioning section in [`BUILDING.md`](./docs/BUILDING.md#versioning).
+
 ### Pre-release ritual (bb8q)
 
 Run [`scripts/pre-release.sh`](./scripts/pre-release.sh) before tagging a

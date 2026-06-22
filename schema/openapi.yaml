@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: ivaCAM API
-  version: 0.2.0
+  version: 0.3.0
   description: |
     JSON contract for ivaCAM core operations.
     Implementation-agnostic: served by the Stage-1 Python FastAPI bridge,
@@ -4004,6 +4004,7 @@ components:
           anyOf:
           - $ref: '#/components/schemas/SourceSpan'
           - type: 'null'
+          description: Boxed to keep `Error` small enough that `Result<_, Error>` doesn't trip clippy's `result_large_err`; spans are rare (import-parse errors only), so the indirection costs nothing on the common path. Box is transparent to serde/schemars, so the wire shape is unchanged.
       required:
       - kind
       - message

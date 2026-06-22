@@ -2411,6 +2411,7 @@ export interface components {
                 [key: string]: string;
             };
             recovery_hint?: string | null;
+            /** @description Boxed to keep `Error` small enough that `Result<_, Error>` doesn't trip clippy's `result_large_err`; spans are rare (import-parse errors only), so the indirection costs nothing on the common path. Box is transparent to serde/schemars, so the wire shape is unchanged. */
             span?: components["schemas"]["SourceSpan"] | null;
         };
         /** @description Stable identifiers for the errors the GUI surfaces, so the frontend can localize them. Add a variant here + an `error.code.<snake>` (and optional `error.hint.<snake>`) entry in `frontend/src/lib/i18n/messages/en.json`. */

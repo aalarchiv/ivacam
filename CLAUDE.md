@@ -28,10 +28,12 @@ bd close <id>         # Complete work
 `git@github.com:aalarchiv/ivacam.git`. Commits land on `main` locally.
 **Pushing is manual and human-gated** — the maintainer reviews local
 commits and pushes to `origin/main` themselves before anything spreads.
-Do NOT push automatically (a global PreToolUse hook hard-blocks `git
-push` from the agent; see the note below). Earlier guidance said work
-"must be pushed at session end" — that is superseded: stop at a clean,
-committed local tree and hand off.
+Do NOT push automatically (a global PreToolUse hook soft-blocks `git
+push` from the agent — it turns a push into an approval prompt rather
+than refusing it, so a push goes through only when the user explicitly
+confirms; see the note below). Earlier guidance said work "must be
+pushed at session end" — that is superseded: stop at a clean, committed
+local tree and hand off.
 
 **MANDATORY WORKFLOW:**
 
@@ -45,8 +47,9 @@ committed local tree and hand off.
    tree (that's the failure mode ivac-5kcj documented).
 5. **Do NOT push** — Leave `origin/main` alone. Summarize what is ready
    to push so the maintainer can review and push manually. Only run
-   `git push` if the user explicitly asks in that session (and note the
-   global hook will block it unless they've lifted it).
+   `git push` if the user explicitly asks in that session — the global
+   hook will then surface an approval prompt the user has to confirm
+   before the push proceeds.
 6. **Verify** — `git status` shows a clean working tree; `bd list
    --status=in_progress` is empty or accurately reflects active work
 7. **Hand off** — Brief context summary + which commits await a push

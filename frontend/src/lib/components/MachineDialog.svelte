@@ -18,6 +18,7 @@
   import { workspace } from '../state/workspace.svelte';
   import { duplicateProfile, profileFromCurrent } from '../state/machine_profiles';
   import { suggestMachineName } from '../state/tool_naming';
+  import { t } from '../i18n';
 
   interface Props {
     open: boolean;
@@ -166,13 +167,13 @@
   function profileTweakSummary(p: PostProfile | undefined): string {
     if (!p) return '';
     const parts: string[] = [];
-    if (p.program_start) parts.push('header');
-    if (p.program_end) parts.push('footer');
-    if (p.tool_change) parts.push('toolchange');
-    if (p.coolant_flood_on || p.coolant_flood_off) parts.push('coolant');
-    if (p.coolant_mist_on || p.coolant_mist_off) parts.push('mist');
-    if (p.axes) parts.push('axes');
-    if (p.file_extension || p.line_ending) parts.push('file');
+    if (p.program_start) parts.push(t('machine.pp.tweak.header'));
+    if (p.program_end) parts.push(t('machine.pp.tweak.footer'));
+    if (p.tool_change) parts.push(t('machine.pp.tweak.toolchange'));
+    if (p.coolant_flood_on || p.coolant_flood_off) parts.push(t('machine.pp.tweak.coolant'));
+    if (p.coolant_mist_on || p.coolant_mist_off) parts.push(t('machine.pp.tweak.mist'));
+    if (p.axes) parts.push(t('machine.pp.tweak.axes'));
+    if (p.file_extension || p.line_ending) parts.push(t('machine.pp.tweak.file'));
     return parts.join(', ');
   }
 
@@ -314,8 +315,8 @@
 {#snippet shell()}
   {#if !embedded}
     <header>
-      <h2 id="machine-title">Machine</h2>
-      <button class="dlg-close" onclick={close} aria-label="Close">×</button>
+      <h2 id="machine-title">{t('machine.title')}</h2>
+      <button class="dlg-close" onclick={close} aria-label={t('common.close')}>×</button>
     </header>
   {/if}
 
@@ -325,25 +326,21 @@
          undoable step. -->
   {#if !embedded}
     <div class="profile-bar">
-      <label
-        class="profile-pick"
-        title="Machine profile — a named machine setup plus its own tool library, saved on this computer (not in the project). Switching profiles swaps both into the project in one undoable step. While a profile is selected, edits to the machine or the tool library are saved back into it."
-      >
-        <span>Profile</span>
+      <label class="profile-pick" title={t('machine.profile.pick.title')}>
+        <span>{t('machine.profile.label')}</span>
         <select
           value={activeProfileId ?? ''}
           disabled={dd.isDirty}
-          title={dd.isDirty
-            ? 'You have unsaved machine edits — OK or Cancel them first, then switch profiles.'
-            : ''}
+          title={dd.isDirty ? t('machine.profile.dirty_switch.title') : ''}
           onchange={(e) => onProfileSelect((e.currentTarget as HTMLSelectElement).value)}
         >
-          <option value="">— project-local (no profile) —</option>
+          <option value="">{t('machine.profile.none_option')}</option>
           {#each profiles as p (p.id)}
             <option value={p.id}>{p.name}</option>
           {/each}
           {#if activeProfileMissing}
-            <option value={activeProfileId}>Referenced profile (not on this computer)</option>
+            <option value={activeProfileId}>{t('machine.profile.referenced_missing_option')}</option
+            >
           {/if}
         </select>
       </label>
@@ -351,31 +348,29 @@
         type="button"
         class="profile-btn"
         onclick={saveAsProfile}
-        title="Save the machine settings shown below together with the project's current tool library as a new profile, and link this project to it."
-        >Save as profile</button
+        title={t('machine.profile.save_as.title')}>{t('machine.profile.save_as')}</button
       >
       {#if activeProfileId != null && !activeProfileMissing}
         <button
           type="button"
           class="profile-btn"
           onclick={duplicateActiveProfile}
-          title="Copy this profile (machine + tools) under a new name — for variants of the same machine."
-          >Duplicate</button
+          title={t('machine.profile.duplicate.title')}>{t('machine.profile.duplicate')}</button
         >
         <button
           type="button"
           class="profile-btn"
           class:danger={confirmingProfileDelete}
           onclick={deleteActiveProfile}
-          title="Remove this profile from this computer. The project keeps its current machine settings and tools — nothing in the project is deleted."
-          >{confirmingProfileDelete ? 'Delete profile?' : 'Delete'}</button
+          title={t('machine.profile.delete.title')}
+          >{confirmingProfileDelete
+            ? t('machine.profile.delete_confirm')
+            : t('machine.profile.delete')}</button
         >
       {/if}
       {#if activeProfileMissing}
-        <span
-          class="profile-note"
-          title="This project references a machine profile that doesn't exist on this computer (it was saved elsewhere). The project loaded with its own embedded machine + tools — use 'Save as profile' to recreate the profile here."
-          >not on this computer</span
+        <span class="profile-note" title={t('machine.profile.missing_note.title')}
+          >{t('machine.profile.missing_note')}</span
         >
       {/if}
     </div>
@@ -388,49 +383,39 @@
       individual numeric input — a literal "mm" suffix while the user
       had unit=inch selected was misleading.
     -->
-  <p class="storage-note">
-    Lengths are stored in <strong>mm</strong> regardless of the Unit selector below — the Unit only switches
-    the G20/G21 word in emitted gcode.
-  </p>
+  <!-- eslint-disable-next-line svelte/no-at-html-tags -- static, translator-authored markup -->
+  <p class="storage-note">{@html t('machine.storage_note')}</p>
 
   <div class="grid">
-    <label
-      title="Free-text identifier for this machine setup. Shown in the dialog header + persisted into .ivac-machine.json save files."
-    >
-      Name
+    <label title={t('machine.name.label_title')}>
+      {t('machine.name')}
       <input
         type="text"
         placeholder={suggestMachineName(draft)}
         value={draft.name ?? ''}
-        title="Machine name. Left empty, the proposal (mode + work area) is used when saving this machine."
+        title={t('machine.name.input_title')}
         oninput={(e) => (draft.name = (e.currentTarget as HTMLInputElement).value)}
       />
     </label>
-    <label
-      title="Output units in the emitted G-code (G20 inch / G21 mm). Internal storage is always mm — this only affects the post."
-    >
-      Unit
+    <label title={t('machine.unit.title')}>
+      {t('machine.unit')}
       <select bind:value={draft.unit}>
-        <option value="mm">mm</option>
-        <option value="inch">inch</option>
+        <option value="mm">{t('machine.unit.mm')}</option>
+        <option value="inch">{t('machine.unit.inch')}</option>
       </select>
     </label>
-    <label
-      title="Primary mode — drives the G-code emitter. Mill: subtractive CNC, full Z control. Laser: M3/M5 power, ignores Z. Drag: vinyl cutter / drag knife, emits HPGL. Plasma: torch with a pierce/cut-height entry sequence. Adjust 'Capabilities' below if the machine can do more than this primary mode."
-    >
-      Mode
+    <label title={t('machine.mode.title')}>
+      {t('machine.mode')}
       <select bind:value={draft.mode}>
-        <option value="mill">Mill (CNC)</option>
-        <option value="laser">Laser</option>
-        <option value="drag">Drag-knife / vinyl</option>
-        <option value="plasma">Plasma</option>
+        <option value="mill">{t('machine.mode.mill')}</option>
+        <option value="laser">{t('machine.mode.laser')}</option>
+        <option value="drag">{t('machine.mode.drag')}</option>
+        <option value="plasma">{t('machine.mode.plasma')}</option>
       </select>
     </label>
     <fieldset class="capabilities">
-      <legend
-        title="Which op kinds the machine can run. The op-picker hides kinds the machine doesn't support — e.g. a laser-only machine never shows Drill. Defaults to just the primary Mode above if left empty."
-      >
-        Capabilities
+      <legend title={t('machine.capabilities.legend_title')}>
+        {t('machine.capabilities')}
       </legend>
       {#each ['mill', 'laser', 'drag', 'plasma'] as cap (cap)}
         {@const isPrimary = cap === draft.mode}
@@ -442,9 +427,7 @@
           <input
             type="checkbox"
             disabled={isPrimary}
-            title={isPrimary
-              ? 'The primary mode (selected under Mode above) is always available — pick a different Mode to remove it.'
-              : ''}
+            title={isPrimary ? t('machine.capabilities.primary_title') : ''}
             checked={isPrimary ||
               (draft.capabilities ?? [draft.mode]).includes(
                 cap as 'mill' | 'laser' | 'drag' | 'plasma',
@@ -464,30 +447,25 @@
           />
           <span
             >{cap === 'mill'
-              ? 'Mill'
+              ? t('machine.cap.mill')
               : cap === 'laser'
-                ? 'Laser'
+                ? t('machine.cap.laser')
                 : cap === 'drag'
-                  ? 'Drag-knife'
-                  : 'Plasma'}</span
+                  ? t('machine.cap.drag')
+                  : t('machine.cap.plasma')}</span
           >
         </label>
       {/each}
     </fieldset>
-    <label
-      title="Safe Z height for rapids between cuts. Spindle rapids to this height before XY moves so the tool clears clamps and stock."
-    >
-      Fast-move Z
+    <label title={t('machine.fast_move_z.title')}>
+      {t('machine.fast_move_z')}
       <span class="field"
         ><input type="number" bind:value={draft.fastMoveZ} step="0.1" /><span class="unit">mm</span
         ></span
       >
     </label>
     <fieldset class="work-area">
-      <legend
-        title="Machine work envelope in mm — the stock auto-defaults to this size when no drawing is loaded, and (future) sim checks use it as the soft-limit reference."
-        >Work area</legend
-      >
+      <legend title={t('machine.work_area.legend_title')}>{t('machine.work_area')}</legend>
       <label
         >X
         <span class="field"
@@ -552,25 +530,16 @@
         >
       </label>
     </fieldset>
-    <label
-      class="check"
-      title="Include (parenthesized) comments in the G-code — section markers, op names, tool numbers. Disable for controllers that reject comments."
-    >
+    <label class="check" title={t('machine.emit_comments.title')}>
       <input type="checkbox" bind:checked={draft.comments} />
-      Emit comments in G-code
+      {t('machine.emit_comments')}
     </label>
-    <label
-      class="check"
-      title="Fit curved polylines into native G2/G3 arc moves where possible. Yields smaller, smoother G-code. Disable if your controller has buggy arc handling."
-    >
+    <label class="check" title={t('machine.emit_arcs.title')}>
       <input type="checkbox" bind:checked={draft.arcs} />
-      Emit G2 / G3 arc moves
+      {t('machine.emit_arcs')}
     </label>
-    <label
-      class:disabled={!draft.arcs}
-      title="How far the fitted arc may deviate from the original polyline. Smaller = tighter, more arcs split. Typical values 0.005-0.05 mm."
-    >
-      Arc fitting tolerance
+    <label class:disabled={!draft.arcs} title={t('machine.arc_tol.title')}>
+      {t('machine.arc_tol')}
       <span class="field"
         ><input
           type="number"
@@ -585,46 +554,33 @@
         /><span class="unit">mm</span></span
       >
     </label>
-    <label
-      title="How the post handles a tool change between ops with different tools. ATC: emit T<n> M6, the changer swaps automatically. Manual (M6 prompt): grblHAL / FluidNC — emit M6, the controller parks and prompts the operator. Manual (M0 pause): portable M0 program pause for stock GRBL / Marlin, which reject M6. Ignore: emit no tool-change handling (you manage swaps yourself)."
-    >
-      Tool changes
+    <label title={t('machine.toolchange.title')}>
+      {t('machine.toolchange')}
       <select bind:value={draft.toolchangeStrategy}>
-        <option value="atc">Automatic changer (T&lt;n&gt; M6)</option>
-        <option value="manual_m6_prompt">Manual — M6 prompt (grblHAL / FluidNC)</option>
-        <option value="manual_m0_pause">Manual — M0 pause (stock GRBL / Marlin)</option>
-        <option value="ignore">Ignore (no tool-change output)</option>
+        <option value="atc">{t('machine.toolchange.atc')}</option>
+        <option value="manual_m6_prompt">{t('machine.toolchange.m6_prompt')}</option>
+        <option value="manual_m0_pause">{t('machine.toolchange.m0_pause')}</option>
+        <option value="ignore">{t('machine.toolchange.ignore')}</option>
       </select>
     </label>
     <!-- Optional-stop M1 alternative to M0 at program pauses. -->
-    <label
-      class="check"
-      title="Emit M1 (optional stop) instead of M0 (mandatory stop) at every program pause — the Pause op and the manual tool-change halt. M1 is honored only when the controller's optional-stop switch is ON, so a vetted program can run unattended (switch off skips the pauses) yet still stop on demand. Off = mandatory M0."
-    >
+    <label class="check" title={t('machine.optional_stop.title')}>
       <input type="checkbox" bind:checked={draft.optionalStop} />
-      Optional stop (M1 instead of M0)
+      {t('machine.optional_stop')}
     </label>
     <!-- z9zh: GRBL dynamic-power laser mode (M4). -->
-    <label
-      class="check"
-      title="GRBL only: emit M4 (dynamic power) instead of M3 for laser cuts and raster engraving. The controller ramps the S power with the actual feed rate, so corners and edges — where the head slows — don't over-burn, and rapids force S0 automatically. Strongly preferred for laser engraving. Requires GRBL laser mode ($32=1). Off = portable M3."
-    >
+    <label class="check" title={t('machine.laser_dynamic.title')}>
       <input type="checkbox" bind:checked={draft.laserDynamicPower} />
-      Laser dynamic power (GRBL M4)
+      {t('machine.laser_dynamic')}
     </label>
-    <label
-      class="check"
-      title="Plot-mode Z: collapse every cut to a single pass at the op's cut depth and skip the multi-step descent / ramp / helix machinery. Z values in G-code are restricted to fast_move_z (pen up) and cut depth (pen down). Right setting for laser / plasma / pen plotters / 3D-printer extrusion and drag-knife controllers."
-    >
+    <label class="check" title={t('machine.plot_mode.title')}>
       <input type="checkbox" bind:checked={draft.plotModeZ} />
-      Plot-mode Z (single-pass, binary up/down)
+      {t('machine.plot_mode')}
     </label>
 
-    <div class="section-title">G-code formatting</div>
-    <label
-      title="Output dialect for this machine's controller. LinuxCNC: standard RS-274 G-code. GRBL: hobby-CNC subset with manual tool-change prompts. HPGL: vinyl-cutter / plotter language (drag-knife mode)."
-    >
-      G-code dialect
+    <div class="section-title">{t('machine.section.gcode_formatting')}</div>
+    <label title={t('machine.dialect.title')}>
+      {t('machine.dialect')}
       <span class="field">
         <select
           value={draft.gcodeDialect ?? 'linuxcnc'}
@@ -639,10 +595,8 @@
         </select>
       </span>
     </label>
-    <label
-      title="Some EU-locale Siemens / Heidenhain controllers require X1,5 instead of X1.5. Default is the period."
-    >
-      Decimal separator
+    <label title={t('machine.decimal_sep.title')}>
+      {t('machine.decimal_sep')}
       <span class="field">
         <select
           value={draft.decimalSeparator ?? '.'}
@@ -651,21 +605,19 @@
             draft.decimalSeparator = v === ',' ? ',' : '.';
           }}
         >
-          <option value=".">period (.)</option>
-          <option value=",">comma (,)</option>
+          <option value=".">{t('machine.decimal_sep.period')}</option>
+          <option value=",">{t('machine.decimal_sep.comma')}</option>
         </select>
       </span>
     </label>
-    <label
-      title="Prefix every emitted line with N10, N20, N30, … Required by some FANUC / vintage controllers; useful operator reference even on modern ones. Empty / 0 disables numbering."
-    >
-      Line numbering start
+    <label title={t('machine.line_num.title')}>
+      {t('machine.line_num')}
       <span class="field">
         <input
           type="number"
           min="0"
           step="10"
-          placeholder="off"
+          placeholder={t('machine.line_num.placeholder')}
           value={draft.lineNumberStart ?? ''}
           oninput={(e) => {
             const raw = (e.target as HTMLInputElement).value;
@@ -681,17 +633,12 @@
       </span>
     </label>
 
-    <div class="section-title">Post-processor profile</div>
+    <div class="section-title">{t('machine.section.post_profile')}</div>
     {#if draft.mode === 'drag'}
-      <p class="hpgl-note">
-        Drag mode emits HPGL plotter commands, not G-code. The post-processor profile (templates,
-        axes, etc.) is ignored — HPGL has no analogue for these tokens.
-      </p>
+      <p class="hpgl-note">{t('machine.hpgl_note')}</p>
     {/if}
-    <label
-      title="Pick a built-in profile or write your own templates below. Built-in profiles fill the templates with sensible defaults for that controller; you can still edit them. 'None' uses ivac's hard-coded defaults."
-    >
-      Profile preset
+    <label title={t('machine.profile_preset.title')}>
+      {t('machine.profile_preset')}
       <span class="field">
         <select
           value={profilePreset(draft.postProfile)}
@@ -727,11 +674,11 @@
             }
           }}
         >
-          <option value="none">None (built-in defaults)</option>
-          <option value="linuxcnc">LinuxCNC default</option>
-          <option value="grbl">GRBL default</option>
-          <option value="mach3">Mach3 metric</option>
-          <option value="custom">Custom</option>
+          <option value="none">{t('machine.profile_preset.none')}</option>
+          <option value="linuxcnc">{t('machine.profile_preset.linuxcnc')}</option>
+          <option value="grbl">{t('machine.profile_preset.grbl')}</option>
+          <option value="mach3">{t('machine.profile_preset.mach3')}</option>
+          <option value="custom">{t('machine.profile_preset.custom')}</option>
         </select>
       </span>
     </label>
@@ -739,45 +686,41 @@
       <div class="pp-summary">
         <span class="pp-summary-tweaks">
           {#if profileTweakSummary(draft.postProfile)}
-            Overrides: <em>{profileTweakSummary(draft.postProfile)}</em>
+            {t('machine.pp.overrides')} <em>{profileTweakSummary(draft.postProfile)}</em>
           {:else}
-            No overrides yet — preset defaults.
+            {t('machine.pp.no_overrides')}
           {/if}
         </span>
         <button type="button" class="pp-edit-btn" onclick={() => (editorOpen = true)}
-          >Edit templates / axes…</button
+          >{t('machine.pp.edit_btn')}</button
         >
       </div>
     {/if}
 
-    <div class="section-title">Kinematics</div>
-    <label
-      title="G0 rapid feed rate. Used by the simulator for time estimates; most controllers ignore the F-word on G0 and use their own internal max."
-    >
-      Rapid speed
+    <div class="section-title">{t('machine.section.kinematics')}</div>
+    <label title={t('machine.rapid.title')}>
+      {t('machine.rapid')}
       <span class="field"
         ><input type="number" min="0" step="100" bind:value={draft.rapidSpeed} /><span class="unit"
           >mm/min</span
         ></span
       >
     </label>
-    <label
-      title="Wall-clock seconds spent on an M6 tool change. Used by the simulator for total runtime estimates."
-    >
-      Tool-change time
+    <label title={t('machine.toolchange_time.title')}>
+      {t('machine.toolchange_time')}
       <span class="field"
         ><input type="number" min="0" step="0.5" bind:value={draft.toolchangeS} /><span class="unit"
           >s</span
         ></span
       >
     </label>
-    <div class="triplet-label">Acceleration X / Y / Z <span class="unit">mm/s²</span></div>
+    <div class="triplet-label">{t('machine.accel_label')} <span class="unit">mm/s²</span></div>
     <div class="triplet">
       <input
         type="number"
         min="0"
         step="10"
-        aria-label="Acceleration X (mm/s²)"
+        aria-label={t('machine.accel.x.aria')}
         value={draft.accel?.x ?? 250}
         oninput={(e) => {
           const v = (e.target as HTMLInputElement).valueAsNumber;
@@ -791,7 +734,7 @@
         type="number"
         min="0"
         step="10"
-        aria-label="Acceleration Y (mm/s²)"
+        aria-label={t('machine.accel.y.aria')}
         value={draft.accel?.y ?? 250}
         oninput={(e) => {
           const v = (e.target as HTMLInputElement).valueAsNumber;
@@ -805,7 +748,7 @@
         type="number"
         min="0"
         step="10"
-        aria-label="Acceleration Z (mm/s²)"
+        aria-label={t('machine.accel.z.aria')}
         value={draft.accel?.z ?? 250}
         oninput={(e) => {
           const v = (e.target as HTMLInputElement).valueAsNumber;
@@ -816,45 +759,40 @@
         }}
       />
     </div>
-    <label
-      class="check"
-      title="Use S-curve (jerk-limited) acceleration in the simulator. Better matches modern controllers (LinuxCNC trajectory planner, MachineKit). Off = simple trapezoidal velocity profile."
-    >
+    <label class="check" title={t('machine.jerk_enable.title')}>
       <input type="checkbox" bind:checked={composite.jerkEnabled} />
-      Enable jerk limits (S-curve, Phase 2)
+      {t('machine.jerk_enable')}
     </label>
     {#if composite.jerkEnabled}
-      <div class="triplet-label">Jerk X / Y / Z <span class="unit">mm/s³</span></div>
+      <div class="triplet-label">{t('machine.jerk_label')} <span class="unit">mm/s³</span></div>
       <div class="triplet">
         <input
           type="number"
           min="0"
           step="10"
-          aria-label="Jerk X (mm/s³)"
+          aria-label={t('machine.jerk.x.aria')}
           bind:value={jerkDraft.x}
         />
         <input
           type="number"
           min="0"
           step="10"
-          aria-label="Jerk Y (mm/s³)"
+          aria-label={t('machine.jerk.y.aria')}
           bind:value={jerkDraft.y}
         />
         <input
           type="number"
           min="0"
           step="10"
-          aria-label="Jerk Z (mm/s³)"
+          aria-label={t('machine.jerk.z.aria')}
           bind:value={jerkDraft.z}
         />
       </div>
     {/if}
 
-    <div class="section-title">Spindle clamps &amp; warmup</div>
-    <label
-      title="Lower spindle-RPM clamp (M3 S<rpm>). Tool / op RPMs below this clamp UP to the min and emit a 'spindle_speed_clamped_below_min' warning. Empty = no floor (default)."
-    >
-      Spindle RPM min
+    <div class="section-title">{t('machine.section.spindle')}</div>
+    <label title={t('machine.spindle_min.title')}>
+      {t('machine.spindle_min')}
       <span class="field"
         ><input
           type="number"
@@ -874,10 +812,8 @@
         /><span class="unit">RPM</span></span
       >
     </label>
-    <label
-      title="Upper spindle-RPM clamp. Tool / op RPMs above this clamp DOWN to the max and emit a 'spindle_speed_clamped_above_max' warning. Empty = no ceiling (default)."
-    >
-      Spindle RPM max
+    <label title={t('machine.spindle_max.title')}>
+      {t('machine.spindle_max')}
       <span class="field"
         ><input
           type="number"
@@ -897,10 +833,8 @@
         /><span class="unit">RPM</span></span
       >
     </label>
-    <label
-      title="Upper feed clamp. Cutting / plunge feeds above this clamp DOWN to the max and emit a 'feed_clamped_above_max' warning, so an out-of-range feed can't reach the controller. Empty = no ceiling (default)."
-    >
-      Max feed
+    <label title={t('machine.max_feed.title')}>
+      {t('machine.max_feed')}
       <span class="field"
         ><input
           type="number"
@@ -920,10 +854,8 @@
         /><span class="unit">mm/min</span></span
       >
     </label>
-    <label
-      title="Spindle-start dwell inserted into the M6 tool-change envelope after M3 S<rpm>. Lets the spindle reach commanded RPM before the next cut. Stacks with the per-tool ToolEntry.pause. Empty = 0.5 s default."
-    >
-      Spindle start dwell
+    <label title={t('machine.spindle_start_dwell.title')}>
+      {t('machine.spindle_start_dwell')}
       <span class="field"
         ><input
           type="number"
@@ -943,10 +875,8 @@
         /><span class="unit">s</span></span
       >
     </label>
-    <label
-      title="Spindle-stop dwell inserted between M5 and the actual T<n> M6. Gives the spindle time to spin down before the chuck is touched. Most VFD spindles want 0.5–1 s; high-inertia big-iron may want 1–2 s. Set to 0 to skip. Empty = 0.5 s default."
-    >
-      Spindle stop dwell
+    <label title={t('machine.spindle_stop_dwell.title')}>
+      {t('machine.spindle_stop_dwell')}
       <span class="field"
         ><input
           type="number"
@@ -966,26 +896,20 @@
         /><span class="unit">s</span></span
       >
     </label>
-    <label
-      class="check"
-      title="When on, the program_end footer emits G53 G0 X0 Y0 — retract to machine home after the safe-Z lift, before spindle-off and M30. When off, falls back to G0 X0 Y0 in the current WCS (work zero) and the optional Park XY below applies."
-    >
+    <label class="check" title={t('machine.park_home.title')}>
       <input type="checkbox" bind:checked={draft.parkAtHome} />
-      Park at machine home (G53)
+      {t('machine.park_home')}
     </label>
     {#if !draft.parkAtHome}
       <div class="triplet-label">
-        Park XY <span class="unit">mm, WCS</span>
-        <small class="park-help"
-          >Optional — empty = retract to work zero (0, 0). Set both fields to route the head to a
-          specific load / tool-station point after the safe-Z lift.</small
-        >
+        {t('machine.park_xy_label')} <span class="unit">mm, WCS</span>
+        <small class="park-help">{t('machine.park_xy.help')}</small>
       </div>
       <div class="park-pair">
         <input
           type="number"
           step="1"
-          aria-label="Park X (mm, WCS)"
+          aria-label={t('machine.park.x.aria')}
           placeholder="X"
           value={draft.parkXy?.[0] ?? ''}
           oninput={(e) => {
@@ -1005,7 +929,7 @@
         <input
           type="number"
           step="1"
-          aria-label="Park Y (mm, WCS)"
+          aria-label={t('machine.park.y.aria')}
           placeholder="Y"
           value={draft.parkXy?.[1] ?? ''}
           oninput={(e) => {
@@ -1026,9 +950,11 @@
 
   <footer>
     {#if dd.confirmingDiscard}
-      <span class="discard-prompt">Discard unsaved changes?</span>
-      <button class="btn-secondary" onclick={() => dd.cancelDiscard()}>Keep editing</button>
-      <button class="btn-danger" onclick={close}>Discard</button>
+      <span class="discard-prompt">{t('common.discard_unsaved')}</span>
+      <button class="btn-secondary" onclick={() => dd.cancelDiscard()}
+        >{t('common.keep_editing')}</button
+      >
+      <button class="btn-danger" onclick={close}>{t('common.discard')}</button>
     {:else}
       <button
         class="btn-secondary"
@@ -1039,9 +965,9 @@
           commit();
           await fileOps.saveMachine();
         }}
-        title="Save this machine config to a .ivac-machine.json file."
+        title={t('machine.save.title')}
       >
-        Save…
+        {t('common.save_ellipsis')}
       </button>
       <button
         class="btn-secondary"
@@ -1059,17 +985,21 @@
             jerk: m.jerk ? { ...m.jerk } : { x: 0, y: 0, z: 0 },
           };
         }}
-        title="Replace the active machine config with the contents of a .ivac-machine.json file."
+        title={t('machine.load.title')}
       >
-        Load…
+        {t('common.load_ellipsis')}
       </button>
       <span class="sep"></span>
       {#if embedded}
-        <button class="btn-secondary" onclick={revert} disabled={!dd.isDirty}>Revert</button>
-        <button class="btn-primary" onclick={commit} disabled={!dd.isDirty}>Apply</button>
+        <button class="btn-secondary" onclick={revert} disabled={!dd.isDirty}
+          >{t('common.revert')}</button
+        >
+        <button class="btn-primary" onclick={commit} disabled={!dd.isDirty}
+          >{t('common.apply')}</button
+        >
       {:else}
-        <button class="btn-secondary" onclick={close}>Cancel</button>
-        <button class="btn-primary" onclick={commit}>OK</button>
+        <button class="btn-secondary" onclick={close}>{t('common.cancel')}</button>
+        <button class="btn-primary" onclick={commit}>{t('common.ok')}</button>
       {/if}
     {/if}
   </footer>
@@ -1175,7 +1105,9 @@
     font-size: 0.78rem;
     line-height: 1.4;
   }
-  .storage-note strong {
+  /* `<strong>` arrives via {@html} (translated string), so it needs
+     :global to escape Svelte's scoped-CSS hashing. */
+  .storage-note :global(strong) {
     color: var(--text);
   }
   .grid {

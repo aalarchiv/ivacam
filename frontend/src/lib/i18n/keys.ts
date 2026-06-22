@@ -4,13 +4,395 @@
 
 /** Every translatable message key, derived from the English base catalog. */
 export type MsgKey =
+  | "common.apply"
+  | "common.cancel"
+  | "common.close"
+  | "common.discard"
+  | "common.discard_unsaved"
+  | "common.done"
+  | "common.keep_editing"
+  | "common.load_ellipsis"
+  | "common.ok"
+  | "common.revert"
+  | "common.save_ellipsis"
+  | "machine.accel.x.aria"
+  | "machine.accel.y.aria"
+  | "machine.accel.z.aria"
+  | "machine.accel_label"
+  | "machine.arc_tol"
+  | "machine.arc_tol.title"
+  | "machine.cap.drag"
+  | "machine.cap.laser"
+  | "machine.cap.mill"
+  | "machine.cap.plasma"
+  | "machine.capabilities"
+  | "machine.capabilities.legend_title"
+  | "machine.capabilities.primary_title"
+  | "machine.decimal_sep"
+  | "machine.decimal_sep.comma"
+  | "machine.decimal_sep.period"
+  | "machine.decimal_sep.title"
+  | "machine.dialect"
+  | "machine.dialect.title"
+  | "machine.emit_arcs"
+  | "machine.emit_arcs.title"
+  | "machine.emit_comments"
+  | "machine.emit_comments.title"
+  | "machine.fast_move_z"
+  | "machine.fast_move_z.title"
+  | "machine.hpgl_note"
+  | "machine.jerk.x.aria"
+  | "machine.jerk.y.aria"
+  | "machine.jerk.z.aria"
+  | "machine.jerk_enable"
+  | "machine.jerk_enable.title"
+  | "machine.jerk_label"
+  | "machine.laser_dynamic"
+  | "machine.laser_dynamic.title"
+  | "machine.line_num"
+  | "machine.line_num.placeholder"
+  | "machine.line_num.title"
+  | "machine.load.title"
+  | "machine.max_feed"
+  | "machine.max_feed.title"
+  | "machine.mode"
+  | "machine.mode.drag"
+  | "machine.mode.laser"
+  | "machine.mode.mill"
+  | "machine.mode.plasma"
+  | "machine.mode.title"
+  | "machine.name"
+  | "machine.name.input_title"
+  | "machine.name.label_title"
+  | "machine.optional_stop"
+  | "machine.optional_stop.title"
+  | "machine.park.x.aria"
+  | "machine.park.y.aria"
+  | "machine.park_home"
+  | "machine.park_home.title"
+  | "machine.park_xy.help"
+  | "machine.park_xy_label"
+  | "machine.plot_mode"
+  | "machine.plot_mode.title"
+  | "machine.pp.edit_btn"
+  | "machine.pp.no_overrides"
+  | "machine.pp.overrides"
+  | "machine.pp.tweak.axes"
+  | "machine.pp.tweak.coolant"
+  | "machine.pp.tweak.file"
+  | "machine.pp.tweak.footer"
+  | "machine.pp.tweak.header"
+  | "machine.pp.tweak.mist"
+  | "machine.pp.tweak.toolchange"
+  | "machine.profile.delete"
+  | "machine.profile.delete.title"
+  | "machine.profile.delete_confirm"
+  | "machine.profile.dirty_switch.title"
+  | "machine.profile.duplicate"
+  | "machine.profile.duplicate.title"
+  | "machine.profile.label"
+  | "machine.profile.missing_note"
+  | "machine.profile.missing_note.title"
+  | "machine.profile.none_option"
+  | "machine.profile.pick.title"
+  | "machine.profile.referenced_missing_option"
+  | "machine.profile.save_as"
+  | "machine.profile.save_as.title"
+  | "machine.profile_preset"
+  | "machine.profile_preset.custom"
+  | "machine.profile_preset.grbl"
+  | "machine.profile_preset.linuxcnc"
+  | "machine.profile_preset.mach3"
+  | "machine.profile_preset.none"
+  | "machine.profile_preset.title"
+  | "machine.rapid"
+  | "machine.rapid.title"
+  | "machine.save.title"
+  | "machine.section.gcode_formatting"
+  | "machine.section.kinematics"
+  | "machine.section.post_profile"
+  | "machine.section.spindle"
+  | "machine.spindle_max"
+  | "machine.spindle_max.title"
+  | "machine.spindle_min"
+  | "machine.spindle_min.title"
+  | "machine.spindle_start_dwell"
+  | "machine.spindle_start_dwell.title"
+  | "machine.spindle_stop_dwell"
+  | "machine.spindle_stop_dwell.title"
+  | "machine.storage_note"
+  | "machine.title"
+  | "machine.toolchange"
+  | "machine.toolchange.atc"
+  | "machine.toolchange.ignore"
+  | "machine.toolchange.m0_pause"
+  | "machine.toolchange.m6_prompt"
+  | "machine.toolchange.title"
+  | "machine.toolchange_time"
+  | "machine.toolchange_time.title"
+  | "machine.unit"
+  | "machine.unit.inch"
+  | "machine.unit.mm"
+  | "machine.unit.title"
+  | "machine.work_area"
+  | "machine.work_area.legend_title"
   | "settings.appearance.language"
   | "settings.appearance.language.auto"
-  | "settings.appearance.language.help";
+  | "settings.appearance.language.help"
+  | "settings.appearance.theme"
+  | "settings.appearance.theme.auto"
+  | "settings.appearance.theme.dark"
+  | "settings.appearance.theme.light"
+  | "settings.group.appearance"
+  | "settings.group.performance"
+  | "settings.group.preview"
+  | "settings.group.safety"
+  | "settings.group.snap"
+  | "settings.group.sources"
+  | "settings.group.view"
+  | "settings.group_nav.aria"
+  | "settings.performance.caps_hint"
+  | "settings.performance.exact_rewind"
+  | "settings.performance.exact_rewind.hint"
+  | "settings.performance.max_render_triangles"
+  | "settings.performance.max_sim_cells"
+  | "settings.performance.solid_default"
+  | "settings.preview.arrow_density"
+  | "settings.preview.arrow_off"
+  | "settings.preview.cell_resolution"
+  | "settings.preview.cell_resolution.auto"
+  | "settings.preview.cell_resolution.manual"
+  | "settings.preview.cell_size"
+  | "settings.preview.cell_size.title"
+  | "settings.preview.edge_color"
+  | "settings.preview.edge_opacity"
+  | "settings.preview.intro"
+  | "settings.preview.line_width"
+  | "settings.preview.solid_color"
+  | "settings.preview.solid_opacity"
+  | "settings.safety.auto_regenerate"
+  | "settings.safety.auto_regenerate.title"
+  | "settings.safety.auto_run_sim"
+  | "settings.safety.block_critical"
+  | "settings.safety.block_work_area"
+  | "settings.safety.block_work_area.title"
+  | "settings.safety.hint"
+  | "settings.snap.center"
+  | "settings.snap.center.help"
+  | "settings.snap.endpoint"
+  | "settings.snap.endpoint.help"
+  | "settings.snap.grid"
+  | "settings.snap.grid.help"
+  | "settings.snap.grid_step"
+  | "settings.snap.grid_step.title"
+  | "settings.snap.hint"
+  | "settings.snap.intersection"
+  | "settings.snap.intersection.help"
+  | "settings.snap.midpoint"
+  | "settings.snap.midpoint.help"
+  | "settings.sources.auto_reload"
+  | "settings.sources.hint"
+  | "settings.title"
+  | "settings.view.preview_style"
+  | "settings.view.preview_style.both"
+  | "settings.view.preview_style.solid"
+  | "settings.view.preview_style.wireframe"
+  | "settings.view.show_stock_box";
 
 /** All keys as an array (handy for coverage tests / iteration). */
 export const MSG_KEYS: readonly MsgKey[] = [
+  "common.apply",
+  "common.cancel",
+  "common.close",
+  "common.discard",
+  "common.discard_unsaved",
+  "common.done",
+  "common.keep_editing",
+  "common.load_ellipsis",
+  "common.ok",
+  "common.revert",
+  "common.save_ellipsis",
+  "machine.accel.x.aria",
+  "machine.accel.y.aria",
+  "machine.accel.z.aria",
+  "machine.accel_label",
+  "machine.arc_tol",
+  "machine.arc_tol.title",
+  "machine.cap.drag",
+  "machine.cap.laser",
+  "machine.cap.mill",
+  "machine.cap.plasma",
+  "machine.capabilities",
+  "machine.capabilities.legend_title",
+  "machine.capabilities.primary_title",
+  "machine.decimal_sep",
+  "machine.decimal_sep.comma",
+  "machine.decimal_sep.period",
+  "machine.decimal_sep.title",
+  "machine.dialect",
+  "machine.dialect.title",
+  "machine.emit_arcs",
+  "machine.emit_arcs.title",
+  "machine.emit_comments",
+  "machine.emit_comments.title",
+  "machine.fast_move_z",
+  "machine.fast_move_z.title",
+  "machine.hpgl_note",
+  "machine.jerk.x.aria",
+  "machine.jerk.y.aria",
+  "machine.jerk.z.aria",
+  "machine.jerk_enable",
+  "machine.jerk_enable.title",
+  "machine.jerk_label",
+  "machine.laser_dynamic",
+  "machine.laser_dynamic.title",
+  "machine.line_num",
+  "machine.line_num.placeholder",
+  "machine.line_num.title",
+  "machine.load.title",
+  "machine.max_feed",
+  "machine.max_feed.title",
+  "machine.mode",
+  "machine.mode.drag",
+  "machine.mode.laser",
+  "machine.mode.mill",
+  "machine.mode.plasma",
+  "machine.mode.title",
+  "machine.name",
+  "machine.name.input_title",
+  "machine.name.label_title",
+  "machine.optional_stop",
+  "machine.optional_stop.title",
+  "machine.park.x.aria",
+  "machine.park.y.aria",
+  "machine.park_home",
+  "machine.park_home.title",
+  "machine.park_xy.help",
+  "machine.park_xy_label",
+  "machine.plot_mode",
+  "machine.plot_mode.title",
+  "machine.pp.edit_btn",
+  "machine.pp.no_overrides",
+  "machine.pp.overrides",
+  "machine.pp.tweak.axes",
+  "machine.pp.tweak.coolant",
+  "machine.pp.tweak.file",
+  "machine.pp.tweak.footer",
+  "machine.pp.tweak.header",
+  "machine.pp.tweak.mist",
+  "machine.pp.tweak.toolchange",
+  "machine.profile.delete",
+  "machine.profile.delete.title",
+  "machine.profile.delete_confirm",
+  "machine.profile.dirty_switch.title",
+  "machine.profile.duplicate",
+  "machine.profile.duplicate.title",
+  "machine.profile.label",
+  "machine.profile.missing_note",
+  "machine.profile.missing_note.title",
+  "machine.profile.none_option",
+  "machine.profile.pick.title",
+  "machine.profile.referenced_missing_option",
+  "machine.profile.save_as",
+  "machine.profile.save_as.title",
+  "machine.profile_preset",
+  "machine.profile_preset.custom",
+  "machine.profile_preset.grbl",
+  "machine.profile_preset.linuxcnc",
+  "machine.profile_preset.mach3",
+  "machine.profile_preset.none",
+  "machine.profile_preset.title",
+  "machine.rapid",
+  "machine.rapid.title",
+  "machine.save.title",
+  "machine.section.gcode_formatting",
+  "machine.section.kinematics",
+  "machine.section.post_profile",
+  "machine.section.spindle",
+  "machine.spindle_max",
+  "machine.spindle_max.title",
+  "machine.spindle_min",
+  "machine.spindle_min.title",
+  "machine.spindle_start_dwell",
+  "machine.spindle_start_dwell.title",
+  "machine.spindle_stop_dwell",
+  "machine.spindle_stop_dwell.title",
+  "machine.storage_note",
+  "machine.title",
+  "machine.toolchange",
+  "machine.toolchange.atc",
+  "machine.toolchange.ignore",
+  "machine.toolchange.m0_pause",
+  "machine.toolchange.m6_prompt",
+  "machine.toolchange.title",
+  "machine.toolchange_time",
+  "machine.toolchange_time.title",
+  "machine.unit",
+  "machine.unit.inch",
+  "machine.unit.mm",
+  "machine.unit.title",
+  "machine.work_area",
+  "machine.work_area.legend_title",
   "settings.appearance.language",
   "settings.appearance.language.auto",
   "settings.appearance.language.help",
+  "settings.appearance.theme",
+  "settings.appearance.theme.auto",
+  "settings.appearance.theme.dark",
+  "settings.appearance.theme.light",
+  "settings.group.appearance",
+  "settings.group.performance",
+  "settings.group.preview",
+  "settings.group.safety",
+  "settings.group.snap",
+  "settings.group.sources",
+  "settings.group.view",
+  "settings.group_nav.aria",
+  "settings.performance.caps_hint",
+  "settings.performance.exact_rewind",
+  "settings.performance.exact_rewind.hint",
+  "settings.performance.max_render_triangles",
+  "settings.performance.max_sim_cells",
+  "settings.performance.solid_default",
+  "settings.preview.arrow_density",
+  "settings.preview.arrow_off",
+  "settings.preview.cell_resolution",
+  "settings.preview.cell_resolution.auto",
+  "settings.preview.cell_resolution.manual",
+  "settings.preview.cell_size",
+  "settings.preview.cell_size.title",
+  "settings.preview.edge_color",
+  "settings.preview.edge_opacity",
+  "settings.preview.intro",
+  "settings.preview.line_width",
+  "settings.preview.solid_color",
+  "settings.preview.solid_opacity",
+  "settings.safety.auto_regenerate",
+  "settings.safety.auto_regenerate.title",
+  "settings.safety.auto_run_sim",
+  "settings.safety.block_critical",
+  "settings.safety.block_work_area",
+  "settings.safety.block_work_area.title",
+  "settings.safety.hint",
+  "settings.snap.center",
+  "settings.snap.center.help",
+  "settings.snap.endpoint",
+  "settings.snap.endpoint.help",
+  "settings.snap.grid",
+  "settings.snap.grid.help",
+  "settings.snap.grid_step",
+  "settings.snap.grid_step.title",
+  "settings.snap.hint",
+  "settings.snap.intersection",
+  "settings.snap.intersection.help",
+  "settings.snap.midpoint",
+  "settings.snap.midpoint.help",
+  "settings.sources.auto_reload",
+  "settings.sources.hint",
+  "settings.title",
+  "settings.view.preview_style",
+  "settings.view.preview_style.both",
+  "settings.view.preview_style.solid",
+  "settings.view.preview_style.wireframe",
+  "settings.view.show_stock_box",
 ];

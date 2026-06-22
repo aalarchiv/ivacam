@@ -9,7 +9,7 @@
   /// close button just dismisses the dialog.
   import { project, type AppSettings } from '../state/project.svelte';
   import { layout } from '../state/layout.svelte';
-  import { t } from '../i18n';
+  import { t, type MsgKey } from '../i18n';
   import Modal from './Modal.svelte';
 
   interface Props {
@@ -26,14 +26,14 @@
   /// content shows on the right — the full stacked form overwhelms.
   /// Modal mode (unused since the tab landed) keeps the stacked list.
   const GROUPS = [
-    { id: 'view', label: 'View' },
-    { id: 'appearance', label: 'Appearance' },
-    { id: 'preview', label: 'Cutting preview' },
-    { id: 'performance', label: 'Performance' },
-    { id: 'safety', label: 'Sim safety' },
-    { id: 'sources', label: 'Source files' },
-    { id: 'snap', label: 'Snap to' },
-  ] as const;
+    { id: 'view', labelKey: 'settings.group.view' },
+    { id: 'appearance', labelKey: 'settings.group.appearance' },
+    { id: 'preview', labelKey: 'settings.group.preview' },
+    { id: 'performance', labelKey: 'settings.group.performance' },
+    { id: 'safety', labelKey: 'settings.group.safety' },
+    { id: 'sources', labelKey: 'settings.group.sources' },
+    { id: 'snap', labelKey: 'settings.group.snap' },
+  ] as const satisfies ReadonlyArray<{ id: string; labelKey: MsgKey }>;
   type GroupId = (typeof GROUPS)[number]['id'];
   let activeGroup = $state<GroupId>('appearance');
   /// On a phone the side-nav + single-group layout squishes; show every
@@ -46,6 +46,24 @@
   function update<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     project.updateSettings({ [key]: value } as Partial<AppSettings>);
   }
+
+  /// Object-snap toggles. `key` indexes AppSettings.osnap; label/help go
+  /// through t() in the template so they translate live.
+  const SNAP_OPTIONS = [
+    { key: 'endpoint', labelKey: 'settings.snap.endpoint', helpKey: 'settings.snap.endpoint.help' },
+    { key: 'midpoint', labelKey: 'settings.snap.midpoint', helpKey: 'settings.snap.midpoint.help' },
+    {
+      key: 'intersection',
+      labelKey: 'settings.snap.intersection',
+      helpKey: 'settings.snap.intersection.help',
+    },
+    { key: 'center', labelKey: 'settings.snap.center', helpKey: 'settings.snap.center.help' },
+    { key: 'grid', labelKey: 'settings.snap.grid', helpKey: 'settings.snap.grid.help' },
+  ] as const satisfies ReadonlyArray<{
+    key: 'endpoint' | 'midpoint' | 'intersection' | 'center' | 'grid';
+    labelKey: MsgKey;
+    helpKey: MsgKey;
+  }>;
 
   // Coerce a number input: keep current value if the user typed garbage.
   function toNumber(raw: string, fallback: number, min?: number, max?: number): number {
@@ -83,17 +101,17 @@
 {#snippet shell()}
   {#if !embedded}
     <header>
-      <h2 id="settings-title">Settings</h2>
-      <button class="dlg-close" onclick={onClose} aria-label="Close">×</button>
+      <h2 id="settings-title">{t('settings.title')}</h2>
+      <button class="dlg-close" onclick={onClose} aria-label={t('common.close')}>×</button>
     </header>
   {/if}
 
   <div class="body">
     <section class:group-hidden={groupHidden('view')}>
-      <h3>View</h3>
+      <h3>{t('settings.group.view')}</h3>
       <div class="grid">
         <label
-          >3D preview style
+          >{t('settings.view.preview_style')}
           <select
             value={project.data.settings.previewMode}
             onchange={(e) =>
@@ -102,9 +120,9 @@
                 (e.currentTarget as HTMLSelectElement).value as AppSettings['previewMode'],
               )}
           >
-            <option value="both">Both</option>
-            <option value="wireframe">Wireframe</option>
-            <option value="solid">Solid</option>
+            <option value="both">{t('settings.view.preview_style.both')}</option>
+            <option value="wireframe">{t('settings.view.preview_style.wireframe')}</option>
+            <option value="solid">{t('settings.view.preview_style.solid')}</option>
           </select>
         </label>
         <label class="check">
@@ -113,20 +131,20 @@
             checked={project.data.settings.showStockBox}
             onchange={(e) => update('showStockBox', (e.currentTarget as HTMLInputElement).checked)}
           />
-          <span>Show stock outline in 3D</span>
+          <span>{t('settings.view.show_stock_box')}</span>
         </label>
       </div>
     </section>
 
     <section class:group-hidden={groupHidden('appearance')}>
-      <h3>Appearance</h3>
+      <h3>{t('settings.group.appearance')}</h3>
       <div class="grid">
         <label
-          >Theme
+          >{t('settings.appearance.theme')}
           <div
             class="seg"
             role="radiogroup"
-            aria-label="Theme"
+            aria-label={t('settings.appearance.theme')}
             tabindex="-1"
             onkeydown={onThemeKey}
           >
@@ -136,7 +154,7 @@
               tabindex={project.data.settings.theme === 'auto' ? 0 : -1}
               class:active={project.data.settings.theme === 'auto'}
               onclick={() => update('theme', 'auto')}
-              type="button">Auto</button
+              type="button">{t('settings.appearance.theme.auto')}</button
             >
             <button
               role="radio"
@@ -144,7 +162,7 @@
               tabindex={project.data.settings.theme === 'light' ? 0 : -1}
               class:active={project.data.settings.theme === 'light'}
               onclick={() => update('theme', 'light')}
-              type="button">Light</button
+              type="button">{t('settings.appearance.theme.light')}</button
             >
             <button
               role="radio"
@@ -152,7 +170,7 @@
               tabindex={project.data.settings.theme === 'dark' ? 0 : -1}
               class:active={project.data.settings.theme === 'dark'}
               onclick={() => update('theme', 'dark')}
-              type="button">Dark</button
+              type="button">{t('settings.appearance.theme.dark')}</button
             >
           </div>
         </label>
@@ -180,15 +198,11 @@
     </section>
 
     <section class:group-hidden={groupHidden('preview')}>
-      <h3>Cutting preview</h3>
-      <p class="hint">
-        Colors for how the 3D viewport renders the simulated stock once cutting preview lands.
-        Stored now so the eventual renderer picks them up automatically. The 3D preview style
-        (wireframe / solid / both) lives under View above.
-      </p>
+      <h3>{t('settings.group.preview')}</h3>
+      <p class="hint">{t('settings.preview.intro')}</p>
       <div class="grid">
         <label
-          >Solid color
+          >{t('settings.preview.solid_color')}
           <div class="color">
             <input
               type="color"
@@ -205,7 +219,7 @@
         </label>
 
         <label
-          >Solid opacity
+          >{t('settings.preview.solid_opacity')}
           <div class="slider-row">
             <input
               type="range"
@@ -229,7 +243,7 @@
         </label>
 
         <label
-          >Edge color
+          >{t('settings.preview.edge_color')}
           <div class="color">
             <input
               type="color"
@@ -246,7 +260,7 @@
         </label>
 
         <label
-          >Edge opacity
+          >{t('settings.preview.edge_opacity')}
           <div class="slider-row">
             <input
               type="range"
@@ -270,7 +284,7 @@
         </label>
 
         <label
-          >Preview line width
+          >{t('settings.preview.line_width')}
           <div class="slider-row">
             <input
               type="range"
@@ -294,7 +308,7 @@
         </label>
 
         <label
-          >Tool-move arrow density
+          >{t('settings.preview.arrow_density')}
           <div class="slider-row">
             <input
               type="range"
@@ -315,14 +329,14 @@
             />
             <span class="num"
               >{project.data.settings.toolMoveArrowDensity === 0
-                ? 'off'
+                ? t('settings.preview.arrow_off')
                 : `${project.data.settings.toolMoveArrowDensity.toFixed(2)}×`}</span
             >
           </div>
         </label>
 
         <label
-          >Cell resolution
+          >{t('settings.preview.cell_resolution')}
           <select
             value={project.data.settings.cellResolutionMode}
             onchange={(e) =>
@@ -331,20 +345,20 @@
                 (e.currentTarget as HTMLSelectElement).value as AppSettings['cellResolutionMode'],
               )}
           >
-            <option value="auto">Auto (tool diameter / 15)</option>
-            <option value="manual">Manual</option>
+            <option value="auto">{t('settings.preview.cell_resolution.auto')}</option>
+            <option value="manual">{t('settings.preview.cell_resolution.manual')}</option>
           </select>
         </label>
 
         {#if project.data.settings.cellResolutionMode === 'manual'}
           <label
-            >Cell size (mm)
+            >{t('settings.preview.cell_size')}
             <input
               type="number"
               min="0.01"
               max="5"
               step="0.05"
-              title="Voxel resolution for the sim heightmap. Below 0.05 mm explodes RAM; above ~2 mm loses tab + sliver detail. Cap is 5 mm to keep the sim sane."
+              title={t('settings.preview.cell_size.title')}
               value={project.data.settings.cellResolutionMm}
               onchange={(e) =>
                 update(
@@ -363,7 +377,7 @@
     </section>
 
     <section class:group-hidden={groupHidden('performance')}>
-      <h3>Performance</h3>
+      <h3>{t('settings.group.performance')}</h3>
       <div class="grid">
         <label class="check">
           <input
@@ -372,11 +386,11 @@
             onchange={(e) =>
               update('solidPreviewByDefault', (e.currentTarget as HTMLInputElement).checked)}
           />
-          <span>Enable solid preview by default</span>
+          <span>{t('settings.performance.solid_default')}</span>
         </label>
 
         <label
-          >Max simulation cells
+          >{t('settings.performance.max_sim_cells')}
           <input
             type="number"
             min="100000"
@@ -397,7 +411,7 @@
         </label>
 
         <label
-          >Max render triangles
+          >{t('settings.performance.max_render_triangles')}
           <input
             type="number"
             min="100000"
@@ -417,12 +431,8 @@
           />
         </label>
       </div>
-      <p class="hint">
-        <b>Max simulation cells</b> caps the WASM heightmap grid (and so the simulation accuracy).
-        <b>Max render triangles</b> caps the 3D-sim preview's mesh size: the renderer automatically drops
-        to a coarser LOD level when zoomed out or when simulation cells exceed the budget. Simulation
-        accuracy is preserved; only the rendered mesh degrades. Stepped voxel mesh ≈ 6 triangles per cell.
-      </p>
+      <!-- eslint-disable-next-line svelte/no-at-html-tags -- static, translator-authored markup -->
+      <p class="hint">{@html t('settings.performance.caps_hint')}</p>
 
       <!-- Exact 3D rewind toggle. Default ON
              because the post-Generate `playhead = 1.0` hop means
@@ -438,25 +448,14 @@
           checked={project.data.settings.exactSimRewind}
           onchange={(e) => update('exactSimRewind', (e.currentTarget as HTMLInputElement).checked)}
         />
-        <span>Exact 3D rewind on backstep</span>
+        <span>{t('settings.performance.exact_rewind')}</span>
       </label>
-      <p class="hint">
-        The 3D heightfield is a forward-only carve simulator: cells can only get deeper. <b
-          >When on</b
-        >
-        (default), every backstep resets the sim and replays the carve from t = 0 to the new playhead
-        so the heightfield exactly tracks the playhead's position in time. Replay cost scales with the
-        number of segments replayed; on programs with tens of thousands of segments scrubbing can stutter.
-        <b>When off</b>, backstep is a no-op for the sim — the heightfield retains the deepest cut
-        at each XY from the last time the playhead reached that segment. Useful for fast scrubbing
-        on huge programs when you don't need time-accurate rewind, BUT note: after every Generate
-        the playhead jumps to 1.0 so warnings surface, which means the off setting lands the
-        heightfield at end-of-program until you re-scrub forward.
-      </p>
+      <!-- eslint-disable-next-line svelte/no-at-html-tags -- static, translator-authored markup -->
+      <p class="hint">{@html t('settings.performance.exact_rewind.hint')}</p>
     </section>
 
     <section class:group-hidden={groupHidden('safety')}>
-      <h3>Sim safety</h3>
+      <h3>{t('settings.group.safety')}</h3>
       <div class="grid">
         <label class="check">
           <input
@@ -465,19 +464,16 @@
             onchange={(e) =>
               update('blockOnCriticalSimWarnings', (e.currentTarget as HTMLInputElement).checked)}
           />
-          <span>Block G-code generation on critical sim warnings</span>
+          <span>{t('settings.safety.block_critical')}</span>
         </label>
-        <label
-          class="check"
-          title="When on, exporting/saving G-code is blocked if the last Generate found moves outside the machine work area (a soft-limit fault or gantry crash on the real machine). Off by default because the work-area envelope is often a placeholder — turn it on once you've set your machine's real travel. Generate/preview stay available so you can see and fix the violation."
-        >
+        <label class="check" title={t('settings.safety.block_work_area.title')}>
           <input
             type="checkbox"
             checked={project.data.settings.blockOnWorkAreaViolation}
             onchange={(e) =>
               update('blockOnWorkAreaViolation', (e.currentTarget as HTMLInputElement).checked)}
           />
-          <span>Block G-code export on out-of-work-area moves</span>
+          <span>{t('settings.safety.block_work_area')}</span>
         </label>
         <label class="check">
           <input
@@ -486,30 +482,23 @@
             onchange={(e) =>
               update('autoRunSimOnSave', (e.currentTarget as HTMLInputElement).checked)}
           />
-          <span>Auto-run sim on every project save</span>
+          <span>{t('settings.safety.auto_run_sim')}</span>
         </label>
-        <label
-          class="check"
-          title="Debounces ~1.5 s after the last edit, then runs Generate G-code. Off by default so power users on big projects keep manual control."
-        >
+        <label class="check" title={t('settings.safety.auto_regenerate.title')}>
           <input
             type="checkbox"
             checked={project.data.settings.autoRegenerate}
             onchange={(e) =>
               update('autoRegenerate', (e.currentTarget as HTMLInputElement).checked)}
           />
-          <span>Auto-regenerate G-code after edits</span>
+          <span>{t('settings.safety.auto_regenerate')}</span>
         </label>
       </div>
-      <p class="hint">
-        "Critical" warnings are collisions and rapids cutting through material. With the block
-        enabled, fixing them — or disabling the safety check — is required before downloading
-        G-code.
-      </p>
+      <p class="hint">{t('settings.safety.hint')}</p>
     </section>
 
     <section class:group-hidden={groupHidden('sources')}>
-      <h3>Source files</h3>
+      <h3>{t('settings.group.sources')}</h3>
       <div class="grid">
         <label class="check">
           <input
@@ -518,39 +507,31 @@
             onchange={(e) =>
               update('autoReloadSources', (e.currentTarget as HTMLInputElement).checked)}
           />
-          <span>Auto-reload imported DXF / SVG when changed externally</span>
+          <span>{t('settings.sources.auto_reload')}</span>
         </label>
       </div>
-      <p class="hint">
-        Desktop only. Watches the source file backing the current import and re-runs it when the CAD
-        app saves a new version (one undoable step). Disable to get a "Reload?" toast instead.
-        Network and OneDrive-synced paths can drop events silently — manually re-import if a save
-        doesn't show up within a few seconds.
-      </p>
+      <p class="hint">{t('settings.sources.hint')}</p>
     </section>
 
     <section class:group-hidden={groupHidden('snap')}>
-      <h3>Snap to</h3>
+      <h3>{t('settings.group.snap')}</h3>
       <div class="grid">
-        {#each [{ key: 'endpoint', label: 'Endpoint', help: 'Snap to segment endpoints.' }, { key: 'midpoint', label: 'Midpoint', help: 'Snap to the midpoint of each segment.' }, { key: 'intersection', label: 'Intersection', help: 'Snap to line / arc crossings.' }, { key: 'center', label: 'Center', help: 'Snap to circle / arc centers.' }, { key: 'grid', label: 'Grid', help: 'Snap to integer multiples of the grid step below.' }] as o (o.key)}
-          <label class="check" title={o.help}>
+        {#each SNAP_OPTIONS as o (o.key)}
+          <label class="check" title={t(o.helpKey)}>
             <input
               type="checkbox"
-              checked={!!project.data.settings.osnap?.[
-                o.key as 'endpoint' | 'midpoint' | 'intersection' | 'center' | 'grid'
-              ]}
+              checked={!!project.data.settings.osnap?.[o.key]}
               onchange={(e) =>
                 update('osnap', {
                   ...project.data.settings.osnap,
                   [o.key]: (e.currentTarget as HTMLInputElement).checked,
                 })}
             />
-            <span>{o.label}</span>
+            <span>{t(o.labelKey)}</span>
           </label>
         {/each}
-        <label
-          title="Grid step (mm) when 'Grid' snap is on. Cursor latches to integer multiples of this offset from the project origin."
-          >Grid step
+        <label title={t('settings.snap.grid_step.title')}
+          >{t('settings.snap.grid_step')}
           <input
             type="number"
             min="0.1"
@@ -571,30 +552,26 @@
           />
         </label>
       </div>
-      <p class="hint">
-        Object snap on the 2D canvas. Endpoint / midpoint / intersection / center latch the cursor
-        to existing geometry features; Grid latches to abstract grid spots independent of the
-        drawing.
-      </p>
+      <p class="hint">{t('settings.snap.hint')}</p>
     </section>
   </div>
 
   {#if !embedded}
     <footer>
-      <button class="btn-primary" onclick={onClose} type="button">Done</button>
+      <button class="btn-primary" onclick={onClose} type="button">{t('common.done')}</button>
     </footer>
   {/if}
 {/snippet}
 
 {#if embedded}
   <section class="embedded-shell" class:narrow={layout.isNarrow}>
-    <nav class="group-nav" aria-label="Setting groups">
+    <nav class="group-nav" aria-label={t('settings.group_nav.aria')}>
       {#each GROUPS as g (g.id)}
         <button
           type="button"
           class="group-tab"
           class:active={activeGroup === g.id}
-          onclick={() => (activeGroup = g.id)}>{g.label}</button
+          onclick={() => (activeGroup = g.id)}>{t(g.labelKey)}</button
         >
       {/each}
     </nav>

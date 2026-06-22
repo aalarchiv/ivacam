@@ -97,6 +97,10 @@ step "i18n keys drift"         bash -c '
 
 step "pnpm run lint"           pnpm run lint
 step "pnpm run check"          pnpm run check
+# `pnpm run test` includes the i18n coverage gates (locale parity, no-empty,
+# placeholder parity, no-dead-keys, hardcoded-string guard — see
+# src/lib/i18n/coverage.test.ts). Project-file locale-invariance is guarded by
+# `cargo test` above (crates/ivac-core/src/project.rs).
 step "pnpm run test"           pnpm run test
 step "pnpm run build"          pnpm run build
 

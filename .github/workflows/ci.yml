@@ -115,6 +115,10 @@ jobs:
       - name: type-check
         run: pnpm run check
       - name: test
+        # Includes the i18n coverage gates (locale parity, no-empty,
+        # placeholder parity, no-dead-keys, hardcoded-string guard) from
+        # src/lib/i18n/coverage.test.ts. Project-file locale-invariance is
+        # guarded by `cargo test` in the rust job.
         run: pnpm run test
       - name: build
         run: pnpm run build

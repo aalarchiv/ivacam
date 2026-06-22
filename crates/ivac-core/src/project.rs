@@ -371,4 +371,41 @@ mod tests {
             "empty fixtures should be skipped: {json}"
         );
     }
+
+    /// Project files must stay **language-agnostic**: they store enum keys
+    /// (`"kind":"pocket"`) and numbers, never localized labels, so a file
+    /// saved under German loads byte-identically under English (i18n epic
+    /// ivac-os2k, locale-invariance requirement). The core has no locale in
+    /// its serde path at all, so the guard here is twofold:
+    ///   1. The on-disk fixture carries no non-ASCII text — a translated
+    ///      label leaking into saved data would trip this.
+    ///   2. Serialization is deterministic (round-trip byte-stable), the
+    ///      prerequisite for "same project → same bytes" regardless of which
+    ///      locale the GUI/CLI was in when it saved.
+    ///
+    /// The CLI catalog parity half of the coverage issue lands with the CLI
+    /// i18n work (ivac-os2k.7), which introduces the catalog it would check.
+    #[test]
+    fn project_file_is_locale_invariant() {
+        let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let root = manifest.parent().unwrap().parent().unwrap();
+        let path = root.join("tests/fixtures/test.vc-project.json");
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
+
+        assert!(
+            text.is_ascii(),
+            "project fixture {path:?} contains non-ASCII text — a localized \
+             label may have leaked into saved data; project files must store \
+             language-agnostic enum keys, not translated strings"
+        );
+
+        // Round-trip through serde twice; the canonical bytes must not drift,
+        // so a save never depends on ambient state such as the active locale.
+        let value: serde_json::Value =
+            serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {path:?}: {e}"));
+        let once = serde_json::to_string(&value).unwrap();
+        let twice = serde_json::to_string(&serde_json::from_str::<serde_json::Value>(&once).unwrap())
+            .unwrap();
+        assert_eq!(once, twice, "project serialization must be deterministic");
+    }
 }

@@ -13,6 +13,8 @@ the desktop bundle is produced by Tauri 2.
 | pnpm        | ≥ 10             | Required. The frontend pulls in the local `ivac-wasm` package via pnpm's `link:` protocol, which npm can't resolve; lockfile is `frontend/pnpm-lock.yaml`. |
 | Tauri CLI   | 2.x              | Install via `cargo install tauri-cli --version "^2" --locked` once you're set up for desktop builds. |
 | wasm-pack   | ≥ 0.14           | Install via `cargo install wasm-pack --locked` for the WASM crate. |
+| wasm-bindgen-cli | = `wasm-bindgen` crate ver | Optional but recommended. With it (+ `binaryen`) on `PATH`, the wasm build runs `wasm-pack --mode no-install` — no GitHub downloads at build time (deterministic, offline-capable, dodges the flaky-download race). Must match the crate **exactly**: `cargo install wasm-bindgen-cli --version <X> --locked` (current `<X>` = the `wasm-bindgen` version in `Cargo.lock`). Without it, wasm-pack falls back to downloading its own copy. |
+| binaryen (`wasm-opt`) | matches above | Pairs with `wasm-bindgen-cli` for the offline wasm build. `apt install binaryen` / `brew install binaryen`. |
 | cargo-deny  | ≥ 0.19           | Optional but recommended; CI runs it. `cargo install cargo-deny --locked`. |
 | sccache     | ≥ 0.15           | Required — `.cargo/config.toml` sets it as `rustc-wrapper` (compile cache; big win after `cargo clean` / across worktrees). `cargo install sccache --locked`, or delete the `[build]` block from `.cargo/config.toml` to opt out. |
 
@@ -266,9 +268,19 @@ cargo tauri android build --debug --apk --target aarch64
 # → gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
 #   (contains lib/arm64-v8a/libivac_tauri_lib.so — the native core)
 
+# All four ABIs as separate per-ABI APKs (what we ship to testers):
+cargo tauri android build --debug --apk --split-per-abi \
+    --target aarch64 armv7 i686 x86_64
+# → gen/android/app/build/outputs/apk/<abi>/debug/app-<abi>-debug.apk
+#   for abi in arm64-v8a | armeabi-v7a | x86 | x86_64
+# (Omit --split-per-abi for a single fat "universal" APK carrying all four.)
+
 # Or live-reload onto a connected device / running emulator:
 cargo tauri android dev
 ```
+
+> After a version bump, delete `gen/android/app/tauri.properties` before
+> building so the APK picks up the new version (see Versioning above).
 
 **Staging for testers.** The build tools each drop output in their own
 tool-specific tree (the APK path above; AppImages under
@@ -295,9 +307,15 @@ recommendation) so the build is reproducible without re-running `init`.
 
 Notes / gotchas:
 
-- **versionName ≥ 0.0.1.** Android's manifest merger rejects `0.0.0`, so
-  the manifests carry the real semver (currently `0.2.0`) — see the
-  `version` field in `tauri.conf.json` / `Cargo.toml`.
+- **versionName ≥ 0.0.1.** Android's manifest merger rejects `0.0.0`. The
+  APK's version comes from the git-ignored `gen/android/app/tauri.properties`
+  (`tauri.android.versionName` / `versionCode`). `android build` writes that
+  file from `tauri.conf.json`'s `version` **only when it's absent** — it does
+  *not* overwrite an existing one, and `android init` leaves it untouched
+  entirely. So after a version bump you must **delete `tauri.properties`**;
+  the next `android build` regenerates it at the new version (verified:
+  `0.3.0` → `versionName=0.3.0`, `versionCode=3000`). Skip the delete and the
+  APK silently keeps the old version. See [Versioning](#versioning) below.
 - **JDK 21** is required by the Gradle plugin; JDK 17 may work but is
   untested here. Expect deprecation warnings (source/target 8) — benign.
 - **`beforeBuildCommand` (`pnpm build`) still runs**, so the static
@@ -313,6 +331,39 @@ Notes / gotchas:
 This is **build-verified, not yet runtime-verified** — the APK assembles
 and links the native core, but on-device IPC / UI / file access (SAF)
 validation is still pending hardware.
+
+### Versioning
+
+The project version has **one source of truth**:
+`[workspace.package].version` in the root `Cargo.toml`. Do not hand-edit
+versions anywhere else — run `scripts/bump-version.sh`, which writes that
+one value and propagates it:
+
+| Consumer                         | How it gets the version                                  |
+|----------------------------------|----------------------------------------------------------|
+| All Rust crates                  | inherit via `version.workspace = true` (resolved by cargo) |
+| `schema/openapi.yaml` `info.version` | rewritten by `cargo xtask schema`; the `schema-check` CI guard fails on drift |
+| `tauri.conf.json` `version`       | explicit copy the bump script writes — Tauri **can't** resolve `version.workspace`, so it needs a literal; `cargo xtask version-check` (CI) fails on drift |
+| `frontend/package.json`          | no `version` field (private, unpublished package)        |
+| Android APK (`tauri.properties`) | written from `tauri.conf.json` by `android build` only when absent — **delete it after a bump** so it regenerates (see Android note above) |
+
+To cut a release, bump the single source and regenerate the derived
+files with one command:
+
+```sh
+scripts/bump-version.sh 0.3.0   # edits Cargo.toml + tauri.conf.json,
+                                # refreshes Cargo.lock, regenerates
+                                # openapi.yaml + generated.ts, runs the guards
+git diff                        # review
+git commit -am "chore: release v0.3.0"
+git tag v0.3.0 && git push --follow-tags
+```
+
+The tag push triggers `release-desktop.yml` (desktop bundles → draft
+pre-release). For the Android APKs, delete
+`crates/ivac-tauri/gen/android/app/tauri.properties` (so the version
+refreshes), build them locally, and attach them to the draft out-of-band
+(see the Android section above).
 
 ## 4. Verify
 

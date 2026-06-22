@@ -1417,7 +1417,7 @@
   "ops.gcode_include.verbose_unsim_warnings.label": "Verbose unsim warnings",
   "ops.gcode_include.verbose_unsim_warnings.help": "When on, each unsimulated line fires its own warning with the line offset and reason — useful for debugging an exotic block. When off (default), only the counted summary fires.",
   "ops.vcarve.mode.label": "Mode",
-  "ops.vcarve.mode.help": "Perimeter (default, Estlcam-style): the cutter traces the boundary offset inward by Max width / 2 at constant depth, leaving the centre plateau untouched. Medial axis (Aspire-style): depth varies along an interior spine through the widest parts of the region; useful for depth-gradient relief, but typically NOT what you want for sign-making.",
+  "ops.vcarve.mode.help": "Perimeter (default): the cutter traces the boundary offset inward by Max width / 2 at constant depth, leaving the centre plateau untouched. Medial axis: depth varies along an interior spine through the widest parts of the region; useful for depth-gradient relief, but typically NOT what you want for sign-making.",
   "ops.vcarve.mode.perimeter": "Perimeter",
   "ops.vcarve.mode.medial_axis": "Medial axis",
   "ops.vcarve.max_width.label": "Max width",

@@ -136,6 +136,57 @@ export type MsgKey =
   | "machine.unit.title"
   | "machine.work_area"
   | "machine.work_area.legend_title"
+  | "menu.aria.more_actions"
+  | "menu.aria.trigger"
+  | "menu.exit"
+  | "menu.no_recent"
+  | "menu.open"
+  | "menu.recent_projects"
+  | "menu.redo"
+  | "menu.report"
+  | "menu.save_gcode"
+  | "menu.save_project"
+  | "menu.save_stl"
+  | "menu.show_regions"
+  | "menu.undo"
+  | "ops.help.chamfer"
+  | "ops.help.cycle_marker"
+  | "ops.help.dovetail"
+  | "ops.help.drag_knife"
+  | "ops.help.drill"
+  | "ops.help.engrave"
+  | "ops.help.gcode_include"
+  | "ops.help.homing"
+  | "ops.help.pause"
+  | "ops.help.pocket"
+  | "ops.help.pocket_outside"
+  | "ops.help.probe"
+  | "ops.help.profile"
+  | "ops.help.raster_engrave"
+  | "ops.help.relief_mill"
+  | "ops.help.t_slot"
+  | "ops.help.thread"
+  | "ops.help.vcarve"
+  | "ops.kind.chamfer"
+  | "ops.kind.cycle_marker"
+  | "ops.kind.dovetail"
+  | "ops.kind.drag_knife"
+  | "ops.kind.drill"
+  | "ops.kind.engrave"
+  | "ops.kind.gcode_include"
+  | "ops.kind.homing"
+  | "ops.kind.pause"
+  | "ops.kind.pocket"
+  | "ops.kind.pocket_outside"
+  | "ops.kind.probe"
+  | "ops.kind.profile"
+  | "ops.kind.raster_engrave"
+  | "ops.kind.relief_mill"
+  | "ops.kind.t_slot"
+  | "ops.kind.thread"
+  | "ops.kind.vcarve"
+  | "ops.picker.add_aria"
+  | "ops.picker.select_first"
   | "settings.appearance.language"
   | "settings.appearance.language.auto"
   | "settings.appearance.language.help"
@@ -333,6 +384,57 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "machine.unit.title",
   "machine.work_area",
   "machine.work_area.legend_title",
+  "menu.aria.more_actions",
+  "menu.aria.trigger",
+  "menu.exit",
+  "menu.no_recent",
+  "menu.open",
+  "menu.recent_projects",
+  "menu.redo",
+  "menu.report",
+  "menu.save_gcode",
+  "menu.save_project",
+  "menu.save_stl",
+  "menu.show_regions",
+  "menu.undo",
+  "ops.help.chamfer",
+  "ops.help.cycle_marker",
+  "ops.help.dovetail",
+  "ops.help.drag_knife",
+  "ops.help.drill",
+  "ops.help.engrave",
+  "ops.help.gcode_include",
+  "ops.help.homing",
+  "ops.help.pause",
+  "ops.help.pocket",
+  "ops.help.pocket_outside",
+  "ops.help.probe",
+  "ops.help.profile",
+  "ops.help.raster_engrave",
+  "ops.help.relief_mill",
+  "ops.help.t_slot",
+  "ops.help.thread",
+  "ops.help.vcarve",
+  "ops.kind.chamfer",
+  "ops.kind.cycle_marker",
+  "ops.kind.dovetail",
+  "ops.kind.drag_knife",
+  "ops.kind.drill",
+  "ops.kind.engrave",
+  "ops.kind.gcode_include",
+  "ops.kind.homing",
+  "ops.kind.pause",
+  "ops.kind.pocket",
+  "ops.kind.pocket_outside",
+  "ops.kind.probe",
+  "ops.kind.profile",
+  "ops.kind.raster_engrave",
+  "ops.kind.relief_mill",
+  "ops.kind.t_slot",
+  "ops.kind.thread",
+  "ops.kind.vcarve",
+  "ops.picker.add_aria",
+  "ops.picker.select_first",
   "settings.appearance.language",
   "settings.appearance.language.auto",
   "settings.appearance.language.help",

@@ -22,7 +22,7 @@
   import type { ToolEntry } from '../state/project.svelte';
   import { previewVersion, requestPreview } from '../state/text_preview.svelte';
   import { consumeSelectHint } from '../state/ui-hints';
-  import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
+  import OpKindPicker, { pickerLabel, type PickerKind } from './OpKindPicker.svelte';
   import { createOpFromSelection } from '../state/op_creation';
   import { LONG_PRESS_MS, LONG_PRESS_MOVE_TOL_PX } from '../canvas/touch-gestures';
 
@@ -1098,7 +1098,7 @@
       ctxMenu = null;
       return;
     }
-    createOpFromSelection(project, kind, PICKER_LABEL[kind], sel);
+    createOpFromSelection(project, kind, pickerLabel(kind), sel);
     onActivateSidebarPane?.('operations');
     ctxMenu = null;
   }

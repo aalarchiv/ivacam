@@ -1,29 +1,17 @@
 <script lang="ts" module>
   import type { OpKind } from '../state/project.svelte';
+  import { t } from '../i18n';
 
   /// Synthetic kind that wraps a regular Pocket op with frame_shape +
   /// difference combine pre-filled. Exported so callers can switch on it.
   export type PickerKind = OpKind | 'pocket_outside';
 
-  export const KIND_LABEL: Record<OpKind, string> = {
-    profile: 'Profile',
-    pocket: 'Pocket',
-    drill: 'Drill',
-    thread: 'Thread',
-    chamfer: 'Chamfer',
-    engrave: 'Engrave',
-    drag_knife: 'Drag-knife',
-    t_slot: 'T-Slot',
-    dovetail: 'Dovetail',
-    vcarve: 'V-Carve',
-    pause: 'Pause',
-    homing: 'Homing',
-    probe: 'Probe',
-    cycle_marker: 'Marker',
-    gcode_include: 'G-code include',
-    relief_mill: 'Relief (3D)',
-    raster_engrave: 'Raster engrave',
-  };
+  /// Localized display label for an op kind. The enum *key* is stable
+  /// (project-file compatibility); only the label is translated. Reactive
+  /// when called in markup / `$derived` — switching language re-renders.
+  export function kindLabel(kind: OpKind): string {
+    return t(`ops.kind.${kind}`);
+  }
   export const KIND_ICON: Record<OpKind, string> = {
     profile: '▢',
     pocket: '▣',
@@ -70,55 +58,24 @@
     'gcode_include',
   ];
 
-  export const PICKER_LABEL: Record<PickerKind, string> = {
-    ...KIND_LABEL,
-    pocket_outside: 'Pocket Outside',
-  };
   export const PICKER_ICON: Record<PickerKind, string> = {
     ...KIND_ICON,
     pocket_outside: '⊞',
   };
 
-  /// One-line description per op kind. Surfaced as the native `title`
-  /// tooltip on every picker entry and on each row's kind icon, plus the
-  /// matching aria-label for screen readers. Keep these short — they
-  /// have to fit the OS tooltip pane.
-  export const PICKER_HELP: Record<PickerKind, string> = {
-    profile:
-      'Cuts along the contour of selected geometry. Tool stays inside, outside, or on the path.',
-    pocket:
-      'Removes material inside a closed boundary. Choose Cascade/Zigzag/Spiral/Trochoidal strategy.',
-    pocket_outside:
-      'Pocket the area BETWEEN a frame and the selection. Useful for raised text/graphics where the surrounding area is removed. Requires at least one selected object.',
-    drill:
-      'Drills holes at point geometry or small closed circles. Choose simple / peck / chip-break cycle.',
-    engrave: 'Tool-on engraving along the source path. No offset.',
-    drag_knife: 'Drag-knife cuts with trail-compensation arcs at corners.',
-    t_slot:
-      'Undercut pass along the source path at the floor depth with a T-slot cutter. Pre-cut a stem slot ≥ the neck width first; enter laterally (the wide head cannot plunge through the narrow stem).',
-    dovetail:
-      'Undercut pass along the source path at the floor depth with a form / dovetail cutter — its angled flanks carve the walls. Rough a straight channel ≥ the profile’s narrowest width to depth first, then drop the bit in.',
-    vcarve:
-      'Variable-depth medial-axis carving with a V-bit. Tip dips deepest where the region is widest.',
-    chamfer:
-      'Chamfering pass with a V-bit. Set the chamfer width and the depth is derived from the bit angle.',
-    thread:
-      'Single-point thread milling inside a circular bore (internal) or around a stud (external). Requires a closed-circle selection.',
-    pause:
-      'Optional-stop: emits M0 with an operator message at this slot. The machine halts so the operator can change tools manually, inspect the cut, or flip the stock. Press Cycle Start to resume.',
-    homing:
-      'Sends the machine to its predefined home position with G28, optionally followed by a rapid retract to safe Z. No tool, no cut — program scaffolding.',
-    probe:
-      'Touch-probe move (G38.2) along the chosen axis. Used at program start to zero the WCS Z against the stock top, between ops to re-establish a reference, or as a sanity check.',
-    cycle_marker:
-      'Comment-only marker. Emits a wrapped label at this slot — pendants index by program line so the operator can jump here.',
-    gcode_include:
-      'Splices an external G-code file into the program at this slot. Supports {x} / {y} / {z} / {f} / {s} / {safe_z} variable substitution. The sim does not model the included block — inspect canned cycles by hand.',
-    relief_mill:
-      '3D relief surfacing from a grayscale image with a ball-nose cutter. Brightness becomes height; load an image, set the depth range and scallop. Rough the bulk first with a flat endmill.',
-    raster_engrave:
-      'Laser raster engraving from a grayscale image. Burns row-by-row, modulating laser power per pixel (dark = hotter). Load an image, set resolution and a power curve (linear / threshold / dither).',
-  };
+  /// Localized display label for a picker kind (op kinds + the synthetic
+  /// `pocket_outside`). See `kindLabel` — reactive in markup.
+  export function pickerLabel(kind: PickerKind): string {
+    return t(`ops.kind.${kind}`);
+  }
+
+  /// One-line localized description per picker kind. Surfaced as the
+  /// native `title` tooltip on every picker entry and on each row's kind
+  /// icon, plus the matching aria-label for screen readers. Keep the
+  /// catalog strings short — they have to fit the OS tooltip pane.
+  export function pickerHelp(kind: PickerKind): string {
+    return t(`ops.help.${kind}`);
+  }
 </script>
 
 <script lang="ts">
@@ -221,11 +178,11 @@
       role="menuitem"
       onclick={() => onPick(k)}
       {disabled}
-      title={disabled ? 'Select one or more objects in the canvas first.' : PICKER_HELP[k] || ''}
-      aria-label={`Add ${PICKER_LABEL[k]} operation`}
+      title={disabled ? t('ops.picker.select_first') : pickerHelp(k)}
+      aria-label={t('ops.picker.add_aria', { label: pickerLabel(k) })}
     >
       <span class="ico" aria-hidden="true">{PICKER_ICON[k]}</span>
-      <span>{PICKER_LABEL[k]}</span>
+      <span>{pickerLabel(k)}</span>
     </button>
   {/each}
 </div>

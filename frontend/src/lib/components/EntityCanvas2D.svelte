@@ -62,7 +62,7 @@
     type OSnapCandidate,
     type OSnapTargets,
   } from '../canvas/osnap';
-  import OpKindPicker, { PICKER_LABEL, type PickerKind } from './OpKindPicker.svelte';
+  import OpKindPicker, { pickerLabel, type PickerKind } from './OpKindPicker.svelte';
   import { createOpFromSelection } from '../state/op_creation';
   import { layout } from '../state/layout.svelte';
   import { computeFootprint } from '../sim/driver';
@@ -1347,7 +1347,7 @@
       ctxMenu = null;
       return;
     }
-    createOpFromSelection(project, kind, PICKER_LABEL[kind], sel);
+    createOpFromSelection(project, kind, pickerLabel(kind), sel);
     // Bounce the sidebar to Operations so the freshly-added op
     // row is visible without a second click on the sidebar.
     onActivateSidebarPane?.('operations');

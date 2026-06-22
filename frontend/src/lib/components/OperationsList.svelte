@@ -12,8 +12,8 @@
   import OpPropertiesPanel from './OpPropertiesPanel.svelte';
   import OpKindPicker, {
     KIND_ICON,
-    KIND_LABEL,
-    PICKER_HELP,
+    kindLabel,
+    pickerHelp,
     type PickerKind,
   } from './OpKindPicker.svelte';
 
@@ -445,8 +445,8 @@
               <span class="caret" aria-hidden="true">{selected ? '▾' : '▸'}</span>
               <span
                 class="ico"
-                title={`${KIND_LABEL[op.kind]} — ${PICKER_HELP[op.kind]}`}
-                aria-label={`${KIND_LABEL[op.kind]} — ${PICKER_HELP[op.kind]}`}
+                title={`${kindLabel(op.kind)} — ${pickerHelp(op.kind)}`}
+                aria-label={`${kindLabel(op.kind)} — ${pickerHelp(op.kind)}`}
                 style:color={op.kind === 'pause' ? null : opSourceCss(op.id, selected)}
                 >{KIND_ICON[op.kind]}</span
               >
@@ -457,7 +457,7 @@
                        a dash with the kind label so the row reads as
                        a deliberate program-flow building block instead
                        of an unconfigured cutting op. -->
-                  — {KIND_LABEL[op.kind]?.toLowerCase() ?? op.kind} —
+                  — {kindLabel(op.kind).toLowerCase()} —
                 {:else}
                   {toolName(op.toolId)}
                 {/if}</span

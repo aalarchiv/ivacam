@@ -8,6 +8,7 @@
   import { project } from '../state/project.svelte';
   import { workspace } from '../state/workspace.svelte';
   import { isTauri } from '../api/env';
+  import { t } from '../i18n';
 
   interface Props {
     /// Open a recently-used project by path (App owns the dirty-check +
@@ -85,7 +86,7 @@
     class="ab-btn"
     aria-haspopup="menu"
     aria-expanded={open}
-    aria-label="Menu"
+    aria-label={t('menu.aria.trigger')}
     onclick={() => (open = !open)}
   >
     <span class="glyph-dots" aria-hidden="true">⋮</span>
@@ -93,7 +94,7 @@
   </button>
 
   {#if open}
-    <div class="menu" role="menu" aria-label="More actions">
+    <div class="menu" role="menu" aria-label={t('menu.aria.more_actions')}>
       <!-- Compact-only: the primary actions, surfaced here when the app
            bar is too narrow for inline buttons. Hidden above the
            breakpoint (the inline buttons are used there instead). -->
@@ -105,7 +106,7 @@
           disabled={loading}
           onclick={() => run(onOpen)}
         >
-          <span>Open…</span>
+          <span>{t('menu.open')}</span>
         </button>
         <button
           type="button"
@@ -114,7 +115,7 @@
           disabled={!canSave}
           onclick={() => run(onSaveProject)}
         >
-          <span>Save project</span>
+          <span>{t('menu.save_project')}</span>
         </button>
         <button
           type="button"
@@ -123,7 +124,7 @@
           disabled={!hasProgram}
           onclick={() => run(onSaveGcode)}
         >
-          <span>Save G-code ({gcodeExt})</span>
+          <span>{t('menu.save_gcode', { ext: gcodeExt })}</span>
         </button>
         <button
           type="button"
@@ -132,10 +133,10 @@
           disabled={!hasProgram}
           onclick={() => run(onSaveStl)}
         >
-          <span>Save carved STL</span>
+          <span>{t('menu.save_stl')}</span>
         </button>
         <button type="button" class="menu-item" role="menuitem" onclick={() => run(onReport)}>
-          <span>Report</span>
+          <span>{t('menu.report')}</span>
         </button>
         <div class="menu-sep" role="separator"></div>
       </div>
@@ -146,7 +147,7 @@
         disabled={!project.canUndo()}
         onclick={() => run(() => project.undo())}
       >
-        <span>Undo</span>
+        <span>{t('menu.undo')}</span>
         <span class="hint">{project.undoLabel() ?? ''}</span>
       </button>
       <button
@@ -156,7 +157,7 @@
         disabled={!project.canRedo()}
         onclick={() => run(() => project.redo())}
       >
-        <span>Redo</span>
+        <span>{t('menu.redo')}</span>
         <span class="hint">{project.redoLabel() ?? ''}</span>
       </button>
 
@@ -169,15 +170,15 @@
           aria-checked={project.data.regionsVisible}
           onclick={() => (project.data.regionsVisible = !project.data.regionsVisible)}
         >
-          <span>Show regions</span>
+          <span>{t('menu.show_regions')}</span>
           <span class="check" aria-hidden="true">{project.data.regionsVisible ? '✓' : ''}</span>
         </button>
       {/if}
 
       <div class="menu-sep" role="separator"></div>
-      <div class="menu-label">Recent projects</div>
+      <div class="menu-label">{t('menu.recent_projects')}</div>
       {#if recents.length === 0}
-        <div class="menu-empty">No recent projects yet</div>
+        <div class="menu-empty">{t('menu.no_recent')}</div>
       {:else}
         {#each recents as r (r.path)}
           <button
@@ -195,7 +196,7 @@
       {#if isTauri()}
         <div class="menu-sep" role="separator"></div>
         <button type="button" class="menu-item" role="menuitem" onclick={() => run(onExit)}>
-          <span>Exit ivaCAM</span>
+          <span>{t('menu.exit')}</span>
         </button>
       {/if}
     </div>

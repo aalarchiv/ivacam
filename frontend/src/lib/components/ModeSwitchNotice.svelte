@@ -9,6 +9,7 @@
   /// user clicks the action.
 
   import { project } from '../state/project.svelte';
+  import { t } from '../i18n';
   import { modeNotice } from '../state/mode_notice.svelte';
   import {
     KIND_DISPLAY_LABELS,
@@ -67,26 +68,33 @@
   <div class="mode-notice" role="status">
     {#if affected.length > 0}
       <span class="msg">
-        {affected.length}
-        {affected.length === 1 ? 'operation uses a tool' : 'operations use tools'} that cannot run on
-        a {machineModesLabel(notice.modes)} machine.
+        {affected.length === 1
+          ? t('modeswitch.affected.one', { mode: machineModesLabel(notice.modes) })
+          : t('modeswitch.affected.many', {
+              count: affected.length,
+              mode: machineModesLabel(notice.modes),
+            })}
       </span>
       <button type="button" class="action" onclick={assignAll}>
-        Assign {assignTarget} to {affected.length === 1 ? 'it' : 'all'}
+        {affected.length === 1
+          ? t('modeswitch.assign.one', { target: assignTarget })
+          : t('modeswitch.assign.all', { target: assignTarget })}
       </button>
     {:else}
       <span class="msg">
-        No tool in the library can run on a {machineModesLabel(notice.modes)} machine.
+        {t('modeswitch.none', { mode: machineModesLabel(notice.modes) })}
       </span>
       <button type="button" class="action" onclick={seed}>
-        Add a default {KIND_DISPLAY_LABELS[defaultKindForMode(notice.mode)].toLowerCase()}
+        {t('modeswitch.add_default', {
+          kind: KIND_DISPLAY_LABELS[defaultKindForMode(notice.mode)].toLowerCase(),
+        })}
       </button>
     {/if}
     <button
       type="button"
       class="dismiss"
-      aria-label="Dismiss notice"
-      title="Dismiss — nothing is changed. Incompatible assignments are also flagged at Generate time."
+      aria-label={t('modeswitch.dismiss.aria')}
+      title={t('modeswitch.dismiss.title')}
       onclick={() => modeNotice.dismiss()}>×</button
     >
   </div>

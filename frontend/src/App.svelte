@@ -132,7 +132,7 @@
   import { isTauri } from './lib/api/env';
   const isTauriEnv = isTauri();
   import { project } from './lib/state/project.svelte';
-  import { i18n, resolveLocale } from './lib/i18n';
+  import { i18n, resolveLocale, t } from './lib/i18n';
   import { workspace } from './lib/state/workspace.svelte';
   import ConfirmPrompt from './lib/components/ConfirmPrompt.svelte';
   import {
@@ -711,10 +711,10 @@
       project.sel.pickMode?.kind === 'approach-point' &&
       project.sel.pickMode.opId === project.sel.selectedOpId
     ) {
-      return 'Picking approach point — click in canvas to place · Shift = disable snap · ESC = finalize';
+      return t('app.status.pick_approach');
     }
     if (tabPlacementForHint) {
-      return 'Tab placement active — click contour to add a tab · click an existing tab to remove · set Tabs = Off to exit';
+      return t('app.status.tab_placement');
     }
     return null;
   });
@@ -724,7 +724,7 @@
   /// the user still sees the drawing's extent.
   const statusInfoText = $derived.by<string>(() => {
     const imp = project.transformedImport;
-    if (!imp) return 'Ready';
+    if (!imp) return t('app.status.ready');
     const meta = imp.object_meta ?? [];
     const sel = project.sel.selectedObjects;
     if (sel.size > 0 && meta.length > 0) {
@@ -753,7 +753,10 @@
         const cy = (minY + maxY) * 0.5;
         const w = Math.max(0, maxX - minX);
         const h = Math.max(0, maxY - minY);
-        const tag = counted === 1 ? '1 object' : `${counted} objects`;
+        const tag =
+          counted === 1
+            ? t('app.status.object_one')
+            : t('app.status.object_many', { count: counted });
         return `${tag} · center=(${cx.toFixed(2)}, ${cy.toFixed(2)}) · ${w.toFixed(2)} × ${h.toFixed(2)} mm`;
       }
     }
@@ -766,9 +769,9 @@
   const statusShortcutHints = $derived.by<string | null>(() => {
     if (!project.transformedImport) return null;
     if (project.sel.selectedEntities.size > 0) {
-      return 'Shift = add range · Ctrl/⌘ = toggle · ESC = clear · right-click for context menu';
+      return t('app.status.hints_selection');
     }
-    return 'Click to select · Shift/Ctrl to multi-select · right-click for context menu · ? for shortcuts';
+    return t('app.status.hints_idle');
   });
   const statusBarText = $derived.by<string>(() => {
     if (statusShortcutHints) return `${statusInfoText} · ${statusShortcutHints}`;
@@ -806,7 +809,7 @@
            handle taps (a tap produces no horizontal travel). -->
       <div
         class="activity-nav"
-        aria-label="Screen"
+        aria-label={t('app.screen.label')}
         use:swipeHorizontal={{
           onLeft: () => goToActivity(nextActivity(currentActivity)),
           onRight: () => goToActivity(prevActivity(currentActivity)),
@@ -817,7 +820,7 @@
           class="ab-btn ab-chevron"
           onclick={() => goToActivity(prevActivity(currentActivity))}
           disabled={currentActivity === ACTIVITY_ORDER[0]}
-          aria-label="Previous screen"
+          aria-label={t('app.screen.prev')}
         >
           ◂
         </button>
@@ -835,10 +838,10 @@
             <button
               type="button"
               class="screen-backdrop"
-              aria-label="Close screen menu"
+              aria-label={t('app.screen.close_menu')}
               onclick={closeScreenMenu}
             ></button>
-            <div class="screen-pop" role="menu" aria-label="Go to screen">
+            <div class="screen-pop" role="menu" aria-label={t('app.screen.goto')}>
               {#each ACTIVITY_ORDER as a (a)}
                 <button
                   type="button"
@@ -862,7 +865,7 @@
           class="ab-btn ab-chevron"
           onclick={() => goToActivity(nextActivity(currentActivity))}
           disabled={currentActivity === ACTIVITY_ORDER[ACTIVITY_ORDER.length - 1]}
-          aria-label="Next screen"
+          aria-label={t('app.screen.next')}
         >
           ▸
         </button>
@@ -886,7 +889,7 @@
              + AppBarOverflowMenu compact items). -->
         <div class="wide-actions">
           <button type="button" class="ab-btn" onclick={() => openAny()} disabled={project.loading}>
-            Open
+            {t('app.bar.open')}
           </button>
           <div class="save-menu">
             <button
@@ -897,16 +900,16 @@
               onclick={() => (saveMenuOpen = !saveMenuOpen)}
               disabled={!project.transformedImport}
             >
-              Save ▾
+              {t('app.bar.save')} ▾
             </button>
             {#if saveMenuOpen}
               <button
                 type="button"
                 class="save-backdrop"
-                aria-label="Close save menu"
+                aria-label={t('app.save.close_menu')}
                 onclick={closeSaveMenu}
               ></button>
-              <div class="save-pop" role="menu" aria-label="Save options">
+              <div class="save-pop" role="menu" aria-label={t('app.save.options')}>
                 <button
                   type="button"
                   class="save-item"
@@ -916,7 +919,7 @@
                     void saveProject();
                   }}
                 >
-                  Save project
+                  {t('app.save.project')}
                 </button>
                 <button
                   type="button"
@@ -928,7 +931,7 @@
                     void exportGeneratedGcode(gcodeDialect);
                   }}
                 >
-                  Save G-code (.{gcodeDialect === 'hpgl' ? 'plt' : 'ngc'})
+                  {t('app.save.gcode', { ext: gcodeDialect === 'hpgl' ? 'plt' : 'ngc' })}
                 </button>
                 <button
                   type="button"
@@ -940,7 +943,7 @@
                     void exportSimulatedStockStl();
                   }}
                 >
-                  Save carved STL
+                  {t('app.save.carved_stl')}
                 </button>
               </div>
             {/if}
@@ -949,9 +952,9 @@
             type="button"
             class="ab-btn"
             onclick={() => (reportOpen = true)}
-            aria-label="Project report"
+            aria-label={t('app.report.aria')}
           >
-            Report
+            {t('menu.report')}
           </button>
         </div>
         <AppBarOverflowMenu
@@ -991,7 +994,7 @@
     {#if activePane === '2d'}
       <BottomSheet
         key="gcode"
-        label="Stock & Layers"
+        label={t('app.sheet.stock_layers')}
         code="S+L"
         side="left"
         savedSnap={gcodeSnap}
@@ -1004,11 +1007,11 @@
               class="group-head"
               onclick={() => toggleSl('stock')}
               aria-expanded={slPane === 'stock'}
-              title={slPane === 'stock' ? 'Collapse stock' : 'Expand stock settings'}
+              title={slPane === 'stock' ? t('app.stock.collapse') : t('app.stock.expand')}
             >
               <span class="caret">{slPane === 'stock' ? '▾' : '▸'}</span>
-              <span class="stock-name">Stock</span>
-              <span class="stock-dims" title="Stock dimensions (Length × Width × Thickness) in mm">
+              <span class="stock-name">{t('app.stock.name')}</span>
+              <span class="stock-dims" title={t('app.stock.dims_tip')}>
                 {stockDimsLabel}
               </span>
             </button>
@@ -1039,7 +1042,7 @@
     {:else if project.gen.generated}
       <BottomSheet
         key="gcode"
-        label="G-code"
+        label={t('app.sheet.gcode')}
         code="NGC"
         side="left"
         count={project.gen.generated.gcode.split('\n').length}
@@ -1050,13 +1053,13 @@
           {@const C = GcodePanel}
           <C />
         {:else}
-          <p class="loading-3d">Loading G-code…</p>
+          <p class="loading-3d">{t('app.loading.gcode')}</p>
         {/if}
       </BottomSheet>
     {/if}
     <BottomSheet
       key="ops"
-      label="Operations"
+      label={t('app.sheet.operations')}
       code="OPS"
       side="right"
       count={project.data.operations.length}
@@ -1070,26 +1073,26 @@
   {/if}
 
   <!-- ============== MAIN TABS ================================= -->
-  <nav class="main-tabs" aria-label="Main areas">
+  <nav class="main-tabs" aria-label={t('app.tab.areas')}>
     <button
       type="button"
       class="main-tab"
       class:active={mainTab === 'project'}
-      onclick={() => (mainTab = 'project')}>Project</button
+      onclick={() => (mainTab = 'project')}>{t('app.tab.project')}</button
     >
     <button
       type="button"
       class="main-tab"
       class:active={mainTab === 'machine'}
       onclick={() => (mainTab = 'machine')}
-      title="Active machine, its tooling, and its settings">Machine</button
+      title={t('app.tab.machine_tip')}>{t('app.tab.machine')}</button
     >
     <button
       type="button"
       class="main-tab"
       class:active={mainTab === 'tools'}
       onclick={() => (mainTab = 'tools')}
-      title="The shop's tool inventory">Tool library</button
+      title={t('app.tab.tools_tip')}>{t('app.tab.tools')}</button
     >
     <span class="main-tabs-flex"></span>
     <button
@@ -1097,21 +1100,21 @@
       class="main-tab"
       class:active={mainTab === 'settings'}
       onclick={() => (mainTab = 'settings')}
-      title="App settings — theme, sim safety, performance">Settings</button
+      title={t('app.tab.settings_tip')}>{t('app.tab.settings')}</button
     >
     <button
       type="button"
       class="main-tab"
       class:active={mainTab === 'help'}
       onclick={() => (mainTab = 'help')}
-      title="Keyboard &amp; mouse shortcuts and usage help">Help</button
+      title={t('app.tab.help_tip')}>{t('app.tab.help')}</button
     >
     <button
       type="button"
       class="main-tab"
       class:active={mainTab === 'about'}
       onclick={() => (mainTab = 'about')}
-      title="Version, license, acknowledgements">About</button
+      title={t('app.tab.about_tip')}>{t('app.tab.about')}</button
     >
   </nav>
 
@@ -1121,25 +1124,25 @@
       class="tb-btn primary"
       onclick={() => openAny()}
       disabled={project.loading}
-      title="Open a drawing (DXF / SVG) or a saved .ivac-project.json (Ctrl+O)"
+      title={t('app.toolbar.open_tip')}
     >
-      Open
+      {t('app.bar.open')}
     </button>
     <RecentMenu onOpen={(path) => void openRecentProject(path)} />
     <button
       class="tb-btn"
       onclick={() => saveProject()}
       disabled={!project.transformedImport}
-      title="Save the current project (Ctrl+S)"
+      title={t('app.toolbar.save_tip')}
     >
-      Save
+      {t('app.bar.save')}
     </button>
     <span class="tb-sep"></span>
     <button
       class="tb-btn icon"
       onclick={() => (reportOpen = true)}
-      title="Project report — printable job summary (ops, tools, times) to hand to the shop floor"
-      aria-label="Project report"
+      title={t('app.report.tip')}
+      aria-label={t('app.report.aria')}
     >
       <svg
         viewBox="0 0 24 24"
@@ -1155,15 +1158,17 @@
         <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
         <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
       </svg>
-      <span>Report</span>
+      <span>{t('menu.report')}</span>
     </button>
     <span class="tb-sep"></span>
     <button
       class="tb-btn icon"
       onclick={() => project.undo()}
       disabled={!project.canUndo()}
-      title={project.canUndo() ? `Undo ${project.undoLabel() ?? ''} (Ctrl+Z)` : 'Nothing to undo'}
-      aria-label="Undo"
+      title={project.canUndo()
+        ? t('app.undo.tip', { label: project.undoLabel() ?? '' })
+        : t('app.undo.none')}
+      aria-label={t('app.undo.aria')}
     >
       <svg
         viewBox="0 0 24 24"
@@ -1185,9 +1190,9 @@
       onclick={() => project.redo()}
       disabled={!project.canRedo()}
       title={project.canRedo()
-        ? `Redo ${project.redoLabel() ?? ''} (Ctrl+Shift+Z)`
-        : 'Nothing to redo'}
-      aria-label="Redo"
+        ? t('app.redo.tip', { label: project.redoLabel() ?? '' })
+        : t('app.redo.none')}
+      aria-label={t('app.redo.aria')}
     >
       <svg
         viewBox="0 0 24 24"
@@ -1208,23 +1213,20 @@
     <GenerateBar />
     <span class="tb-flex"></span>
     {#if project.gen.generated && project.gen.generated.regions && project.gen.generated.regions.length > 0}
-      <label
-        class="region-toggle"
-        title="Show / hide the translucent fill that marks each pocket operation's machined region."
-      >
+      <label class="region-toggle" title={t('app.regions.tip')}>
         <input
           type="checkbox"
           checked={project.data.regionsVisible}
           onchange={(e) =>
             (project.data.regionsVisible = (e.currentTarget as HTMLInputElement).checked)}
         />
-        <span>Regions</span>
+        <span>{t('app.regions.label')}</span>
       </label>
     {/if}
     <div
       class="pane-toggle"
       role="tablist"
-      aria-label="Viewport mode"
+      aria-label={t('app.viewport.mode')}
       tabindex="-1"
       onkeydown={onPaneTablistKey}
     >
@@ -1243,7 +1245,7 @@
         tabindex={activePane === '3d' ? 0 : -1}
         class:active={activePane === '3d'}
         onclick={onClick3dButton}
-        title="Click to switch to 3D. Click again to cycle preview mode: both → wireframe → solid. Shift+click reverses."
+        title={t('app.viewport.threed_tip')}
       >
         {threeDLabel}
       </button>
@@ -1280,7 +1282,7 @@
             {/if}
           </div>
         {:else if activePane === '3d'}
-          <p class="loading-3d">Loading 3D…</p>
+          <p class="loading-3d">{t('app.loading.threed')}</p>
         {/if}
         <LoadingOverlay visible={project.loading} message={project.loadingMessage} />
         <!-- Phone: pull down from the top of the canvas to (re-)generate —
@@ -1302,11 +1304,15 @@
             <button
               class:active={gcodeOpen}
               onclick={() => (gcodeOpen = !gcodeOpen)}
-              title="Show / hide the G-code text panel. Click a line to scrub the playhead; the playhead's current line scrolls into view."
+              title={t('app.gcode.toggle_tip')}
             >
               {gcodeOpen ? '▼' : '▶'}
-              G-code
-              <span class="hint">{project.gen.generated.gcode.split('\n').length} lines</span>
+              {t('app.gcode.label')}
+              <span class="hint"
+                >{t('app.gcode.lines', {
+                  count: project.gen.generated.gcode.split('\n').length,
+                })}</span
+              >
             </button>
           </div>
           {#if gcodeOpen}
@@ -1314,7 +1320,7 @@
               direction="vertical"
               onResize={onGcodeResize}
               onReset={resetGcode}
-              title="Drag to resize the G-code panel · double-click to reset"
+              title={t('app.splitter.gcode_tip')}
             />
             <div class="gcode-row" style:height="{gcodeHeight}px">
               {#if GcodePanel}
@@ -1331,7 +1337,7 @@
         direction="horizontal"
         onResize={onSidebarResize}
         onReset={resetSidebar}
-        title="Drag to resize the side panel · double-click to reset"
+        title={t('app.splitter.sidebar_tip')}
       />
     {/if}
     {#if layout.isNarrow && mobilePanelOpen}
@@ -1339,8 +1345,8 @@
         type="button"
         class="mobile-panel-close"
         onclick={() => (mobilePanelOpen = false)}
-        aria-label="Back to drawing"
-        title="Back to drawing"
+        aria-label={t('app.panel.back')}
+        title={t('app.panel.back')}
       >
         ✕
       </button>
@@ -1358,15 +1364,12 @@
           onclick={() => activateSidebarPane('stock')}
           aria-expanded={activeSidebarPane === 'stock'}
           title={activeSidebarPane === 'stock'
-            ? 'Collapse stock (return to previous panel)'
-            : 'Expand stock settings'}
+            ? t('app.stock.collapse_prev')
+            : t('app.stock.expand')}
         >
           <span class="caret">{activeSidebarPane === 'stock' ? '▾' : '▸'}</span>
-          <span class="stock-name">Stock</span>
-          <span
-            class="stock-dims"
-            title="Current stock dimensions (Length × Width × Thickness) in mm"
-          >
+          <span class="stock-name">{t('app.stock.name')}</span>
+          <span class="stock-dims" title={t('app.stock.dims_tip_current')}>
             {stockDimsLabel}
           </span>
         </button>
@@ -1415,7 +1418,7 @@
       <MachinePanel />
     </main>
   {:else if mainTab === 'machine'}
-    <main class="tab-panel"><p class="tab-loading">Loading machine panel…</p></main>
+    <main class="tab-panel"><p class="tab-loading">{t('app.loading.machine')}</p></main>
   {/if}
   {#if ToolLibraryDialog}
     {@const ToolsPanel = ToolLibraryDialog}
@@ -1423,7 +1426,7 @@
       <ToolsPanel embedded source="inventory" open={false} onClose={() => (mainTab = 'project')} />
     </main>
   {:else if mainTab === 'tools'}
-    <main class="tab-panel"><p class="tab-loading">Loading tool library…</p></main>
+    <main class="tab-panel"><p class="tab-loading">{t('app.loading.tools')}</p></main>
   {/if}
   {#if SettingsDialog}
     {@const SettingsPanel = SettingsDialog}
@@ -1431,7 +1434,7 @@
       <SettingsPanel embedded open={false} onClose={() => (mainTab = 'project')} />
     </main>
   {:else if mainTab === 'settings'}
-    <main class="tab-panel"><p class="tab-loading">Loading settings…</p></main>
+    <main class="tab-panel"><p class="tab-loading">{t('app.loading.settings')}</p></main>
   {/if}
   <main class="tab-panel" class:tab-hidden={mainTab !== 'help'}>
     <ShortcutHelp embedded onClose={() => {}} />
@@ -1442,7 +1445,7 @@
       <AboutComp embedded onClose={() => {}} />
     </main>
   {:else if mainTab === 'about'}
-    <main class="tab-panel"><p class="tab-loading">Loading about…</p></main>
+    <main class="tab-panel"><p class="tab-loading">{t('app.loading.about')}</p></main>
   {/if}
 
   {#if AddTextDialog}
@@ -1477,8 +1480,8 @@
     <div class="drop-overlay" aria-hidden="true">
       <div class="drop-card">
         <div class="drop-glyph">⤓</div>
-        <div class="drop-title">Drop to open</div>
-        <div class="drop-sub">DXF / SVG drawings · .ivac-project files</div>
+        <div class="drop-title">{t('app.drop.title')}</div>
+        <div class="drop-sub">{t('app.drop.sub')}</div>
       </div>
     </div>
   {/if}

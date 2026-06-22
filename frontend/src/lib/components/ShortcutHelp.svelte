@@ -5,6 +5,7 @@
   /// follow the same pattern as MachineDialog / ToolLibraryDialog /
   /// SettingsDialog / AddTextDialog.
   import Modal from './Modal.svelte';
+  import { t } from '../i18n';
 
   interface Props {
     onClose: () => void;
@@ -17,91 +18,93 @@
 {#snippet shell()}
   <div class="shortcut-grid">
     <header>
-      <h2 id="shortcut-help-title">Keyboard &amp; mouse shortcuts</h2>
+      <h2 id="shortcut-help-title">{t('shortcuts.title')}</h2>
       {#if !embedded}
-        <button class="dlg-close" onclick={onClose} type="button" aria-label="Close">×</button>
+        <button class="dlg-close" onclick={onClose} type="button" aria-label={t('common.close')}
+          >×</button
+        >
       {/if}
     </header>
 
     <div class="body">
       <section>
-        <h3>2D canvas</h3>
+        <h3>{t('shortcuts.section.canvas2d')}</h3>
         <dl>
           <dt><kbd>drag</kbd></dt>
-          <dd>Pan view</dd>
+          <dd>{t('shortcuts.canvas2d.pan')}</dd>
           <dt><kbd>scroll</kbd></dt>
-          <dd>Zoom in / out</dd>
+          <dd>{t('shortcuts.zoom')}</dd>
           <dt><kbd>click</kbd></dt>
-          <dd>Select object</dd>
+          <dd>{t('shortcuts.canvas2d.select')}</dd>
           <dt><kbd>Shift</kbd> + <kbd>click</kbd></dt>
-          <dd>Add to selection</dd>
+          <dd>{t('shortcuts.canvas2d.add_selection')}</dd>
           <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>click</kbd></dt>
-          <dd>Remove from selection</dd>
+          <dd>{t('shortcuts.canvas2d.remove_selection')}</dd>
           <dt><kbd>right-click</kbd></dt>
-          <dd>Context menu / deselect</dd>
+          <dd>{t('shortcuts.canvas2d.context')}</dd>
         </dl>
       </section>
 
       <section>
-        <h3>3D view</h3>
+        <h3>{t('shortcuts.section.view3d')}</h3>
         <dl>
           <dt><kbd>left-drag</kbd></dt>
-          <dd>Orbit</dd>
+          <dd>{t('shortcuts.view3d.orbit')}</dd>
           <dt><kbd>right-drag</kbd></dt>
-          <dd>Pan</dd>
+          <dd>{t('shortcuts.view3d.pan')}</dd>
           <dt><kbd>scroll</kbd></dt>
-          <dd>Zoom in / out</dd>
+          <dd>{t('shortcuts.zoom')}</dd>
         </dl>
       </section>
 
       <section>
-        <h3>Global</h3>
+        <h3>{t('shortcuts.section.global')}</h3>
         <dl>
           <dt><kbd>T</kbd></dt>
-          <dd>Add Text</dd>
+          <dd>{t('shortcuts.global.add_text')}</dd>
           <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Z</kbd></dt>
-          <dd>Undo</dd>
+          <dd>{t('shortcuts.global.undo')}</dd>
           <dt><kbd>Ctrl</kbd> + <kbd>Y</kbd></dt>
-          <dd>Redo</dd>
+          <dd>{t('shortcuts.global.redo')}</dd>
           <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd></dt>
-          <dd>Redo</dd>
+          <dd>{t('shortcuts.global.redo')}</dd>
           <dt><kbd>?</kbd> / <kbd>F1</kbd></dt>
-          <dd>Show this help</dd>
+          <dd>{t('shortcuts.global.show_help')}</dd>
           <dt><kbd>Esc</kbd></dt>
-          <dd>Cancel mode / clear selection / close menu</dd>
+          <dd>{t('shortcuts.global.escape')}</dd>
         </dl>
       </section>
 
       <section>
-        <h3>Touch (phone / tablet)</h3>
+        <h3>{t('shortcuts.section.touch')}</h3>
         <dl>
           <dt><kbd>pinch</kbd></dt>
-          <dd>Zoom in / out (2D &amp; 3D)</dd>
+          <dd>{t('shortcuts.touch.pinch')}</dd>
           <dt><kbd>two-finger drag</kbd></dt>
-          <dd>Pan (2D); pan / zoom (3D)</dd>
+          <dd>{t('shortcuts.touch.two_finger')}</dd>
           <dt><kbd>one-finger drag</kbd></dt>
-          <dd>Orbit (3D view)</dd>
+          <dd>{t('shortcuts.touch.one_finger')}</dd>
           <dt><kbd>tap</kbd></dt>
-          <dd>Select object; tap empty space to deselect</dd>
+          <dd>{t('shortcuts.touch.tap')}</dd>
           <dt><kbd>⧉</kbd> then <kbd>tap</kbd></dt>
-          <dd>Multi-select — add / remove objects without a keyboard</dd>
+          <dd>{t('shortcuts.touch.multi_select')}</dd>
           <dt><kbd>long-press</kbd></dt>
-          <dd>Context menu</dd>
+          <dd>{t('shortcuts.touch.long_press')}</dd>
           <dt><kbd>⌖</kbd></dt>
-          <dd>Fit view to scene</dd>
+          <dd>{t('shortcuts.touch.fit_view')}</dd>
           <dt><kbd>edge-swipe</kbd> ◂ ▸</dt>
-          <dd>Switch screens (2D / 3D / Machine / Tools / Settings / Help)</dd>
+          <dd>{t('shortcuts.touch.edge_swipe')}</dd>
           <dt><kbd>pull down</kbd></dt>
-          <dd>Generate / re-generate the program</dd>
+          <dd>{t('shortcuts.touch.pull_down')}</dd>
           <dt><kbd>bottom handles</kbd></dt>
-          <dd>Drag up to open the G-code and Operations panels</dd>
+          <dd>{t('shortcuts.touch.bottom_handles')}</dd>
         </dl>
       </section>
     </div>
 
     {#if !embedded}
       <footer>
-        <button class="btn-primary" onclick={onClose} type="button">Done</button>
+        <button class="btn-primary" onclick={onClose} type="button">{t('common.done')}</button>
       </footer>
     {/if}
   </div>

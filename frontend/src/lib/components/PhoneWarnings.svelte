@@ -9,6 +9,7 @@
   /// pull-to-refresh gesture uses), which the still-mounted GenerateBar
   /// honours.
   import { project } from '../state/project.svelte';
+  import { t } from '../i18n';
   import { generateBus } from '../state/generate-bus.svelte';
   import FloatingPanel from './FloatingPanel.svelte';
   import { simWarningSeverity, simWarningSummary } from '../sim/warnings';
@@ -86,17 +87,17 @@
   const cls = $derived(generating ? 'busy' : summary.severity);
   const text = $derived.by(() => {
     if (generating) return '…';
-    if (!hasRun) return 'Generate';
-    if (stale) return 'Stale';
-    if (total === 0) return 'OK';
+    if (!hasRun) return t('phonewarn.chip.generate');
+    if (stale) return t('phonewarn.chip.stale');
+    if (total === 0) return t('phonewarn.chip.ok');
     return critical > 0 ? `${total} (${critical}!)` : `${total}`;
   });
   const title = $derived.by(() => {
-    if (generating) return 'Generating…';
-    if (!hasRun) return 'No program yet — tap to Generate';
-    if (stale) return 'Toolpath is stale — tap for details / re-Generate';
-    if (total === 0) return 'No warnings — tap for details';
-    return `${total} warning${total === 1 ? '' : 's'} — tap for details`;
+    if (generating) return t('phonewarn.title.generating');
+    if (!hasRun) return t('phonewarn.title.no_program');
+    if (stale) return t('phonewarn.title.stale');
+    if (total === 0) return t('phonewarn.title.no_warnings');
+    return total === 1 ? t('phonewarn.title.one') : t('phonewarn.title.many', { count: total });
   });
 
   /// Chip tap: when there's nothing to view (no run yet) or the toolpath
@@ -130,8 +131,8 @@
 <FloatingPanel
   {open}
   onClose={() => (open = false)}
-  title={`Warnings (${total})`}
-  ariaLabel="Warnings"
+  title={t('phonewarn.panel.title', { count: total })}
+  ariaLabel={t('phonewarn.panel.aria')}
   initialWidth={420}
   initialHeight={460}
 >
@@ -141,17 +142,17 @@
         <div class="wactions">
           {#if wcsWarning}
             <button type="button" class="wfix" onclick={fixWcsOrigin}>
-              Set zero to stock corner
+              {t('phonewarn.fix_wcs')}
             </button>
           {/if}
           <button type="button" class="wcopy" onclick={copyWarnings}>
-            {copied ? 'Copied' : 'Copy'}
+            {copied ? t('phonewarn.copied') : t('phonewarn.copy')}
           </button>
         </div>
       {/if}
       <div class="wlist">
         {#if total === 0}
-          <p class="empty">No warnings — sim and pipeline are clean.</p>
+          <p class="empty">{t('phonewarn.empty')}</p>
         {:else}
           {#each simWarnings as w, i (`sim-${i}`)}
             <div class="row sev-{simWarningSeverity(w)}">

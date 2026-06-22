@@ -18,6 +18,83 @@ export type MsgKey =
   | "about.third_party"
   | "about.third_party.intro"
   | "about.title"
+  | "app.bar.open"
+  | "app.bar.save"
+  | "app.drop.sub"
+  | "app.drop.title"
+  | "app.gcode.label"
+  | "app.gcode.lines"
+  | "app.gcode.toggle_tip"
+  | "app.loading.about"
+  | "app.loading.gcode"
+  | "app.loading.machine"
+  | "app.loading.settings"
+  | "app.loading.threed"
+  | "app.loading.tools"
+  | "app.panel.back"
+  | "app.redo.aria"
+  | "app.redo.none"
+  | "app.redo.tip"
+  | "app.regions.label"
+  | "app.regions.tip"
+  | "app.report.aria"
+  | "app.report.tip"
+  | "app.save.carved_stl"
+  | "app.save.close_menu"
+  | "app.save.gcode"
+  | "app.save.options"
+  | "app.save.project"
+  | "app.screen.close_menu"
+  | "app.screen.goto"
+  | "app.screen.label"
+  | "app.screen.next"
+  | "app.screen.prev"
+  | "app.sheet.gcode"
+  | "app.sheet.operations"
+  | "app.sheet.stock_layers"
+  | "app.splitter.gcode_tip"
+  | "app.splitter.sidebar_tip"
+  | "app.status.hints_idle"
+  | "app.status.hints_selection"
+  | "app.status.object_many"
+  | "app.status.object_one"
+  | "app.status.pick_approach"
+  | "app.status.ready"
+  | "app.status.tab_placement"
+  | "app.stock.collapse"
+  | "app.stock.collapse_prev"
+  | "app.stock.dims_tip"
+  | "app.stock.dims_tip_current"
+  | "app.stock.expand"
+  | "app.stock.name"
+  | "app.tab.about"
+  | "app.tab.about_tip"
+  | "app.tab.areas"
+  | "app.tab.help"
+  | "app.tab.help_tip"
+  | "app.tab.machine"
+  | "app.tab.machine_tip"
+  | "app.tab.project"
+  | "app.tab.settings"
+  | "app.tab.settings_tip"
+  | "app.tab.tools"
+  | "app.tab.tools_tip"
+  | "app.toolbar.open_tip"
+  | "app.toolbar.save_tip"
+  | "app.undo.aria"
+  | "app.undo.none"
+  | "app.undo.tip"
+  | "app.viewport.mode"
+  | "app.viewport.threed_tip"
+  | "calib.current"
+  | "calib.implausible"
+  | "calib.invalid"
+  | "calib.measured_width"
+  | "calib.result"
+  | "calib.step.cut"
+  | "calib.step.enter"
+  | "calib.step.measure"
+  | "calib.title"
   | "canvas.add_to_selection.aria"
   | "canvas.add_to_selection.title"
   | "canvas.ctx.dismiss"
@@ -380,6 +457,14 @@ export type MsgKey =
   | "menu.save_stl"
   | "menu.show_regions"
   | "menu.undo"
+  | "modeswitch.add_default"
+  | "modeswitch.affected.many"
+  | "modeswitch.affected.one"
+  | "modeswitch.assign.all"
+  | "modeswitch.assign.one"
+  | "modeswitch.dismiss.aria"
+  | "modeswitch.dismiss.title"
+  | "modeswitch.none"
   | "oplist.activate.aria"
   | "oplist.add.aria"
   | "oplist.add.title"
@@ -646,6 +731,25 @@ export type MsgKey =
   | "ops.thread.side.internal"
   | "ops.vcarve.advanced.summary"
   | "ops.vcarve.legend"
+  | "panel.drag_to_move"
+  | "panel.drag_to_resize"
+  | "panel.header.aria"
+  | "panel.header.aria_draggable"
+  | "phonewarn.chip.generate"
+  | "phonewarn.chip.ok"
+  | "phonewarn.chip.stale"
+  | "phonewarn.copied"
+  | "phonewarn.copy"
+  | "phonewarn.empty"
+  | "phonewarn.fix_wcs"
+  | "phonewarn.panel.aria"
+  | "phonewarn.panel.title"
+  | "phonewarn.title.generating"
+  | "phonewarn.title.many"
+  | "phonewarn.title.no_program"
+  | "phonewarn.title.no_warnings"
+  | "phonewarn.title.one"
+  | "phonewarn.title.stale"
   | "playback.next_op"
   | "playback.next_op.named"
   | "playback.pause"
@@ -726,6 +830,60 @@ export type MsgKey =
   | "post.tokens.tools"
   | "post.tokens.version"
   | "post.tool_change"
+  | "recent.button"
+  | "recent.clear"
+  | "recent.open_hint"
+  | "report.brand_subtitle"
+  | "report.generated_by"
+  | "report.ops.col.depth"
+  | "report.ops.col.kind"
+  | "report.ops.col.name"
+  | "report.ops.col.source"
+  | "report.ops.col.status"
+  | "report.ops.col.tool"
+  | "report.ops.empty"
+  | "report.ops.title"
+  | "report.print"
+  | "report.save_markdown"
+  | "report.source.all_geometry"
+  | "report.source.no_layers"
+  | "report.source.objects"
+  | "report.stats.empty"
+  | "report.stats.enabled_ops"
+  | "report.stats.objects"
+  | "report.stats.offsets"
+  | "report.stats.segments"
+  | "report.stats.title"
+  | "report.status.error"
+  | "report.status.not_generated"
+  | "report.status.ok"
+  | "report.status.pause"
+  | "report.status.warnings"
+  | "report.time.arc"
+  | "report.time.cut"
+  | "report.time.plunge"
+  | "report.time.rapid"
+  | "report.time.retract"
+  | "report.time.spindle_warmup"
+  | "report.time.title"
+  | "report.time.tool_change"
+  | "report.time.total"
+  | "report.title"
+  | "report.tools.col.diameter"
+  | "report.tools.col.feed"
+  | "report.tools.col.kind"
+  | "report.tools.col.name"
+  | "report.tools.col.speed"
+  | "report.tools.empty"
+  | "report.tools.title"
+  | "report.untitled_project"
+  | "report.warnings.summary"
+  | "report.warnings.title"
+  | "scene3d.ctx.dismiss"
+  | "scene3d.ctx.hint"
+  | "scene3d.ctx.new_op"
+  | "scene3d.empty.sub"
+  | "scene3d.empty.title"
   | "settings.appearance.language"
   | "settings.appearance.language.auto"
   | "settings.appearance.language.help"
@@ -788,6 +946,34 @@ export type MsgKey =
   | "settings.view.preview_style.solid"
   | "settings.view.preview_style.wireframe"
   | "settings.view.show_stock_box"
+  | "shortcuts.canvas2d.add_selection"
+  | "shortcuts.canvas2d.context"
+  | "shortcuts.canvas2d.pan"
+  | "shortcuts.canvas2d.remove_selection"
+  | "shortcuts.canvas2d.select"
+  | "shortcuts.global.add_text"
+  | "shortcuts.global.escape"
+  | "shortcuts.global.redo"
+  | "shortcuts.global.show_help"
+  | "shortcuts.global.undo"
+  | "shortcuts.section.canvas2d"
+  | "shortcuts.section.global"
+  | "shortcuts.section.touch"
+  | "shortcuts.section.view3d"
+  | "shortcuts.title"
+  | "shortcuts.touch.bottom_handles"
+  | "shortcuts.touch.edge_swipe"
+  | "shortcuts.touch.fit_view"
+  | "shortcuts.touch.long_press"
+  | "shortcuts.touch.multi_select"
+  | "shortcuts.touch.one_finger"
+  | "shortcuts.touch.pinch"
+  | "shortcuts.touch.pull_down"
+  | "shortcuts.touch.tap"
+  | "shortcuts.touch.two_finger"
+  | "shortcuts.view3d.orbit"
+  | "shortcuts.view3d.pan"
+  | "shortcuts.zoom"
   | "stock.dimensions"
   | "stock.length"
   | "stock.margin"
@@ -1068,6 +1254,83 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "about.third_party",
   "about.third_party.intro",
   "about.title",
+  "app.bar.open",
+  "app.bar.save",
+  "app.drop.sub",
+  "app.drop.title",
+  "app.gcode.label",
+  "app.gcode.lines",
+  "app.gcode.toggle_tip",
+  "app.loading.about",
+  "app.loading.gcode",
+  "app.loading.machine",
+  "app.loading.settings",
+  "app.loading.threed",
+  "app.loading.tools",
+  "app.panel.back",
+  "app.redo.aria",
+  "app.redo.none",
+  "app.redo.tip",
+  "app.regions.label",
+  "app.regions.tip",
+  "app.report.aria",
+  "app.report.tip",
+  "app.save.carved_stl",
+  "app.save.close_menu",
+  "app.save.gcode",
+  "app.save.options",
+  "app.save.project",
+  "app.screen.close_menu",
+  "app.screen.goto",
+  "app.screen.label",
+  "app.screen.next",
+  "app.screen.prev",
+  "app.sheet.gcode",
+  "app.sheet.operations",
+  "app.sheet.stock_layers",
+  "app.splitter.gcode_tip",
+  "app.splitter.sidebar_tip",
+  "app.status.hints_idle",
+  "app.status.hints_selection",
+  "app.status.object_many",
+  "app.status.object_one",
+  "app.status.pick_approach",
+  "app.status.ready",
+  "app.status.tab_placement",
+  "app.stock.collapse",
+  "app.stock.collapse_prev",
+  "app.stock.dims_tip",
+  "app.stock.dims_tip_current",
+  "app.stock.expand",
+  "app.stock.name",
+  "app.tab.about",
+  "app.tab.about_tip",
+  "app.tab.areas",
+  "app.tab.help",
+  "app.tab.help_tip",
+  "app.tab.machine",
+  "app.tab.machine_tip",
+  "app.tab.project",
+  "app.tab.settings",
+  "app.tab.settings_tip",
+  "app.tab.tools",
+  "app.tab.tools_tip",
+  "app.toolbar.open_tip",
+  "app.toolbar.save_tip",
+  "app.undo.aria",
+  "app.undo.none",
+  "app.undo.tip",
+  "app.viewport.mode",
+  "app.viewport.threed_tip",
+  "calib.current",
+  "calib.implausible",
+  "calib.invalid",
+  "calib.measured_width",
+  "calib.result",
+  "calib.step.cut",
+  "calib.step.enter",
+  "calib.step.measure",
+  "calib.title",
   "canvas.add_to_selection.aria",
   "canvas.add_to_selection.title",
   "canvas.ctx.dismiss",
@@ -1430,6 +1693,14 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "menu.save_stl",
   "menu.show_regions",
   "menu.undo",
+  "modeswitch.add_default",
+  "modeswitch.affected.many",
+  "modeswitch.affected.one",
+  "modeswitch.assign.all",
+  "modeswitch.assign.one",
+  "modeswitch.dismiss.aria",
+  "modeswitch.dismiss.title",
+  "modeswitch.none",
   "oplist.activate.aria",
   "oplist.add.aria",
   "oplist.add.title",
@@ -1696,6 +1967,25 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "ops.thread.side.internal",
   "ops.vcarve.advanced.summary",
   "ops.vcarve.legend",
+  "panel.drag_to_move",
+  "panel.drag_to_resize",
+  "panel.header.aria",
+  "panel.header.aria_draggable",
+  "phonewarn.chip.generate",
+  "phonewarn.chip.ok",
+  "phonewarn.chip.stale",
+  "phonewarn.copied",
+  "phonewarn.copy",
+  "phonewarn.empty",
+  "phonewarn.fix_wcs",
+  "phonewarn.panel.aria",
+  "phonewarn.panel.title",
+  "phonewarn.title.generating",
+  "phonewarn.title.many",
+  "phonewarn.title.no_program",
+  "phonewarn.title.no_warnings",
+  "phonewarn.title.one",
+  "phonewarn.title.stale",
   "playback.next_op",
   "playback.next_op.named",
   "playback.pause",
@@ -1776,6 +2066,60 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "post.tokens.tools",
   "post.tokens.version",
   "post.tool_change",
+  "recent.button",
+  "recent.clear",
+  "recent.open_hint",
+  "report.brand_subtitle",
+  "report.generated_by",
+  "report.ops.col.depth",
+  "report.ops.col.kind",
+  "report.ops.col.name",
+  "report.ops.col.source",
+  "report.ops.col.status",
+  "report.ops.col.tool",
+  "report.ops.empty",
+  "report.ops.title",
+  "report.print",
+  "report.save_markdown",
+  "report.source.all_geometry",
+  "report.source.no_layers",
+  "report.source.objects",
+  "report.stats.empty",
+  "report.stats.enabled_ops",
+  "report.stats.objects",
+  "report.stats.offsets",
+  "report.stats.segments",
+  "report.stats.title",
+  "report.status.error",
+  "report.status.not_generated",
+  "report.status.ok",
+  "report.status.pause",
+  "report.status.warnings",
+  "report.time.arc",
+  "report.time.cut",
+  "report.time.plunge",
+  "report.time.rapid",
+  "report.time.retract",
+  "report.time.spindle_warmup",
+  "report.time.title",
+  "report.time.tool_change",
+  "report.time.total",
+  "report.title",
+  "report.tools.col.diameter",
+  "report.tools.col.feed",
+  "report.tools.col.kind",
+  "report.tools.col.name",
+  "report.tools.col.speed",
+  "report.tools.empty",
+  "report.tools.title",
+  "report.untitled_project",
+  "report.warnings.summary",
+  "report.warnings.title",
+  "scene3d.ctx.dismiss",
+  "scene3d.ctx.hint",
+  "scene3d.ctx.new_op",
+  "scene3d.empty.sub",
+  "scene3d.empty.title",
   "settings.appearance.language",
   "settings.appearance.language.auto",
   "settings.appearance.language.help",
@@ -1838,6 +2182,34 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "settings.view.preview_style.solid",
   "settings.view.preview_style.wireframe",
   "settings.view.show_stock_box",
+  "shortcuts.canvas2d.add_selection",
+  "shortcuts.canvas2d.context",
+  "shortcuts.canvas2d.pan",
+  "shortcuts.canvas2d.remove_selection",
+  "shortcuts.canvas2d.select",
+  "shortcuts.global.add_text",
+  "shortcuts.global.escape",
+  "shortcuts.global.redo",
+  "shortcuts.global.show_help",
+  "shortcuts.global.undo",
+  "shortcuts.section.canvas2d",
+  "shortcuts.section.global",
+  "shortcuts.section.touch",
+  "shortcuts.section.view3d",
+  "shortcuts.title",
+  "shortcuts.touch.bottom_handles",
+  "shortcuts.touch.edge_swipe",
+  "shortcuts.touch.fit_view",
+  "shortcuts.touch.long_press",
+  "shortcuts.touch.multi_select",
+  "shortcuts.touch.one_finger",
+  "shortcuts.touch.pinch",
+  "shortcuts.touch.pull_down",
+  "shortcuts.touch.tap",
+  "shortcuts.touch.two_finger",
+  "shortcuts.view3d.orbit",
+  "shortcuts.view3d.pan",
+  "shortcuts.zoom",
   "stock.dimensions",
   "stock.length",
   "stock.margin",

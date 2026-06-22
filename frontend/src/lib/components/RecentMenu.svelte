@@ -3,6 +3,7 @@
   /// selection is forwarded to the App's open-recent flow (which owns
   /// the dirty-check + path routing).
   import { workspace } from '../state/workspace.svelte';
+  import { t } from '../i18n';
 
   interface Props {
     onOpen: (path: string) => void;
@@ -36,8 +37,8 @@
     disabled={recents.length === 0}
     aria-haspopup="menu"
     aria-expanded={open}
-    title={recents.length === 0 ? 'No recent projects yet' : 'Open a recently used project'}
-    onclick={() => (open = !open)}>Recent ▾</button
+    title={recents.length === 0 ? t('menu.no_recent') : t('recent.open_hint')}
+    onclick={() => (open = !open)}>{t('recent.button')} ▾</button
   >
   {#if open}
     <div class="dropdown" role="menu">
@@ -58,7 +59,7 @@
         onclick={() => {
           open = false;
           workspace.clearRecentProjects();
-        }}>Clear list</button
+        }}>{t('recent.clear')}</button
       >
     </div>
   {/if}

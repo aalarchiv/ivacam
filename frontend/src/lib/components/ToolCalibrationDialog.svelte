@@ -6,6 +6,7 @@
   /// date. Pure math lives in `state/tool_wear.ts`; this dialog is the
   /// step-by-step shell so first-time users measure the right thing.
   import Modal from './Modal.svelte';
+  import { t } from '../i18n';
   import { todayIso, wearOffsetFromSlotWidth } from '../state/tool_wear';
 
   interface Props {
@@ -43,23 +44,23 @@
 {#if open}
   <Modal onClose={() => onClose()} width="min(460px, 94vw)" ariaLabelledBy="cal-title">
     <header>
-      <h2 id="cal-title">Calibrate “{toolName}”</h2>
-      <button class="dlg-close" onclick={() => onClose()} aria-label="Close">×</button>
+      <h2 id="cal-title">{t('calib.title', { tool: toolName })}</h2>
+      <button class="dlg-close" onclick={() => onClose()} aria-label={t('common.close')}>×</button>
     </header>
     <div class="body">
       <ol>
         <li>
-          Cut a short, shallow <strong>single-pass slot</strong> (one straight line, e.g. an Engrave operation,
-          ~0.5&nbsp;mm deep) into scrap with this tool, at its normal feed and speed.
+          <!-- eslint-disable-next-line svelte/no-at-html-tags -- static, translator-authored markup -->
+          {@html t('calib.step.cut')}
         </li>
         <li>
-          Measure the <strong>width of the slot</strong> with a caliper — the slot width is the tool's
-          true cutting diameter.
+          <!-- eslint-disable-next-line svelte/no-at-html-tags -- static, translator-authored markup -->
+          {@html t('calib.step.measure')}
         </li>
-        <li>Enter the measured width below.</li>
+        <li>{t('calib.step.enter')}</li>
       </ol>
       <label class="measure">
-        <span>Measured slot width (mm)</span>
+        <span>{t('calib.measured_width')}</span>
         <input
           type="number"
           step="0.01"
@@ -70,26 +71,28 @@
       </label>
       {#if wear != null && !implausible}
         <p class="result">
-          Wear offset: <strong>{wear} mm</strong> — toolpaths will cut as a
-          <strong>{Math.max(nominalDiameterMm - wear, 0.01)} mm</strong> tool (nominal
-          {nominalDiameterMm} mm).
+          <!-- eslint-disable-next-line svelte/no-at-html-tags -- static, translator-authored markup -->
+          {@html t('calib.result', {
+            wear,
+            effective: Math.max(nominalDiameterMm - wear, 0.01),
+            nominal: nominalDiameterMm,
+          })}
         </p>
       {:else if implausible}
         <p class="result warn">
-          That's more than 25% off the nominal {nominalDiameterMm} mm — double-check the measurement (right
-          slot? mm, not inches?).
+          {t('calib.implausible', { nominal: nominalDiameterMm })}
         </p>
       {:else if measuredRaw !== ''}
-        <p class="result warn">Enter the slot width as a positive number in mm.</p>
+        <p class="result warn">{t('calib.invalid')}</p>
       {/if}
       {#if currentWearOffsetMm !== 0}
-        <p class="current">Current wear offset: {currentWearOffsetMm} mm — applying replaces it.</p>
+        <p class="current">{t('calib.current', { current: currentWearOffsetMm })}</p>
       {/if}
     </div>
     <footer>
-      <button class="btn-secondary" onclick={() => onClose()}>Cancel</button>
+      <button class="btn-secondary" onclick={() => onClose()}>{t('common.cancel')}</button>
       <button class="btn-primary" disabled={wear == null || implausible} onclick={apply}
-        >Apply</button
+        >{t('common.apply')}</button
       >
     </footer>
   </Modal>

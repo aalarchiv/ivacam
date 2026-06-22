@@ -14,6 +14,7 @@
   // in which case `clampPanelRect` snaps it back into view.
   import { clampPanelRect, initialPanelPosition } from './floating-panel';
   import { layout } from '../state/layout.svelte';
+  import { t } from '../i18n';
 
   interface Props {
     /// Render gate. Keep the component mounted and toggle this so the
@@ -158,16 +159,16 @@
       role="toolbar"
       tabindex="-1"
       aria-label={narrow
-        ? `${ariaLabel ?? title} panel header`
-        : `${ariaLabel ?? title} panel header — drag to move`}
+        ? t('panel.header.aria', { name: ariaLabel ?? title })
+        : t('panel.header.aria_draggable', { name: ariaLabel ?? title })}
       onpointerdown={headerPointerDown}
       onpointermove={pointerMove}
       onpointerup={pointerUp}
       onpointercancel={pointerUp}
-      title={narrow ? null : 'Drag to move'}
+      title={narrow ? null : t('panel.drag_to_move')}
     >
       <h3>{title}</h3>
-      <button class="dlg-close" onclick={onClose} aria-label="Close">×</button>
+      <button class="dlg-close" onclick={onClose} aria-label={t('common.close')}>×</button>
     </header>
     {@render children()}
     <!-- Bottom-right resize handle. svg corner-glyph repeats the
@@ -180,7 +181,7 @@
         onpointermove={pointerMove}
         onpointerup={pointerUp}
         onpointercancel={pointerUp}
-        title="Drag to resize"
+        title={t('panel.drag_to_resize')}
         aria-hidden="true"
       ></div>
     {/if}

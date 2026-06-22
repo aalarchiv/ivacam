@@ -23,6 +23,7 @@
   import { previewVersion, requestPreview } from '../state/text_preview.svelte';
   import { consumeSelectHint } from '../state/ui-hints';
   import OpKindPicker, { pickerLabel, type PickerKind } from './OpKindPicker.svelte';
+  import { t } from '../i18n';
   import { createOpFromSelection } from '../state/op_creation';
   import { LONG_PRESS_MS, LONG_PRESS_MOVE_TOL_PX } from '../canvas/touch-gestures';
 
@@ -1167,8 +1168,8 @@
     type="button"
     class="fit-btn"
     onclick={requestFitView}
-    title="Fit view to scene"
-    aria-label="Fit view to scene"
+    title={t('canvas.fit_view.title')}
+    aria-label={t('canvas.fit_view.aria')}
   >
     ⌖
   </button>
@@ -1180,8 +1181,8 @@
     <div class="empty-state" aria-hidden="true">
       <div class="empty-card">
         <div class="empty-glyph">⌗</div>
-        <div class="empty-title">No drawing loaded</div>
-        <div class="empty-sub">Open a DXF / SVG, drop a file onto the window, or add text.</div>
+        <div class="empty-title">{t('scene3d.empty.title')}</div>
+        <div class="empty-sub">{t('scene3d.empty.sub')}</div>
       </div>
     </div>
   {/if}
@@ -1199,7 +1200,7 @@
         }}
         use:clampPopup={ctxMenu}
       >
-        <div class="ctx-header">New operation from selection</div>
+        <div class="ctx-header">{t('scene3d.ctx.new_op')}</div>
         <OpKindPicker onPick={pickFromCtx} />
       </div>
     {:else}
@@ -1209,8 +1210,8 @@
         style:top={`${ctxMenu.y}px`}
         role="menu"
       >
-        <p class="ctx-hint">Click geometry to select objects, then add an operation from them.</p>
-        <button type="button" onclick={() => (ctxMenu = null)}>Dismiss</button>
+        <p class="ctx-hint">{t('scene3d.ctx.hint')}</p>
+        <button type="button" onclick={() => (ctxMenu = null)}>{t('scene3d.ctx.dismiss')}</button>
       </div>
     {/if}
   {/if}

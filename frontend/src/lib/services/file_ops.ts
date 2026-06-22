@@ -21,6 +21,7 @@ import { migrateLegacyToolTerms } from '../state/tool-migration';
 import type { ImportResponse } from '../api/types';
 import type { MachineSettings, ToolEntry } from '../state/project.svelte';
 import { migrateMachineSettings } from '../state/project-types';
+import { t } from '../i18n';
 
 /// Clear the Rust-side process-global pipeline cache when a
 /// project replace flow runs (open file, open project, load sample,
@@ -69,18 +70,18 @@ export function pathToLoadingMessage(path: string): string {
   const ext = path.toLowerCase().split('.').pop() ?? '';
   switch (ext) {
     case 'dxf':
-      return 'Parsing DXF…';
+      return t('dialog.loading.dxf');
     case 'svg':
-      return 'Parsing SVG…';
+      return t('dialog.loading.svg');
     case 'hpgl':
     case 'plt':
-      return 'Parsing HPGL…';
+      return t('dialog.loading.hpgl');
     case 'ngc':
-      return 'Parsing G-code…';
+      return t('dialog.loading.gcode');
     case 'stl':
-      return 'Parsing STL…';
+      return t('dialog.loading.stl');
     default:
-      return 'Loading file…';
+      return t('dialog.loading.file');
   }
 }
 
@@ -181,11 +182,11 @@ function projectHasContent(): boolean {
 async function chooseDrawingOpenMode(): Promise<'new' | 'add' | 'cancel'> {
   if (!projectHasContent()) return 'new';
   const choice = await confirmStore.askChoice({
-    title: 'Open drawing',
-    body: 'Open this drawing as a new project, or add it to the current layers?',
-    primaryLabel: 'New project',
-    extraLabel: 'Add to layers',
-    cancelLabel: 'Cancel',
+    title: t('dialog.open_drawing.title'),
+    body: t('dialog.open_drawing.body'),
+    primaryLabel: t('dialog.open_drawing.new_project'),
+    extraLabel: t('dialog.open_drawing.add_to_layers'),
+    cancelLabel: t('common.cancel'),
     danger: false,
   });
   return choice === 'primary' ? 'new' : choice === 'extra' ? 'add' : 'cancel';
@@ -197,14 +198,14 @@ async function chooseDrawingOpenMode(): Promise<'new' | 'add' | 'cancel'> {
 /// 'new' branch still runs the unsaved-work guard before discarding.
 async function routeOpenedFile(file: File, isProject: boolean): Promise<void> {
   if (isProject) {
-    if (!(await confirmDiscardIfDirty('open another file'))) return;
+    if (!(await confirmDiscardIfDirty(t('dialog.action.open_another_file')))) return;
     await loadProjectFile(file);
     return;
   }
   const mode = await chooseDrawingOpenMode();
   if (mode === 'cancel') return;
   if (mode === 'new') {
-    if (!(await confirmDiscardIfDirty('open another file'))) return;
+    if (!(await confirmDiscardIfDirty(t('dialog.action.open_another_file')))) return;
     await loadFile(file);
   } else {
     await addDrawingFile(file);
@@ -238,14 +239,14 @@ export async function openAny() {
       }
       // Desktop: path-based loaders (import_path), so route by extension.
       if (isProjectPath(selected)) {
-        if (!(await confirmDiscardIfDirty('open another file'))) return;
+        if (!(await confirmDiscardIfDirty(t('dialog.action.open_another_file')))) return;
         await loadProjectPath(selected);
         return;
       }
       const mode = await chooseDrawingOpenMode();
       if (mode === 'cancel') return;
       if (mode === 'new') {
-        if (!(await confirmDiscardIfDirty('open another file'))) return;
+        if (!(await confirmDiscardIfDirty(t('dialog.action.open_another_file')))) return;
         await loadFromPath(selected);
       } else {
         await addDrawingPath(selected);
@@ -309,11 +310,11 @@ export async function confirmDiscardIfDirty(action: string): Promise<boolean> {
   if (!project.hasUnsavedWork) return true;
   if (typeof window === 'undefined') return true;
   const choice = await confirmStore.askChoice({
-    title: 'Unsaved changes',
-    body: `Your project has unsaved changes. Save before you ${action}?`,
-    primaryLabel: 'Save & continue',
-    extraLabel: "Don't save",
-    cancelLabel: 'Cancel',
+    title: t('dialog.unsaved.title'),
+    body: t('dialog.unsaved.body', { action }),
+    primaryLabel: t('dialog.unsaved.save_continue'),
+    extraLabel: t('dialog.unsaved.dont_save'),
+    cancelLabel: t('common.cancel'),
     danger: false,
     extraDanger: true,
   });
@@ -334,7 +335,7 @@ export async function confirmDiscardIfDirty(action: string): Promise<boolean> {
 /// Desktop: native open dialog for `.ivac-project.json`. Browser: same
 /// hidden-input trick as openFile, but for project files.
 export async function openProject() {
-  if (!(await confirmDiscardIfDirty('open another project'))) return;
+  if (!(await confirmDiscardIfDirty(t('dialog.action.open_another_project')))) return;
   if (isTauri()) {
     const { open } = await import('@tauri-apps/plugin-dialog');
     const { readTextFile } = await import('@tauri-apps/plugin-fs');
@@ -349,7 +350,7 @@ export async function openProject() {
     });
     if (typeof selected !== 'string') return;
     project.loading = true;
-    project.loadingMessage = 'Loading project…';
+    project.loadingMessage = t('dialog.loading.project');
     project.error = null;
     try {
       const text = await readTextFile(selected);
@@ -430,7 +431,7 @@ export async function addDrawingPath(path: string) {
 /// the dirty state via `confirmDiscardIfDirty`.
 export async function loadProjectPath(path: string) {
   project.loading = true;
-  project.loadingMessage = 'Loading project…';
+  project.loadingMessage = t('dialog.loading.project');
   project.error = null;
   try {
     const { readTextFile } = await import('@tauri-apps/plugin-fs');
@@ -500,7 +501,7 @@ export async function addDrawingFile(file: File) {
 /// REPLACE semantics, mirroring the desktop `loadProjectPath`.
 export async function loadProjectFile(file: File) {
   project.loading = true;
-  project.loadingMessage = 'Loading project…';
+  project.loadingMessage = t('dialog.loading.project');
   project.error = null;
   try {
     const text = await file.text();
@@ -593,9 +594,9 @@ export async function saveReportMarkdown(markdown: string, baseName: string) {
 /// REPLACE semantics: loading a sample drops the current project to
 /// start fresh.
 export async function loadSample(url: string) {
-  if (!(await confirmDiscardIfDirty('load a sample'))) return;
+  if (!(await confirmDiscardIfDirty(t('dialog.action.load_sample')))) return;
   project.loading = true;
-  project.loadingMessage = 'Loading sample…';
+  project.loadingMessage = t('dialog.loading.sample');
   project.error = null;
   try {
     const res = await fetch(url);
@@ -659,7 +660,7 @@ export async function exportSimulatedStockStl(): Promise<void> {
   const { getCurrentDriver } = await import('../sim/driver');
   const driver = getCurrentDriver();
   if (!driver) {
-    project.setError('No simulated stock to export — run Generate first.');
+    project.setError(t('dialog.export_stl.no_stock'));
     return;
   }
   const stock = project.data.stock;
@@ -667,7 +668,7 @@ export async function exportSimulatedStockStl(): Promise<void> {
   const stockBottomZ = topZ - Math.max(stock.thickness, 0);
   const bytes = driver.exportStl(stockBottomZ);
   if (!bytes) {
-    project.setError('No simulated stock to export — run Generate first.');
+    project.setError(t('dialog.export_stl.no_stock'));
     return;
   }
   const base = project.transformedImport?.filename?.replace(/\.[^.]+$/, '') ?? 'stock';
@@ -702,7 +703,7 @@ export async function exportSimulatedStockStl(): Promise<void> {
 /// fully-loaded project.
 export async function loadSampleWithGenerate(sampleUrl: string, generatedUrl: string) {
   project.loading = true;
-  project.loadingMessage = 'Loading sample…';
+  project.loadingMessage = t('dialog.loading.sample');
   try {
     const [imp, gen] = await Promise.all([
       fetch(sampleUrl).then((r) => r.json()),

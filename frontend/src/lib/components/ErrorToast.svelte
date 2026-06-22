@@ -15,6 +15,7 @@
   import { project } from '../state/project.svelte';
   import { autoFixToCommand } from '../state/commands';
   import { confirmStore } from '../state/confirm.svelte';
+  import { t } from '../i18n';
   import type { WiacError } from '../api/types';
 
   type ToastError = string | WiacError;
@@ -146,16 +147,19 @@
   {@const plain = plainOf(head.error)}
   <div class="toast-host" aria-live="assertive" aria-atomic="true">
     {#if queue.length > 1}
-      <div class="queue-tag" title="More errors queued — dismiss to see the next">
-        +{queue.length - 1} more
+      <div class="queue-tag" title={t('toast.queue.title')}>
+        {t('toast.queue.more', { n: queue.length - 1 })}
       </div>
     {/if}
     {#if structured}
       <div class={`toast kind-${structured.kind}`} role="alert" data-testid="error-toast">
         <div class="head">
           <strong class="message">{structured.message}</strong>
-          <button type="button" class="dlg-close" onclick={dismissHead} aria-label="Dismiss"
-            >×</button
+          <button
+            type="button"
+            class="dlg-close"
+            onclick={dismissHead}
+            aria-label={t('toast.dismiss')}>×</button
           >
         </div>
         {#if structured.recovery_hint}
@@ -183,7 +187,7 @@
                 onclick={() => reportBug(structured)}
                 data-testid="report-bug"
               >
-                Report this bug
+                {t('toast.report_bug')}
               </button>
             {/if}
           </div>
@@ -193,8 +197,11 @@
       <div class="toast kind-misconfigured" role="alert" data-testid="error-legacy">
         <div class="head">
           <strong class="message legacy">{plain}</strong>
-          <button type="button" class="dlg-close" onclick={dismissHead} aria-label="Dismiss"
-            >×</button
+          <button
+            type="button"
+            class="dlg-close"
+            onclick={dismissHead}
+            aria-label={t('toast.dismiss')}>×</button
           >
         </div>
       </div>

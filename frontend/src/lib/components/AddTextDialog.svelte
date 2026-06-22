@@ -15,6 +15,7 @@
    * on the Engraving style.
    */
   import { project } from '../state/project.svelte';
+  import { t } from '../i18n';
   import { defaultClient } from '../api/http';
   import type { Segment, RenderTextRequest } from '../api/types';
   import type { TextFontSource, TextLayer } from '../state/project.svelte';
@@ -345,11 +346,11 @@
     try {
       const bytes = await loadFontBytes();
       if (!bytes) {
-        throw new Error('No font selected.');
+        throw new Error(t('dialog.text.error.no_font'));
       }
       const trimmed = d.text.trim();
       if (trimmed.length === 0) {
-        throw new Error('Text must not be empty.');
+        throw new Error(t('dialog.text.error.empty'));
       }
       // Refresh the single-line classification one last time so the
       // TextLayer.singleLine cached flag reflects the current font.
@@ -436,8 +437,7 @@
     // Heuristic: there's no bundled engraving font in v1 (license-vetting
     // pending). Best we can do is point the user at the file picker.
     d.useUserFont = true;
-    errorMsg =
-      'Pick a single-line / Hershey TTF via "Custom font" — no engraving font is bundled yet.';
+    errorMsg = t('dialog.text.error.no_engraving_font');
   }
 
   function onUserFontPick(e: Event) {
@@ -462,22 +462,19 @@
 {#if open}
   <Modal onClose={close} width="min(540px, 95vw)" ariaLabelledBy="addtext-title">
     <header>
-      <h2 id="addtext-title">Add Text</h2>
-      <button class="dlg-close" onclick={close} aria-label="Close">×</button>
+      <h2 id="addtext-title">{t('dialog.text.title')}</h2>
+      <button class="dlg-close" onclick={close} aria-label={t('common.close')}>×</button>
     </header>
 
     <div class="body">
-      <label class="full" title="Text to render. Newlines split into multiple lines (MTEXT).">
-        <span>Text</span>
+      <label class="full" title={t('dialog.text.text.title')}>
+        <span>{t('dialog.text.text')}</span>
         <textarea bind:value={d.text} rows="2"></textarea>
       </label>
 
       <fieldset class="full">
-        <legend>Font</legend>
-        <label
-          class="row"
-          title="Use a font bundled with ivacam. Bundled fonts are filled-outline (good for V-carve / pocket / drag-knife — not single-line engraving)."
-        >
+        <legend>{t('dialog.text.font')}</legend>
+        <label class="row" title={t('dialog.text.font.bundled.title')}>
           <input type="radio" bind:group={d.useUserFont} value={false} />
           <div class="font-dd" class:open={fontDropdownOpen}>
             <button
@@ -536,10 +533,7 @@
             {/if}
           </div>
         </label>
-        <label
-          class="row"
-          title="Load any TTF/OTF from disk. Single-line / Hershey fonts are auto-detected and required for the Engraving style."
-        >
+        <label class="row" title={t('dialog.text.font.custom.title')}>
           <input type="radio" bind:group={d.useUserFont} value={true} />
           <span class="picker">
             <input type="file" accept=".ttf,.otf" onchange={onUserFontPick} />
@@ -550,42 +544,44 @@
         </label>
         {#if lastFontFamily}
           <p class="font-meta">
-            Loaded: <strong>{lastFontFamily}</strong>{lastFontIsSingleLine ? ' (single-line)' : ''}
+            {t('dialog.text.font.loaded')} <strong>{lastFontFamily}</strong>{lastFontIsSingleLine
+              ? ` ${t('dialog.text.font.single_line_suffix')}`
+              : ''}
           </p>
         {/if}
       </fieldset>
 
-      <label title="Cap height of the text in millimeters.">
-        <span>Size</span>
+      <label title={t('dialog.text.size.title')}>
+        <span>{t('dialog.text.size')}</span>
         <span class="field"
           ><input type="number" bind:value={d.sizeMm} step="0.5" min="0.1" /><span class="unit"
             >mm</span
           ></span
         >
       </label>
-      <label title="Horizontal stretch (50–200 %). 100 % = the font's natural width.">
-        <span>Width</span>
+      <label title={t('dialog.text.width.title')}>
+        <span>{t('dialog.text.width')}</span>
         <span class="field"
           ><input type="number" bind:value={d.widthPct} step="5" min="50" max="200" /><span
             class="unit">%</span
           ></span
         >
       </label>
-      <label title="X-position of the text origin (left baseline) in stock coordinates.">
-        <span>Position X</span>
+      <label title={t('dialog.text.pos_x.title')}>
+        <span>{t('dialog.text.pos_x')}</span>
         <span class="field"
           ><input type="number" bind:value={d.posX} step="1" /><span class="unit">mm</span></span
         >
       </label>
-      <label title="Y-position of the text origin (left baseline) in stock coordinates.">
-        <span>Position Y</span>
+      <label title={t('dialog.text.pos_y.title')}>
+        <span>{t('dialog.text.pos_y')}</span>
         <span class="field"
           ><input type="number" bind:value={d.posY} step="1" /><span class="unit">mm</span></span
         >
       </label>
 
       <fieldset class="full styles">
-        <legend>Style</legend>
+        <legend>{t('dialog.text.style')}</legend>
         <div class="grid">
           {#each Object.entries(STYLE_TABLE) as [k, spec] (k)}
             <label class="style-opt" title={spec.help}>
@@ -598,36 +594,37 @@
 
       {#if styleEngravingMismatch}
         <div class="chip warn">
-          <span
-            >This font is filled-outline. Engraving style needs a single-line / Hershey font.</span
+          <span>{t('dialog.text.engraving_mismatch')}</span>
+          <button class="chip-btn" onclick={switchToEngravingFont}
+            >{t('dialog.text.switch_font')}</button
           >
-          <button class="chip-btn" onclick={switchToEngravingFont}>Switch font</button>
         </div>
       {/if}
 
       {#if STYLE_TABLE[d.style].toolKind != null}
-        <label
-          title="Tool to use for this text op. The list is filtered to tools matching the style's required kind."
-        >
-          <span>Tool</span>
+        <label title={t('dialog.text.tool.title')}>
+          <span>{t('dialog.text.tool')}</span>
           <select bind:value={d.toolId}>
-            {#each filteredTools as t (t.id)}
-              <option value={t.id}
-                >{t.name} ({t.kind}, {formatLength(t.diameter, project.data.machine.unit)})</option
+            {#each filteredTools as tool (tool.id)}
+              <option value={tool.id}
+                >{tool.name} ({tool.kind}, {formatLength(
+                  tool.diameter,
+                  project.data.machine.unit,
+                )})</option
               >
             {/each}
             {#if filteredTools.length === 0}
-              <option value={0}>(no {STYLE_TABLE[d.style].toolKind} in library)</option>
+              <option value={0}
+                >{t('dialog.text.no_tool', { kind: STYLE_TABLE[d.style].toolKind ?? '' })}</option
+              >
             {/if}
           </select>
         </label>
       {/if}
 
       {#if STYLE_TABLE[d.style].defaultDepth != null}
-        <label
-          title="Final Z depth for the text op. Negative values cut into the stock — e.g. -0.5 mm for a typical engraving."
-        >
-          <span>Depth</span>
+        <label title={t('dialog.text.depth.title')}>
+          <span>{t('dialog.text.depth')}</span>
           <span class="field"
             ><input type="number" bind:value={d.depth} step="0.1" /><span class="unit">mm</span
             ></span
@@ -642,12 +639,14 @@
 
     <footer>
       {#if dd.confirmingDiscard}
-        <span class="discard-prompt">Discard unsaved text?</span>
-        <button class="btn-secondary" onclick={() => dd.cancelDiscard()}>Keep editing</button>
-        <button class="btn-danger" onclick={close}>Discard</button>
+        <span class="discard-prompt">{t('dialog.text.discard_prompt')}</span>
+        <button class="btn-secondary" onclick={() => dd.cancelDiscard()}
+          >{t('common.keep_editing')}</button
+        >
+        <button class="btn-danger" onclick={close}>{t('common.discard')}</button>
       {:else}
-        <button class="btn-secondary" onclick={close}>Cancel</button>
-        <button class="btn-primary" onclick={apply} disabled={busy}>Add</button>
+        <button class="btn-secondary" onclick={close}>{t('common.cancel')}</button>
+        <button class="btn-primary" onclick={apply} disabled={busy}>{t('dialog.text.add')}</button>
       {/if}
     </footer>
   </Modal>

@@ -7,6 +7,7 @@
   /// coherent panel.
   import { isIdentityFileTransform, project } from '../state/project.svelte';
   import { Throttle } from '../state/throttle';
+  import { t } from '../i18n';
   import { onDestroy } from 'svelte';
 
   // Throttle the live file-transform spinbox edits: each edit
@@ -176,16 +177,16 @@
     <button
       class="caret-btn"
       onclick={onActivate}
-      title={active ? 'Collapse layers (return to previous panel)' : 'Expand layers'}
-      aria-label={active ? 'Collapse layers panel' : 'Activate layers panel'}
+      title={active ? t('layers.caret.collapse.title') : t('layers.caret.expand.title')}
+      aria-label={active ? t('layers.caret.collapse.aria') : t('layers.caret.expand.aria')}
       >{active ? '▾' : '▸'}</button
     >
     {#if usableLayers.length > 0}
       <input
         type="checkbox"
         checked={allVisible}
-        title="Show / hide every layer"
-        aria-label="Toggle all layers"
+        title={t('layers.toggle_all.title')}
+        aria-label={t('layers.toggle_all.aria')}
         onclick={(e) => e.stopPropagation()}
         onchange={(e) => setAllVisible((e.currentTarget as HTMLInputElement).checked)}
       />
@@ -194,17 +195,17 @@
       <span class="filename" title={project.data.imports[0].source.filename}>
         {project.data.imports[0].source.filename}
       </span>
-      <span class="file-stats" title="Segments · layers">
-        {project.data.imports[0].source.segments.length} seg · {usableLayers.length} layer{usableLayers.length ===
-        1
-          ? ''
-          : 's'}
+      <span class="file-stats" title={t('layers.file_stats.title')}>
+        {t('layers.file_stats', {
+          segments: project.data.imports[0].source.segments.length,
+          layers: usableLayers.length,
+        })}
       </span>
     {:else if project.data.imports.length > 1}
-      <span class="group-name">Drawings</span>
+      <span class="group-name">{t('layers.drawings')}</span>
       <span class="group-count">{project.data.imports.length}</span>
     {:else}
-      <span class="group-name">Layers</span>
+      <span class="group-name">{t('layers.title')}</span>
       <span class="group-count">{usableLayers.length}</span>
     {/if}
     {#if onAddDrawingClick || onAddTextClick}
@@ -215,9 +216,9 @@
           onclick={toggleAddMenu}
           aria-haspopup="menu"
           aria-expanded={addMenuOpen}
-          title="Add a layer — open a drawing or add text geometry"
+          title={t('layers.add.title')}
         >
-          + Add
+          {t('layers.add')}
         </button>
         {#if addMenuOpen}
           <div
@@ -234,9 +235,9 @@
                 role="menuitem"
                 class="add-item"
                 onclick={clickAddFile}
-                title="Open a DXF or SVG file"
+                title={t('layers.add.open_file.title')}
               >
-                <span class="label">Open drawing file…</span>
+                <span class="label">{t('layers.add.open_file')}</span>
               </button>
             {/if}
             {#if onAddTextClick}
@@ -245,9 +246,9 @@
                 role="menuitem"
                 class="add-item"
                 onclick={clickAddText}
-                title="Add editable text geometry"
+                title={t('layers.add.text.title')}
               >
-                <span class="label">Add text…</span>
+                <span class="label">{t('layers.add.text')}</span>
               </button>
             {/if}
           </div>
@@ -267,14 +268,18 @@
                 >{entry.source.filename}</span
               >
               <span class="import-stats"
-                >{entry.source.segments.length} seg · {entry.source.layers.length} layer</span
+                >{t('layers.import_stats', {
+                  segments: entry.source.segments.length,
+                  layers: entry.source.layers.length,
+                })}</span
               >
               <button
                 type="button"
                 class="import-remove"
                 onclick={() => project.removeImport(entry.id)}
-                title="Remove this drawing from the project"
-                aria-label={`Remove ${entry.source.filename}`}>×</button
+                title={t('layers.import_remove.title')}
+                aria-label={t('layers.import_remove.aria', { filename: entry.source.filename })}
+                >×</button
               >
             </div>
           {/if}
@@ -285,12 +290,12 @@
                 class="xform-head"
                 onclick={() => toggleTransform(entry.id)}
                 aria-expanded={transformOpen}
-                title="Layout convenience: translate / rotate / scale / mirror this drawing. Pivot for rotate / scale / mirror is the drawing's original bbox center."
+                title={t('layers.xform.head.title')}
               >
                 <span class="xform-caret">{transformOpen ? '▾' : '▸'}</span>
-                <span class="xform-label">File transform</span>
+                <span class="xform-label">{t('layers.xform.label')}</span>
                 {#if xfActive}
-                  <span class="xform-dot" aria-label="Transform is active"></span>
+                  <span class="xform-dot" aria-label={t('layers.xform.active.aria')}></span>
                 {/if}
               </button>
               {#if transformOpen && xfActive}
@@ -298,15 +303,15 @@
                   type="button"
                   class="xform-reset"
                   onclick={() => project.resetFileTransformForImport(entry.id)}
-                  title="Reset to identity (no transform)"
+                  title={t('layers.xform.reset.title')}
                 >
-                  Reset
+                  {t('layers.xform.reset')}
                 </button>
               {/if}
             </div>
             {#if transformOpen}
               <div class="xform-body">
-                <label title="Move this drawing by this many mm in X. Positive = right.">
+                <label title={t('layers.xform.tx.title')}>
                   <span>X</span>
                   <span class="xform-field">
                     <input
@@ -322,7 +327,7 @@
                     <span class="xform-unit">mm</span>
                   </span>
                 </label>
-                <label title="Move this drawing by this many mm in Y. Positive = up.">
+                <label title={t('layers.xform.ty.title')}>
                   <span>Y</span>
                   <span class="xform-field">
                     <input
@@ -338,10 +343,8 @@
                     <span class="xform-unit">mm</span>
                   </span>
                 </label>
-                <label
-                  title="Rotate around the drawing's original bbox center. Positive = counter-clockwise."
-                >
-                  <span>Rotate</span>
+                <label title={t('layers.xform.rotate.title')}>
+                  <span>{t('layers.xform.rotate')}</span>
                   <span class="xform-field">
                     <input
                       type="number"
@@ -355,10 +358,8 @@
                     <span class="xform-unit">°</span>
                   </span>
                 </label>
-                <label
-                  title="Uniform scale around the bbox center. 1 = no scale, 2 = twice as big, 0.5 = half size."
-                >
-                  <span>Scale</span>
+                <label title={t('layers.xform.scale.title')}>
+                  <span>{t('layers.xform.scale')}</span>
                   <span class="xform-field">
                     <input
                       type="number"
@@ -374,10 +375,7 @@
                     <span class="xform-unit">×</span>
                   </span>
                 </label>
-                <label
-                  class="xform-check"
-                  title="Mirror across the horizontal axis through the bbox center (flip top↔bottom). Negates arc bulges so curvature stays valid."
-                >
+                <label class="xform-check" title={t('layers.xform.mirror_x.title')}>
                   <input
                     type="checkbox"
                     checked={entry.fileTransform.mirrorX}
@@ -386,12 +384,9 @@
                         mirrorX: (e.currentTarget as HTMLInputElement).checked,
                       })}
                   />
-                  Mirror X (flip vertical)
+                  {t('layers.xform.mirror_x')}
                 </label>
-                <label
-                  class="xform-check"
-                  title="Mirror across the vertical axis through the bbox center (flip left↔right). Negates arc bulges."
-                >
+                <label class="xform-check" title={t('layers.xform.mirror_y.title')}>
                   <input
                     type="checkbox"
                     checked={entry.fileTransform.mirrorY}
@@ -400,7 +395,7 @@
                         mirrorY: (e.currentTarget as HTMLInputElement).checked,
                       })}
                   />
-                  Mirror Y (flip horizontal)
+                  {t('layers.xform.mirror_y')}
                 </label>
               </div>
             {/if}
@@ -416,7 +411,7 @@
                   type="checkbox"
                   checked={project.data.visibleLayers.has(layer.name)}
                   onchange={() => project.toggleLayer(layer.name)}
-                  title="Active = included in pipeline + visible on canvas. Uncheck to deactivate."
+                  title={t('layers.row.toggle.title')}
                 />
                 <span class="swatch" style:background={swatch(layer.color)}></span>
                 <span class="name">{layer.name}</span>
@@ -426,8 +421,8 @@
                 type="button"
                 class="del-btn"
                 onclick={() => project.removeImportedLayer(layer.name)}
-                title="Delete this layer (drops every segment on it)"
-                aria-label={`Delete layer ${layer.name}`}
+                title={t('layers.row.delete.title')}
+                aria-label={t('layers.row.delete.aria', { name: layer.name })}
               >
                 ×
               </button>
@@ -436,24 +431,26 @@
         </ul>
       {:else}
         <div class="empty-card">
-          <p class="empty-title">No drawing yet</p>
-          <p class="empty-sub">Import a DXF or SVG to see its layers here.</p>
+          <p class="empty-title">{t('layers.empty.title')}</p>
+          <p class="empty-sub">{t('layers.empty.sub')}</p>
           {#if onAddDrawingClick}
             <button class="primary-cta" type="button" onclick={onAddDrawingClick}>
-              + Open file
+              {t('layers.empty.open_file')}
             </button>
           {/if}
           {#if reopenPrompt}
             <div class="reopen">
               <span class="reopen-text">
-                Reopen <strong>{reopenPrompt.filename}</strong>?
+                {t('layers.reopen.prefix')} <strong>{reopenPrompt.filename}</strong>{t(
+                  'layers.reopen.suffix',
+                )}
               </span>
               <div class="reopen-actions">
                 <button class="reopen-accept" type="button" onclick={() => onReopenAccept?.()}>
-                  Reopen
+                  {t('layers.reopen.accept')}
                 </button>
                 <button class="reopen-dismiss" type="button" onclick={() => onReopenDismiss?.()}>
-                  Dismiss
+                  {t('layers.reopen.dismiss')}
                 </button>
               </div>
             </div>

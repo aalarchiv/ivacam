@@ -4,6 +4,29 @@
 
 /** Every translatable message key, derived from the English base catalog. */
 export type MsgKey =
+  | "canvas.add_to_selection.aria"
+  | "canvas.add_to_selection.title"
+  | "canvas.ctx.dismiss"
+  | "canvas.ctx.empty_hint"
+  | "canvas.ctx.new_op_from_selection"
+  | "canvas.ctx.set_text_origin"
+  | "canvas.ctx.set_text_origin.title"
+  | "canvas.ctx.text_layer"
+  | "canvas.firstrun.click_select"
+  | "canvas.firstrun.longpress_op"
+  | "canvas.firstrun.multiselect"
+  | "canvas.firstrun.rightclick_op"
+  | "canvas.firstrun.tap_select"
+  | "canvas.fit_view.aria"
+  | "canvas.fit_view.title"
+  | "canvas.help.aria"
+  | "canvas.help.title"
+  | "canvas.selection_hud"
+  | "canvas.snap_off"
+  | "canvas.tab_popover.delete"
+  | "canvas.tab_popover.header"
+  | "canvas.tab_popover.height"
+  | "canvas.tab_popover.width"
   | "common.apply"
   | "common.cancel"
   | "common.close"
@@ -15,6 +38,154 @@ export type MsgKey =
   | "common.ok"
   | "common.revert"
   | "common.save_ellipsis"
+  | "dialog.action.load_recent_project"
+  | "dialog.action.load_sample"
+  | "dialog.action.open_another_file"
+  | "dialog.action.open_another_project"
+  | "dialog.action.open_dropped_drawing"
+  | "dialog.action.open_dropped_project"
+  | "dialog.export_stl.no_stock"
+  | "dialog.loading.dxf"
+  | "dialog.loading.file"
+  | "dialog.loading.gcode"
+  | "dialog.loading.hpgl"
+  | "dialog.loading.project"
+  | "dialog.loading.sample"
+  | "dialog.loading.stl"
+  | "dialog.loading.svg"
+  | "dialog.open_drawing.add_to_layers"
+  | "dialog.open_drawing.body"
+  | "dialog.open_drawing.new_project"
+  | "dialog.open_drawing.title"
+  | "dialog.quit.confirm_body"
+  | "dialog.quit.discard_quit"
+  | "dialog.quit.quit"
+  | "dialog.quit.save_quit"
+  | "dialog.quit.title"
+  | "dialog.quit.unsaved_body"
+  | "dialog.text.add"
+  | "dialog.text.depth"
+  | "dialog.text.depth.title"
+  | "dialog.text.discard_prompt"
+  | "dialog.text.engraving_mismatch"
+  | "dialog.text.error.empty"
+  | "dialog.text.error.no_engraving_font"
+  | "dialog.text.error.no_font"
+  | "dialog.text.font"
+  | "dialog.text.font.bundled.title"
+  | "dialog.text.font.custom.title"
+  | "dialog.text.font.loaded"
+  | "dialog.text.font.single_line_suffix"
+  | "dialog.text.no_tool"
+  | "dialog.text.pos_x"
+  | "dialog.text.pos_x.title"
+  | "dialog.text.pos_y"
+  | "dialog.text.pos_y.title"
+  | "dialog.text.size"
+  | "dialog.text.size.title"
+  | "dialog.text.style"
+  | "dialog.text.switch_font"
+  | "dialog.text.text"
+  | "dialog.text.text.title"
+  | "dialog.text.title"
+  | "dialog.text.tool"
+  | "dialog.text.tool.title"
+  | "dialog.text.width"
+  | "dialog.text.width.title"
+  | "dialog.unsaved.body"
+  | "dialog.unsaved.dont_save"
+  | "dialog.unsaved.save_continue"
+  | "dialog.unsaved.title"
+  | "genbar.chip.clean"
+  | "genbar.chip.critical"
+  | "genbar.chip.details_title"
+  | "genbar.chip.idle"
+  | "genbar.chip.stale"
+  | "genbar.chip.warnings"
+  | "genbar.download.ngc"
+  | "genbar.download.plt"
+  | "genbar.download.stl_title"
+  | "genbar.download.title"
+  | "genbar.error.block_critical"
+  | "genbar.error.block_work_area"
+  | "genbar.error.no_operations"
+  | "genbar.generate.generate"
+  | "genbar.generate.generating"
+  | "genbar.generate.regenerate"
+  | "genbar.generate.title"
+  | "genbar.generate.title_stale"
+  | "genbar.panel.aria"
+  | "genbar.panel.empty"
+  | "genbar.panel.title"
+  | "genbar.row.apply_fix"
+  | "genbar.row.apply_fix_aria"
+  | "genbar.row.apply_fix_title"
+  | "genbar.row.goto"
+  | "genbar.row.goto_aria"
+  | "genbar.row.goto_title"
+  | "genbar.row.pipeline"
+  | "genbar.row.pipeline_title"
+  | "genbar.row.sim"
+  | "genbar.row.sim_title"
+  | "genbar.sim_idle_hint"
+  | "genbar.source_stale.changed"
+  | "genbar.source_stale.reload"
+  | "genbar.source_stale.title"
+  | "genbar.stats.cached"
+  | "genbar.stats.summary"
+  | "genbar.time.arc"
+  | "genbar.time.aria"
+  | "genbar.time.cut"
+  | "genbar.time.plunge"
+  | "genbar.time.rapid"
+  | "genbar.time.retract"
+  | "genbar.time.spindle_warmup"
+  | "genbar.time.toolchange"
+  | "genbar.time.total"
+  | "layers.add"
+  | "layers.add.open_file"
+  | "layers.add.open_file.title"
+  | "layers.add.text"
+  | "layers.add.text.title"
+  | "layers.add.title"
+  | "layers.caret.collapse.aria"
+  | "layers.caret.collapse.title"
+  | "layers.caret.expand.aria"
+  | "layers.caret.expand.title"
+  | "layers.drawings"
+  | "layers.empty.open_file"
+  | "layers.empty.sub"
+  | "layers.empty.title"
+  | "layers.file_stats"
+  | "layers.file_stats.title"
+  | "layers.import_remove.aria"
+  | "layers.import_remove.title"
+  | "layers.import_stats"
+  | "layers.reopen.accept"
+  | "layers.reopen.dismiss"
+  | "layers.reopen.prefix"
+  | "layers.reopen.suffix"
+  | "layers.row.delete.aria"
+  | "layers.row.delete.title"
+  | "layers.row.toggle.title"
+  | "layers.title"
+  | "layers.toggle_all.aria"
+  | "layers.toggle_all.title"
+  | "layers.xform.active.aria"
+  | "layers.xform.head.title"
+  | "layers.xform.label"
+  | "layers.xform.mirror_x"
+  | "layers.xform.mirror_x.title"
+  | "layers.xform.mirror_y"
+  | "layers.xform.mirror_y.title"
+  | "layers.xform.reset"
+  | "layers.xform.reset.title"
+  | "layers.xform.rotate"
+  | "layers.xform.rotate.title"
+  | "layers.xform.scale"
+  | "layers.xform.scale.title"
+  | "layers.xform.tx.title"
+  | "layers.xform.ty.title"
   | "machine.accel.x.aria"
   | "machine.accel.y.aria"
   | "machine.accel.z.aria"
@@ -307,10 +478,37 @@ export type MsgKey =
   | "settings.view.preview_style.both"
   | "settings.view.preview_style.solid"
   | "settings.view.preview_style.wireframe"
-  | "settings.view.show_stock_box";
+  | "settings.view.show_stock_box"
+  | "toast.dismiss"
+  | "toast.queue.more"
+  | "toast.queue.title"
+  | "toast.report_bug";
 
 /** All keys as an array (handy for coverage tests / iteration). */
 export const MSG_KEYS: readonly MsgKey[] = [
+  "canvas.add_to_selection.aria",
+  "canvas.add_to_selection.title",
+  "canvas.ctx.dismiss",
+  "canvas.ctx.empty_hint",
+  "canvas.ctx.new_op_from_selection",
+  "canvas.ctx.set_text_origin",
+  "canvas.ctx.set_text_origin.title",
+  "canvas.ctx.text_layer",
+  "canvas.firstrun.click_select",
+  "canvas.firstrun.longpress_op",
+  "canvas.firstrun.multiselect",
+  "canvas.firstrun.rightclick_op",
+  "canvas.firstrun.tap_select",
+  "canvas.fit_view.aria",
+  "canvas.fit_view.title",
+  "canvas.help.aria",
+  "canvas.help.title",
+  "canvas.selection_hud",
+  "canvas.snap_off",
+  "canvas.tab_popover.delete",
+  "canvas.tab_popover.header",
+  "canvas.tab_popover.height",
+  "canvas.tab_popover.width",
   "common.apply",
   "common.cancel",
   "common.close",
@@ -322,6 +520,154 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "common.ok",
   "common.revert",
   "common.save_ellipsis",
+  "dialog.action.load_recent_project",
+  "dialog.action.load_sample",
+  "dialog.action.open_another_file",
+  "dialog.action.open_another_project",
+  "dialog.action.open_dropped_drawing",
+  "dialog.action.open_dropped_project",
+  "dialog.export_stl.no_stock",
+  "dialog.loading.dxf",
+  "dialog.loading.file",
+  "dialog.loading.gcode",
+  "dialog.loading.hpgl",
+  "dialog.loading.project",
+  "dialog.loading.sample",
+  "dialog.loading.stl",
+  "dialog.loading.svg",
+  "dialog.open_drawing.add_to_layers",
+  "dialog.open_drawing.body",
+  "dialog.open_drawing.new_project",
+  "dialog.open_drawing.title",
+  "dialog.quit.confirm_body",
+  "dialog.quit.discard_quit",
+  "dialog.quit.quit",
+  "dialog.quit.save_quit",
+  "dialog.quit.title",
+  "dialog.quit.unsaved_body",
+  "dialog.text.add",
+  "dialog.text.depth",
+  "dialog.text.depth.title",
+  "dialog.text.discard_prompt",
+  "dialog.text.engraving_mismatch",
+  "dialog.text.error.empty",
+  "dialog.text.error.no_engraving_font",
+  "dialog.text.error.no_font",
+  "dialog.text.font",
+  "dialog.text.font.bundled.title",
+  "dialog.text.font.custom.title",
+  "dialog.text.font.loaded",
+  "dialog.text.font.single_line_suffix",
+  "dialog.text.no_tool",
+  "dialog.text.pos_x",
+  "dialog.text.pos_x.title",
+  "dialog.text.pos_y",
+  "dialog.text.pos_y.title",
+  "dialog.text.size",
+  "dialog.text.size.title",
+  "dialog.text.style",
+  "dialog.text.switch_font",
+  "dialog.text.text",
+  "dialog.text.text.title",
+  "dialog.text.title",
+  "dialog.text.tool",
+  "dialog.text.tool.title",
+  "dialog.text.width",
+  "dialog.text.width.title",
+  "dialog.unsaved.body",
+  "dialog.unsaved.dont_save",
+  "dialog.unsaved.save_continue",
+  "dialog.unsaved.title",
+  "genbar.chip.clean",
+  "genbar.chip.critical",
+  "genbar.chip.details_title",
+  "genbar.chip.idle",
+  "genbar.chip.stale",
+  "genbar.chip.warnings",
+  "genbar.download.ngc",
+  "genbar.download.plt",
+  "genbar.download.stl_title",
+  "genbar.download.title",
+  "genbar.error.block_critical",
+  "genbar.error.block_work_area",
+  "genbar.error.no_operations",
+  "genbar.generate.generate",
+  "genbar.generate.generating",
+  "genbar.generate.regenerate",
+  "genbar.generate.title",
+  "genbar.generate.title_stale",
+  "genbar.panel.aria",
+  "genbar.panel.empty",
+  "genbar.panel.title",
+  "genbar.row.apply_fix",
+  "genbar.row.apply_fix_aria",
+  "genbar.row.apply_fix_title",
+  "genbar.row.goto",
+  "genbar.row.goto_aria",
+  "genbar.row.goto_title",
+  "genbar.row.pipeline",
+  "genbar.row.pipeline_title",
+  "genbar.row.sim",
+  "genbar.row.sim_title",
+  "genbar.sim_idle_hint",
+  "genbar.source_stale.changed",
+  "genbar.source_stale.reload",
+  "genbar.source_stale.title",
+  "genbar.stats.cached",
+  "genbar.stats.summary",
+  "genbar.time.arc",
+  "genbar.time.aria",
+  "genbar.time.cut",
+  "genbar.time.plunge",
+  "genbar.time.rapid",
+  "genbar.time.retract",
+  "genbar.time.spindle_warmup",
+  "genbar.time.toolchange",
+  "genbar.time.total",
+  "layers.add",
+  "layers.add.open_file",
+  "layers.add.open_file.title",
+  "layers.add.text",
+  "layers.add.text.title",
+  "layers.add.title",
+  "layers.caret.collapse.aria",
+  "layers.caret.collapse.title",
+  "layers.caret.expand.aria",
+  "layers.caret.expand.title",
+  "layers.drawings",
+  "layers.empty.open_file",
+  "layers.empty.sub",
+  "layers.empty.title",
+  "layers.file_stats",
+  "layers.file_stats.title",
+  "layers.import_remove.aria",
+  "layers.import_remove.title",
+  "layers.import_stats",
+  "layers.reopen.accept",
+  "layers.reopen.dismiss",
+  "layers.reopen.prefix",
+  "layers.reopen.suffix",
+  "layers.row.delete.aria",
+  "layers.row.delete.title",
+  "layers.row.toggle.title",
+  "layers.title",
+  "layers.toggle_all.aria",
+  "layers.toggle_all.title",
+  "layers.xform.active.aria",
+  "layers.xform.head.title",
+  "layers.xform.label",
+  "layers.xform.mirror_x",
+  "layers.xform.mirror_x.title",
+  "layers.xform.mirror_y",
+  "layers.xform.mirror_y.title",
+  "layers.xform.reset",
+  "layers.xform.reset.title",
+  "layers.xform.rotate",
+  "layers.xform.rotate.title",
+  "layers.xform.scale",
+  "layers.xform.scale.title",
+  "layers.xform.tx.title",
+  "layers.xform.ty.title",
   "machine.accel.x.aria",
   "machine.accel.y.aria",
   "machine.accel.z.aria",
@@ -615,4 +961,8 @@ export const MSG_KEYS: readonly MsgKey[] = [
   "settings.view.preview_style.solid",
   "settings.view.preview_style.wireframe",
   "settings.view.show_stock_box",
+  "toast.dismiss",
+  "toast.queue.more",
+  "toast.queue.title",
+  "toast.report_bug",
 ];

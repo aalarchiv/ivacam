@@ -65,6 +65,7 @@
   import OpKindPicker, { pickerLabel, type PickerKind } from './OpKindPicker.svelte';
   import { createOpFromSelection } from '../state/op_creation';
   import { layout } from '../state/layout.svelte';
+  import { t } from '../i18n';
   import { computeFootprint } from '../sim/driver';
   import {
     previewSegmentsFor,
@@ -2133,7 +2134,9 @@
   ></canvas>
   <canvas bind:this={canvasOverlay} class="overlay"></canvas>
   {#if project.sel.selectedEntities.size > 0}
-    <div class="selection-hud">{project.sel.selectedEntities.size} selected · esc to clear</div>
+    <div class="selection-hud">
+      {t('canvas.selection_hud', { count: project.sel.selectedEntities.size })}
+    </div>
   {/if}
   {#if cursorXY}
     <div class="cursor-hud" aria-hidden="true">
@@ -2142,7 +2145,7 @@
         <!-- Visible cue that Shift is suppressing snap.
              Without this the snap glyph just silently disappears and
              the user can't tell why their click stops locking. -->
-        <span class="snap-off">snap off</span>
+        <span class="snap-off">{t('canvas.snap_off')}</span>
       {/if}
     </div>
   {/if}
@@ -2150,19 +2153,19 @@
     <div class="firstrun-hint" role="status">
       {#if isTouchDevice}
         <span class="firstrun-step">1</span>
-        <span>Tap an object to select it</span>
+        <span>{t('canvas.firstrun.tap_select')}</span>
         <span class="firstrun-arrow">→</span>
         <span class="firstrun-step">2</span>
-        <span>⧉ then tap to multi-select</span>
+        <span>{t('canvas.firstrun.multiselect')}</span>
         <span class="firstrun-arrow">→</span>
         <span class="firstrun-step">3</span>
-        <span>Long-press for new operation</span>
+        <span>{t('canvas.firstrun.longpress_op')}</span>
       {:else}
         <span class="firstrun-step">1</span>
-        <span>Click an object to select it</span>
+        <span>{t('canvas.firstrun.click_select')}</span>
         <span class="firstrun-arrow">→</span>
         <span class="firstrun-step">2</span>
-        <span>Right-click for new operation</span>
+        <span>{t('canvas.firstrun.rightclick_op')}</span>
       {/if}
     </div>
   {/if}
@@ -2177,9 +2180,9 @@
         role="dialog"
         use:clampPopup={tabPopover}
       >
-        <div class="tab-popover-header">Tab on op #{op.id}</div>
+        <div class="tab-popover-header">{t('canvas.tab_popover.header', { id: op.id })}</div>
         <label class="tab-popover-row">
-          <span>Width</span>
+          <span>{t('canvas.tab_popover.width')}</span>
           <input
             type="number"
             step="0.5"
@@ -2197,7 +2200,7 @@
           <span class="unit">mm</span>
         </label>
         <label class="tab-popover-row">
-          <span>Height</span>
+          <span>{t('canvas.tab_popover.height')}</span>
           <input
             type="number"
             step="0.1"
@@ -2218,10 +2221,13 @@
           type="button"
           class="tab-popover-delete"
           onclick={() => deleteTabPlacement(tabPopover!.opId, tabPopover!.placementIdx)}
-          >Delete tab</button
+          >{t('canvas.tab_popover.delete')}</button
         >
-        <button type="button" class="tab-popover-close" aria-label="Close" onclick={closeTabPopover}
-          >×</button
+        <button
+          type="button"
+          class="tab-popover-close"
+          aria-label={t('common.close')}
+          onclick={closeTabPopover}>×</button
         >
       </div>
     {/if}
@@ -2238,9 +2244,9 @@
         use:clampPopup={ctxMenu}
       >
         <p class="ctx-hint">
-          Select objects to add an operation, or a text layer to reposition it.
+          {t('canvas.ctx.empty_hint')}
         </p>
-        <button type="button" onclick={closeCtxMenu}>Dismiss</button>
+        <button type="button" onclick={closeCtxMenu}>{t('canvas.ctx.dismiss')}</button>
       </div>
     {:else}
       <div
@@ -2251,21 +2257,21 @@
         use:clampPopup={ctxMenu}
       >
         {#if hasTextSelected}
-          <div class="ctx-header">Text layer</div>
+          <div class="ctx-header">{t('canvas.ctx.text_layer')}</div>
           <button
             type="button"
             class="ctx-item"
             onclick={setTextOriginHere}
-            title="Move the selected text layer's left-baseline origin to the right-clicked spot."
+            title={t('canvas.ctx.set_text_origin.title')}
           >
-            Set text origin here
+            {t('canvas.ctx.set_text_origin')}
           </button>
           {#if hasObjsSelected}
             <div class="ctx-divider"></div>
           {/if}
         {/if}
         {#if hasObjsSelected}
-          <div class="ctx-header">New operation from selection</div>
+          <div class="ctx-header">{t('canvas.ctx.new_op_from_selection')}</div>
           <OpKindPicker onPick={pickFromCtx} />
         {/if}
       </div>
@@ -2279,8 +2285,8 @@
     type="button"
     class="fit-btn"
     onclick={fitView}
-    title="Fit view to scene (F)"
-    aria-label="Fit view to scene"
+    title={t('canvas.fit_view.title')}
+    aria-label={t('canvas.fit_view.aria')}
   >
     ⌖
   </button>
@@ -2294,8 +2300,8 @@
       class:active={addToSelection}
       aria-pressed={addToSelection}
       onclick={() => (addToSelection = !addToSelection)}
-      title="Add to selection (tap multiple objects)"
-      aria-label="Toggle add-to-selection mode"
+      title={t('canvas.add_to_selection.title')}
+      aria-label={t('canvas.add_to_selection.aria')}
     >
       ⧉
     </button>
@@ -2305,8 +2311,8 @@
       type="button"
       class="help-btn"
       onclick={onShowHelp}
-      title="Keyboard & mouse shortcuts (?)"
-      aria-label="Show keyboard and mouse shortcuts">?</button
+      title={t('canvas.help.title')}
+      aria-label={t('canvas.help.aria')}>?</button
     >
   {/if}
   <!-- Phone Stock/Layers are now the 2D bottom-left "S+L" sheet

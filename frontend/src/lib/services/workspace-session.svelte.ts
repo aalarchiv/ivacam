@@ -26,6 +26,7 @@ import {
   confirmDiscardIfDirty,
 } from './file_ops';
 import { dragHasFiles } from '../state/app-menu';
+import { t } from '../i18n';
 
 /// Startup banner payload: when set, the user was previously editing a
 /// project and we offer to reopen it. Styled in-app instead of a
@@ -161,7 +162,7 @@ export function mirrorMachineProfileOnChange(): void {
 /// ConfirmPrompt (same dialog as Open / Quit) rather than a native
 /// window.confirm.
 export async function openRecentProject(path: string): Promise<void> {
-  if (!(await confirmDiscardIfDirty('load the recent project'))) return;
+  if (!(await confirmDiscardIfDirty(t('dialog.action.load_recent_project')))) return;
   if (isProjectFilePath(path)) await loadProjectPath(path);
   else await loadFromPath(path);
 }
@@ -189,11 +190,11 @@ export async function wireCloseConfirm(): Promise<void> {
       // Three-way so a misclick on the close button doesn't force a
       // choice between losing work and re-opening the app.
       const choice = await confirmStore.askChoice({
-        title: 'Quit ivaCAM?',
-        body: 'You have unsaved changes. Save before you quit?',
-        primaryLabel: 'Save & quit',
-        extraLabel: 'Discard & quit',
-        cancelLabel: 'Keep editing',
+        title: t('dialog.quit.title'),
+        body: t('dialog.quit.unsaved_body'),
+        primaryLabel: t('dialog.quit.save_quit'),
+        extraLabel: t('dialog.quit.discard_quit'),
+        cancelLabel: t('common.keep_editing'),
         danger: false,
         extraDanger: true,
       });
@@ -210,10 +211,10 @@ export async function wireCloseConfirm(): Promise<void> {
     // Clean project: still confirm — an accidental close loses camera,
     // panel sizes, and in-progress text not yet committed via Add.
     const ok = await confirmStore.ask({
-      title: 'Quit ivaCAM?',
-      body: 'Are you sure you want to quit?',
-      primaryLabel: 'Quit',
-      cancelLabel: 'Cancel',
+      title: t('dialog.quit.title'),
+      body: t('dialog.quit.confirm_body'),
+      primaryLabel: t('dialog.quit.quit'),
+      cancelLabel: t('common.cancel'),
       danger: false,
     });
     if (ok) void confirmClose();
@@ -229,11 +230,11 @@ export async function wireCloseConfirm(): Promise<void> {
 export async function confirmExitApp(): Promise<void> {
   if (project.hasUnsavedWork) {
     const choice = await confirmStore.askChoice({
-      title: 'Quit ivaCAM?',
-      body: 'You have unsaved changes. Save before you quit?',
-      primaryLabel: 'Save & quit',
-      extraLabel: 'Discard & quit',
-      cancelLabel: 'Keep editing',
+      title: t('dialog.quit.title'),
+      body: t('dialog.quit.unsaved_body'),
+      primaryLabel: t('dialog.quit.save_quit'),
+      extraLabel: t('dialog.quit.discard_quit'),
+      cancelLabel: t('common.keep_editing'),
       danger: false,
       extraDanger: true,
     });
@@ -245,10 +246,10 @@ export async function confirmExitApp(): Promise<void> {
     }
   } else {
     const ok = await confirmStore.ask({
-      title: 'Quit ivaCAM?',
-      body: 'Are you sure you want to quit?',
-      primaryLabel: 'Quit',
-      cancelLabel: 'Cancel',
+      title: t('dialog.quit.title'),
+      body: t('dialog.quit.confirm_body'),
+      primaryLabel: t('dialog.quit.quit'),
+      cancelLabel: t('common.cancel'),
       danger: false,
     });
     if (!ok) return;
@@ -306,7 +307,7 @@ export async function onDrop(e: DragEvent): Promise<void> {
     name.endsWith('.ivac-project.json') || name.endsWith('-project.json') || name.endsWith('.json');
   if (
     !(await confirmDiscardIfDirty(
-      isProject ? 'open the dropped project' : 'open the dropped drawing',
+      isProject ? t('dialog.action.open_dropped_project') : t('dialog.action.open_dropped_drawing'),
     ))
   )
     return;

@@ -21,6 +21,7 @@
   import { workspace } from '../state/workspace.svelte';
   import { warningFocus } from '../state/warning-focus.svelte';
   import { tick } from 'svelte';
+  import { t } from '../i18n';
 
   // Format a duration in seconds as HH:MM:SS (always two digits per
   // unit). Negative / NaN inputs render as 00:00:00.
@@ -112,7 +113,7 @@
     warningPanelOpen = true;
     void tick().then(() => {
       if (typeof document === 'undefined') return;
-      const panel = document.querySelector('[aria-label="Warnings"]');
+      const panel = document.querySelector(`[aria-label="${CSS.escape(t('genbar.panel.aria'))}"]`);
       const rows = panel?.querySelectorAll<HTMLDetailsElement>(`details[data-op-id="${opId}"]`);
       rows?.forEach((r, i) => {
         r.open = true;
@@ -249,7 +250,7 @@
         // above, so just `setError + return` would leave the UI stuck on
         // the progress bar + cancel button. Route through `failGenerate`
         // which snaps state back to 'idle'.
-        project.failGenerate('Add at least one operation to generate G-code.');
+        project.failGenerate(t('genbar.error.no_operations'));
         return;
       }
       // The hand-rolled WireProject in build-project.ts trims the
@@ -322,9 +323,7 @@
     // both, and simDiagnostics is cleared on every Generate (see
     // setGenerated) so it always reflects the toolpath being exported.
     if (project.data.settings.blockOnCriticalSimWarnings && criticalCount > 0) {
-      project.setError(
-        `${criticalCount} critical warning${criticalCount === 1 ? '' : 's'} (collisions / unsafe cuts) — fix or disable the safety check in Settings before downloading`,
-      );
+      project.setError(t('genbar.error.block_critical', { count: criticalCount }));
       return;
     }
     // Tier-4: opt-in hard gate on out-of-work-area moves. Blocks EXPORT
@@ -332,9 +331,7 @@
     // violation). The toolpath leaves the machine envelope — sending it
     // risks a soft-limit fault or a gantry crash.
     if (project.data.settings.blockOnWorkAreaViolation && workAreaViolationCount > 0) {
-      project.setError(
-        `${workAreaViolationCount} move${workAreaViolationCount === 1 ? '' : 's'} leave the machine work area — fix the path / work-offset, widen the work area, or disable the work-area gate in Settings`,
-      );
+      project.setError(t('genbar.error.block_work_area', { count: workAreaViolationCount }));
       return;
     }
     await exportGeneratedGcode(post);
@@ -379,15 +376,18 @@
     // (sim / pipeline) so attribution stays visible.
     switch (warningSummary.severity) {
       case 'idle':
-        return 'Warnings: not run yet — Generate first';
+        return t('genbar.chip.idle');
       case 'stale':
-        return 'Warnings: stale — re-Generate';
+        return t('genbar.chip.stale');
       case 'clean':
-        return 'No warnings';
+        return t('genbar.chip.clean');
       case 'critical':
-        return `${totalWarningCount} warning${totalWarningCount === 1 ? '' : 's'} (${criticalCount} critical)`;
+        return t('genbar.chip.critical', {
+          count: totalWarningCount,
+          critical: criticalCount,
+        });
       default:
-        return `${totalWarningCount} warning${totalWarningCount === 1 ? '' : 's'}`;
+        return t('genbar.chip.warnings', { count: totalWarningCount });
     }
   }
 
@@ -406,8 +406,7 @@
     }
   }
 
-  const SIM_IDLE_HINT =
-    'Sim verification runs after Generate. Catches rapid moves through stock, fixture collisions, and cutter holder collisions before you cut.';
+  const SIM_IDLE_HINT = $derived(t('genbar.sim_idle_hint'));
 </script>
 
 <div class="bar">
@@ -420,57 +419,64 @@
         project.gen.generating}
       class:stale={project.data.dirty && project.gen.generated != null}
       title={project.data.dirty && project.gen.generated != null
-        ? 'The visible toolpath is stale — the project has changed since the last Generate. Click to refresh.'
-        : 'Run the CAM pipeline and produce a toolpath. Reads the current ops, tools, stock, and machine — output is cached so unchanged ops re-emit instantly.'}
+        ? t('genbar.generate.title_stale')
+        : t('genbar.generate.title')}
     >
       {#if project.gen.generating}
-        Generating G-code…
+        {t('genbar.generate.generating')}
       {:else if project.data.dirty && project.gen.generated != null}
-        Regenerate G-code
+        {t('genbar.generate.regenerate')}
       {:else}
-        Generate G-code
+        {t('genbar.generate.generate')}
       {/if}
     </button>
   {/if}
   {#if project.gen.generated}
-    <button
-      onclick={downloadGcode}
-      class="download"
-      title="Save the generated toolpath to disk in the selected dialect's file extension."
-    >
-      {post === 'hpgl' ? 'Download .plt' : 'Download .ngc'}
+    <button onclick={downloadGcode} class="download" title={t('genbar.download.title')}>
+      {post === 'hpgl' ? t('genbar.download.plt') : t('genbar.download.ngc')}
     </button>
     <button
       onclick={() => void exportSimulatedStockStl()}
       class="download"
-      title="Export the simulated (carved) stock as a binary STL mesh."
+      title={t('genbar.download.stl_title')}
     >
       STL
     </button>
     <span class="stats">
-      {project.gen.generated.stats.object_count} obj · {project.gen.generated.stats.offset_count} offsets
-      · {project.gen.generated.toolpath.length} moves
+      {t('genbar.stats.summary', {
+        objects: project.gen.generated.stats.object_count,
+        offsets: project.gen.generated.stats.offset_count,
+        moves: project.gen.generated.toolpath.length,
+      })}
       {#if project.gen.lastGenerateCachedCount > 0}
         <span class="cached-tag"
-          >· {project.gen.lastGenerateCachedCount} of {project.gen.lastGenerateOpCount} cached</span
+          >{t('genbar.stats.cached', {
+            cached: project.gen.lastGenerateCachedCount,
+            total: project.gen.lastGenerateOpCount,
+          })}</span
         >
       {/if}
     </span>
     {#if timeEstimate()}
-      {@const t = timeEstimate()!}
-      <span class="time-chip" tabindex="0" role="button" aria-label="Time breakdown">
-        <span class="time">⏱ {formatHms(t.total_s)}</span>
+      {@const est = timeEstimate()!}
+      <span class="time-chip" tabindex="0" role="button" aria-label={t('genbar.time.aria')}>
+        <span class="time">⏱ {formatHms(est.total_s)}</span>
         <div class="time-breakdown" role="tooltip">
           <table>
             <tbody>
-              <tr><th>Total</th><td>{formatHms(t.total_s)}</td></tr>
-              <tr><th>Cut</th><td>{formatShort(t.cut_s)}</td></tr>
-              <tr><th>Rapid</th><td>{formatShort(t.rapid_s)}</td></tr>
-              <tr><th>Plunge</th><td>{formatShort(t.plunge_s)}</td></tr>
-              <tr><th>Retract</th><td>{formatShort(t.retract_s)}</td></tr>
-              <tr><th>Arc</th><td>{formatShort(t.arc_s)}</td></tr>
-              <tr><th>Tool change</th><td>{formatShort(t.toolchange_s)}</td></tr>
-              <tr><th>Spindle warm-up</th><td>{formatShort(t.spindle_warmup_s)}</td></tr>
+              <tr><th>{t('genbar.time.total')}</th><td>{formatHms(est.total_s)}</td></tr>
+              <tr><th>{t('genbar.time.cut')}</th><td>{formatShort(est.cut_s)}</td></tr>
+              <tr><th>{t('genbar.time.rapid')}</th><td>{formatShort(est.rapid_s)}</td></tr>
+              <tr><th>{t('genbar.time.plunge')}</th><td>{formatShort(est.plunge_s)}</td></tr>
+              <tr><th>{t('genbar.time.retract')}</th><td>{formatShort(est.retract_s)}</td></tr>
+              <tr><th>{t('genbar.time.arc')}</th><td>{formatShort(est.arc_s)}</td></tr>
+              <tr><th>{t('genbar.time.toolchange')}</th><td>{formatShort(est.toolchange_s)}</td></tr
+              >
+              <tr
+                ><th>{t('genbar.time.spindle_warmup')}</th><td
+                  >{formatShort(est.spindle_warmup_s)}</td
+                ></tr
+              >
             </tbody>
           </table>
         </div>
@@ -485,10 +491,11 @@
       class="stale-chip"
       role="alert"
       aria-live="polite"
-      title={`Source file changed on disk: ${project.sourceFileStaleNotice.path}. Reload to pick up the changes; Ignore to keep the current view.`}
+      title={t('genbar.source_stale.title', { path: project.sourceFileStaleNotice.path })}
     >
       <span class="stale-msg">
-        ⟳ <strong>{project.sourceFileStaleNotice.path.split(/[\\/]/).pop()}</strong> changed
+        ⟳ <strong>{project.sourceFileStaleNotice.path.split(/[\\/]/).pop()}</strong>
+        {t('genbar.source_stale.changed')}
       </span>
       <button
         type="button"
@@ -500,7 +507,7 @@
           await project.reimportFromPath(path);
         }}
       >
-        Reload
+        {t('genbar.source_stale.reload')}
       </button>
       <button
         type="button"
@@ -520,7 +527,7 @@
       class={chipClass()}
       onclick={() => (warningPanelOpen = !warningPanelOpen)}
       type="button"
-      title="Click for details"
+      title={t('genbar.chip.details_title')}
       aria-expanded={warningPanelOpen}
     >
       <span class="glyph" aria-hidden="true">{chipGlyph()}</span>
@@ -544,12 +551,12 @@
 <FloatingPanel
   open={warningPanelOpen}
   onClose={() => (warningPanelOpen = false)}
-  title="Warnings ({totalWarningCount})"
-  ariaLabel="Warnings"
+  title={t('genbar.panel.title', { count: totalWarningCount })}
+  ariaLabel={t('genbar.panel.aria')}
 >
   <div class="list">
     {#if totalWarningCount === 0}
-      <p class="empty">No warnings — sim and pipeline are clean.</p>
+      <p class="empty">{t('genbar.panel.empty')}</p>
     {:else}
       {#each warnings as w, i (`sim-${i}`)}
         {@const sev = simWarningSeverity(w)}
@@ -557,9 +564,7 @@
         <details class="row severity-{sev}">
           <summary>
             <span class="dot" aria-hidden="true"></span>
-            <span class="source" title="Surfaced by the simulator after G-code generation."
-              >sim</span
-            >
+            <span class="source" title={t('genbar.row.sim_title')}>{t('genbar.row.sim')}</span>
             <span class="kind">{w.kind}</span>
             <span class="msg">{summary}</span>
             <button
@@ -569,10 +574,10 @@
                 e.stopPropagation();
                 flyToWarning(w);
               }}
-              title="Move the 3D playhead to this warning"
-              aria-label="Go to warning in 3D scene"
+              title={t('genbar.row.goto_title')}
+              aria-label={t('genbar.row.goto_aria')}
             >
-              go to
+              {t('genbar.row.goto')}
             </button>
           </summary>
           <div class="row-body">
@@ -587,9 +592,8 @@
         <details class="row severity-{sev} pipeline" data-op-id={pw.op_id ?? undefined}>
           <summary>
             <span class="dot" aria-hidden="true"></span>
-            <span
-              class="source pipeline"
-              title="Surfaced by the CAM pipeline during G-code generation.">pipeline</span
+            <span class="source pipeline" title={t('genbar.row.pipeline_title')}
+              >{t('genbar.row.pipeline')}</span
             >
             <span class="kind">{pw.kind}</span>
             <span class="msg">{pw.message}</span>
@@ -601,10 +605,10 @@
                   e.stopPropagation();
                   applyWcsBboxSnapFix();
                 }}
-                title="Snap the WCS origin to the geometry bbox's bottom-left corner — the canonical CNC zeroing convention."
-                aria-label="Apply suggested WCS origin"
+                title={t('genbar.row.apply_fix_title')}
+                aria-label={t('genbar.row.apply_fix_aria')}
               >
-                apply fix
+                {t('genbar.row.apply_fix')}
               </button>
             {/if}
           </summary>

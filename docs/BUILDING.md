@@ -292,6 +292,21 @@ shipped. Note also that Tauri derives the *window* icon from the first
 first in `tauri.conf.json` — with `icons/32x32.png` first, window
 managers only ever saw a 32x32 icon to scale up.
 
+**3. Installs the desktop-integration AppRun hook**
+(`deploy/appimage/desktop-integration.sh`). A larger `_NET_WM_ICON` is
+*not* what puts an icon in the taskbar: Cinnamon, GNOME Shell and most
+other panels match a window's `WM_CLASS` against the installed `.desktop`
+entries and resolve that entry's `Icon=` name through the icon theme. An
+AppImage installs neither, so the match fails and the panel falls back to
+its generic `application-x-executable` tile (a grey gear on white under
+Mint-Y) — the "AppImage has no taskbar icon" report. The hook does what
+the `.deb` does, but under `~/.local/share`: it copies the hicolor icons
+and writes an `ivaCAM.desktop` whose `Exec=` points back at the running
+AppImage. It runs on every launch, rewrites only on change, is skipped
+when AppImageLauncher already integrated the app, and can be turned off
+with `IVACAM_NO_DESKTOP_INTEGRATION=1`. Failures there can never stop the
+app from starting.
+
 ### Android (Tauri mobile)
 
 ivaCAM runs on Android as a native Tauri 2 app: the Svelte UI loads from

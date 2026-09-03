@@ -39,6 +39,15 @@
 #    refresh the AppImage's top-level .DirIcon from the largest icon
 #    available.
 #
+# 3. INSTALL THE DESKTOP-INTEGRATION AppRun HOOK.
+#    Panels (Cinnamon, GNOME Shell, ...) resolve a window's taskbar icon by
+#    matching WM_CLASS against installed .desktop entries, not from
+#    _NET_WM_ICON — so an un-integrated AppImage always shows the generic
+#    application-x-executable tile, which is the "no icon in the taskbar"
+#    bug. deploy/appimage/desktop-integration.sh registers the icons and a
+#    .desktop entry under ~/.local/share on first run; see that file for the
+#    full reasoning.
+#
 # Usage: scripts/postprocess-appimage.sh
 #   (run after `cargo tauri build --bundles appimage`)
 set -euo pipefail
@@ -98,6 +107,42 @@ if [[ -d "$HICOLOR" ]]; then
     cp -f "$best" "$APPDIR/.DirIcon"
     echo "postprocess-appimage: .DirIcon <- ${best_px}x${best_px}"
   fi
+fi
+
+# -- 3. desktop integration hook --
+# linuxdeploy's generated AppRun sources each hook by name (it does not glob),
+# so the source line has to be added explicitly. It goes directly before the
+# final exec, so the hook sees the environment the GTK hook set up ($APPDIR).
+# `|| true`: AppRun runs under `set -e`, and a hostile desktop environment
+# must never stop the app from launching.
+HOOK_SRC=deploy/appimage/desktop-integration.sh
+HOOK_NAME=ivacam-desktop-integration.sh
+if [[ -f "$HOOK_SRC" ]]; then
+  mkdir -p "$APPDIR/apprun-hooks"
+  cp -f "$HOOK_SRC" "$APPDIR/apprun-hooks/$HOOK_NAME"
+  chmod +x "$APPDIR/apprun-hooks/$HOOK_NAME"
+  if grep -q "$HOOK_NAME" "$APPDIR/AppRun"; then
+    echo "postprocess-appimage: AppRun already sources $HOOK_NAME"
+  else
+    awk -v hook="$HOOK_NAME" '
+      /^exec "\$this_dir"\/AppRun\.wrapped/ && !inserted {
+        print "source \"$this_dir\"/apprun-hooks/\"" hook "\" || true"
+        print ""
+        inserted = 1
+      }
+      { print }
+    ' "$APPDIR/AppRun" > "$APPDIR/AppRun.new"
+    mv "$APPDIR/AppRun.new" "$APPDIR/AppRun"
+    chmod +x "$APPDIR/AppRun"
+    grep -q "$HOOK_NAME" "$APPDIR/AppRun" || {
+      echo "postprocess-appimage: FAILED to hook AppRun (layout changed?)" >&2
+      exit 1
+    }
+    echo "postprocess-appimage: AppRun now sources $HOOK_NAME"
+  fi
+else
+  echo "postprocess-appimage: $HOOK_SRC missing - no desktop integration" >&2
+  exit 1
 fi
 
 # Re-pack, REPLACING the original artifact. The packer drops

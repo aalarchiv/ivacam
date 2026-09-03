@@ -116,14 +116,18 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: cargo tauri build ${{ matrix.platform.args }}
 
-      # Drop the GStreamer core libs linuxdeploy bundles as WebKit transitive
-      # deps (the app uses no media); they shadow the host's GStreamer and
-      # cause "appsink not found" noise. Replaces the AppImage in place, so the
-      # upload step ships the stripped one. patchelf is installed above;
-      # APPIMAGE_EXTRACT_AND_RUN handles the FUSE-less runner. See docs/BUILDING.md.
-      - name: strip bundled GStreamer from AppImage
+      # Drop the GStreamer + glib core libs linuxdeploy bundles as WebKit
+      # transitive deps (the app uses no media) and fix up the hicolor icon
+      # dirs. Both must go: with only GStreamer stripped, the builder's
+      # glib 2.72 shadowed the host's, and the host GStreamer we fall back to
+      # failed to resolve g_once_init_leave_pointer on glib >= 2.80 hosts
+      # (Ubuntu 24.04 / Mint 22) — v0.5.0 could not start there at all.
+      # Replaces the AppImage in place, so the upload step ships the fixed
+      # one. patchelf is installed above; APPIMAGE_EXTRACT_AND_RUN handles the
+      # FUSE-less runner. See docs/BUILDING.md.
+      - name: post-process AppImage (libs + icons)
         if: matrix.platform.name == 'linux'
-        run: scripts/strip-appimage-media.sh
+        run: scripts/postprocess-appimage.sh
 
       - name: list artifacts
         shell: bash

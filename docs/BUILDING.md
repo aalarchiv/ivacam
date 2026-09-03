@@ -247,23 +247,50 @@ Outputs land under `target/release/bundle/`:
 After bundling the AppImage, run
 
 ```sh
-scripts/strip-appimage-media.sh
+scripts/postprocess-appimage.sh
 ```
 
-It removes the GStreamer *core libraries* that linuxdeploy bundles as
-WebKit transitive deps and re-packs the AppImage. The app uses no
+It does two things to the AppDir, then re-packs the AppImage.
+
+**1. Removes the bundled GStreamer *and* glib core libraries.**
+linuxdeploy bundles them as WebKit transitive deps. The app uses no
 media (the webview's media backend is disabled at runtime), and the
 bundled copies actively cause harm: they shadow the host's GStreamer,
 so the host's WebKit loads OUR core against the HOST's plugins —
 absent or version-mismatched plugins then print `GStreamer element
-appsink not found. Please install it.` on every launch. With the
-bundled core stripped, the loader falls back to the host's own
-GStreamer (a hard dependency of every webkit2gtk package), keeping
-the stack version-consistent and the AppImage smaller. Hosts that
+appsink not found. Please install it.` on every launch.
+
+Stripping GStreamer *alone* is not enough, and that half-measure is what
+broke the v0.5.0 AppImage on every distro newer than the builder: the
+AppDir still shipped ubuntu-22.04's glib 2.72, while the host GStreamer
+it now falls back to is linked against the host's glib. On Ubuntu 24.04
+/ Linux Mint 22 the app died at startup with
+
+```
+ivac-desktop: symbol lookup error: /lib/x86_64-linux-gnu/libgstvideo-1.0.so.0:
+undefined symbol: g_once_init_leave_pointer
+```
+
+(`g_once_init_leave_pointer` is glib >= 2.80). Dropping the glib core as
+well makes the fallback consistent: glib *and* GStreamer both come from
+the host, and both are hard dependencies of every webkit2gtk package, so
+they are always present. The trade-off is that the AppImage now requires
+a host glib at least as new as the builder's (ubuntu-22.04 => 2.72) —
+which the bundled GTK 3.24.33 effectively required anyway. Hosts that
 genuinely lack the GStreamer plugin packages may still print the
-warning — accepted: it's harmless stderr noise, and the alternative
-(`bundleMediaFramework: true`) costs +14 MB for a media stack the app
-never uses.
+`appsink` warning — accepted: it's harmless stderr noise, and the
+alternative (`bundleMediaFramework: true`) costs +14 MB for a media
+stack the app never uses.
+
+**2. Normalizes the hicolor icon directories.** Tauri's bundler writes
+the 256x256 icon to `hicolor/256x256@2/`, a directory name the
+freedesktop icon theme spec does not define, so desktop environments
+skip it. The script copies it into the plain `256x256/` bucket and
+repoints the AppImage's top-level `.DirIcon` at the largest icon
+shipped. Note also that Tauri derives the *window* icon from the first
+`.png` in `bundle.icon`, so `icons/128x128@2x.png` (256x256) is listed
+first in `tauri.conf.json` — with `icons/32x32.png` first, window
+managers only ever saw a 32x32 icon to scale up.
 
 ### Android (Tauri mobile)
 

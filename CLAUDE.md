@@ -105,7 +105,7 @@ pnpm dev                       # dev server on http://localhost:5173
 
 # Desktop bundle (Tauri 2)
 cargo tauri build --bundles appimage
-scripts/strip-appimage-media.sh   # drop bundled GStreamer core (see docs/BUILDING.md)
+scripts/postprocess-appimage.sh   # drop bundled GStreamer+glib, fix icons (docs/BUILDING.md)
 ```
 
 ## Architecture Overview

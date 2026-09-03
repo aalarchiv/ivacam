@@ -44,10 +44,15 @@ jobs:
             runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             args: ""
-          - name: macos
-            runner: macos-13
-            target: universal-apple-darwin
-            args: --target universal-apple-darwin
+          # macOS disabled in this fork: macos-13 runners queue for a long
+          # time (or never get picked up) and the job then holds up the
+          # release step for the platforms that did build. The assemble step
+          # below already skips a missing artifacts/ivaCAM-macos directory,
+          # so re-enabling this block is all it takes to bring macOS back.
+          # - name: macos
+          #   runner: macos-13
+          #   target: universal-apple-darwin
+          #   args: --target universal-apple-darwin
           - name: windows
             runner: windows-latest
             target: x86_64-pc-windows-msvc

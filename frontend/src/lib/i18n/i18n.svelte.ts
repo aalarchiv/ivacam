@@ -8,6 +8,7 @@
 /// picker. The coverage tests (ivac-os2k.5) then enforce full key parity.
 import en from './messages/en.json';
 import de from './messages/de.json';
+import ko from './messages/ko.json';
 import type { MsgKey } from './keys';
 import { type Locale, type LanguagePref, lookup, resolveLocale } from './i18n-core';
 
@@ -16,6 +17,7 @@ import { type Locale, type LanguagePref, lookup, resolveLocale } from './i18n-co
 const CATALOGS: Record<Locale, Record<string, string>> = {
   en: en as Record<string, string>,
   de: de as Record<string, string>,
+  ko: ko as Record<string, string>,
 };
 
 class I18n {

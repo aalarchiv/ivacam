@@ -1,12 +1,12 @@
 //! Minimal embedded i18n for the headless CLI.
 //!
 //! The CLI runs without the frontend, so it carries its own tiny catalog
-//! (`crates/ivac-cli/i18n/{en,de}.json`, embedded via `include_str!`) instead
+//! (`crates/ivac-cli/i18n/{en,de,ko}.json`, embedded via `include_str!`) instead
 //! of the Svelte `t()`/JSON pipeline. No external i18n crate: lookup is a flat
 //! `key -> template` map with `{name}` placeholder substitution, mirroring the
 //! frontend's `lookup()` semantics (locale -> English -> the key itself).
 //!
-//! Locale resolution: `--lang <en|de>` wins, else the `LC_ALL`/`LC_MESSAGES`/
+//! Locale resolution: `--lang <en|de|ko>` wins, else the `LC_ALL`/`LC_MESSAGES`/
 //! `LANG` environment (POSIX precedence), else English.
 
 use std::collections::HashMap;
@@ -18,14 +18,17 @@ use std::sync::OnceLock;
 pub enum Locale {
     En,
     De,
+    Ko,
 }
 
 const EN_JSON: &str = include_str!("../i18n/en.json");
 const DE_JSON: &str = include_str!("../i18n/de.json");
+const KO_JSON: &str = include_str!("../i18n/ko.json");
 
-/// Parse a locale tag (`de`, `en-US`, `de_DE.UTF-8`, `DE`) down to a shipped
-/// language, or `None` if we don't ship it. Splits on the RFC-5646 `-`, the
-/// POSIX `_`, and the `.<charset>` suffix, then lowercases the base subtag.
+/// Parse a locale tag (`de`, `en-US`, `de_DE.UTF-8`, `ko_KR.UTF-8`, `DE`) down
+/// to a shipped language, or `None` if we don't ship it. Splits on the RFC-5646
+/// `-`, the POSIX `_`, and the `.<charset>` suffix, then lowercases the base
+/// subtag.
 pub fn parse_lang(tag: &str) -> Option<Locale> {
     let base = tag
         .split(['-', '_', '.', '@'])
@@ -36,6 +39,7 @@ pub fn parse_lang(tag: &str) -> Option<Locale> {
     match base.as_str() {
         "en" => Some(Locale::En),
         "de" => Some(Locale::De),
+        "ko" => Some(Locale::Ko),
         _ => None,
     }
 }
@@ -79,9 +83,11 @@ pub fn extract_lang(args: Vec<String>) -> (Option<String>, Vec<String>) {
 fn catalog(locale: Locale) -> &'static HashMap<String, String> {
     static EN: OnceLock<HashMap<String, String>> = OnceLock::new();
     static DE: OnceLock<HashMap<String, String>> = OnceLock::new();
+    static KO: OnceLock<HashMap<String, String>> = OnceLock::new();
     let (cell, json) = match locale {
         Locale::En => (&EN, EN_JSON),
         Locale::De => (&DE, DE_JSON),
+        Locale::Ko => (&KO, KO_JSON),
     };
     cell.get_or_init(|| serde_json::from_str(json).expect("embedded i18n catalog is valid JSON"))
 }
@@ -158,18 +164,54 @@ mod tests {
         serde_json::from_str(json).expect("catalog is valid JSON")
     }
 
+    fn sorted_keys(map: &HashMap<String, String>) -> Vec<&String> {
+        let mut keys: Vec<&String> = map.keys().collect();
+        keys.sort();
+        keys
+    }
+
     #[test]
     fn catalogs_parse_and_are_key_identical() {
         let en = parse(EN_JSON);
         let de = parse(DE_JSON);
-        let mut en_keys: Vec<&String> = en.keys().collect();
-        let mut de_keys: Vec<&String> = de.keys().collect();
-        en_keys.sort();
-        de_keys.sort();
+        let ko = parse(KO_JSON);
         assert_eq!(
-            en_keys, de_keys,
+            sorted_keys(&en),
+            sorted_keys(&de),
             "crates/ivac-cli/i18n/en.json and de.json must have identical keys"
         );
+        assert_eq!(
+            sorted_keys(&en),
+            sorted_keys(&ko),
+            "crates/ivac-cli/i18n/en.json and ko.json must have identical keys"
+        );
+    }
+
+    #[test]
+    fn placeholders_match_english_in_every_catalog() {
+        fn placeholders(text: &str) -> Vec<String> {
+            let mut out = Vec::new();
+            let mut rest = text;
+            while let Some((_, after)) = rest.split_once('{') {
+                let Some((name, remaining)) = after.split_once('}') else {
+                    break;
+                };
+                out.push(name.to_string());
+                rest = remaining;
+            }
+            out.sort();
+            out
+        }
+        let en = parse(EN_JSON);
+        for (id, json) in [("de", DE_JSON), ("ko", KO_JSON)] {
+            for (key, text) in parse(json) {
+                assert_eq!(
+                    placeholders(&text),
+                    placeholders(&en[&key]),
+                    "{id}: placeholder mismatch in {key}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -192,6 +234,10 @@ mod tests {
         assert_eq!(parse_lang("de_DE.UTF-8"), Some(Locale::De));
         assert_eq!(parse_lang("en-US"), Some(Locale::En));
         assert_eq!(parse_lang("de_AT@euro"), Some(Locale::De));
+        assert_eq!(parse_lang("ko"), Some(Locale::Ko));
+        assert_eq!(parse_lang("KO"), Some(Locale::Ko));
+        assert_eq!(parse_lang("ko_KR.UTF-8"), Some(Locale::Ko));
+        assert_eq!(parse_lang("ko-KR"), Some(Locale::Ko));
         assert_eq!(parse_lang("fr"), None);
         assert_eq!(parse_lang(""), None);
     }
@@ -205,12 +251,18 @@ mod tests {
         };
         // Override wins over everything.
         assert_eq!(detect_locale(Some("de"), env), Locale::De);
+        assert_eq!(detect_locale(Some("ko"), env), Locale::Ko);
         // No override: LC_ALL beats LANG.
         assert_eq!(detect_locale(None, env), Locale::De);
         // Unshipped override falls through to the environment.
         assert_eq!(
             detect_locale(Some("fr"), |_| Some("en".to_string())),
             Locale::En
+        );
+        // A Korean POSIX locale in the environment is picked up.
+        assert_eq!(
+            detect_locale(None, |k| (k == "LANG").then(|| "ko_KR.UTF-8".to_string())),
+            Locale::Ko
         );
         // Nothing set at all -> English.
         assert_eq!(detect_locale(None, |_| None), Locale::En);
@@ -227,8 +279,8 @@ mod tests {
         assert_eq!(lang.as_deref(), Some("de"));
         assert_eq!(rest, vec!["generate", "file.dxf"]);
 
-        let (lang, rest) = extract_lang(vec!["--lang=de".into(), "import".into()]);
-        assert_eq!(lang.as_deref(), Some("de"));
+        let (lang, rest) = extract_lang(vec!["--lang=ko".into(), "import".into()]);
+        assert_eq!(lang.as_deref(), Some("ko"));
         assert_eq!(rest, vec!["import"]);
 
         let (lang, rest) = extract_lang(vec!["import".into(), "file.dxf".into()]);
@@ -243,7 +295,12 @@ mod tests {
             tr(Locale::En, "cli.err.unknown_post", &[("name", "svg")]),
             "unknown post processor: svg"
         );
+        assert_eq!(
+            tr(Locale::Ko, "cli.err.unknown_post", &[("name", "svg")]),
+            "알 수 없는 포스트 프로세서: svg"
+        );
         // Unknown key falls back to the key itself.
         assert_eq!(tr(Locale::En, "cli.nope", &[]), "cli.nope");
+        assert_eq!(tr(Locale::Ko, "cli.nope", &[]), "cli.nope");
     }
 }

@@ -3,11 +3,11 @@
 /// `t()` binding) lives in `i18n.svelte.ts`, which wraps these helpers.
 import type { MsgKey } from './keys';
 
-export type Locale = 'en' | 'de';
+export type Locale = 'en' | 'de'| 'ko';
 /// User preference: an explicit locale or `auto` (follow the environment).
 export type LanguagePref = 'auto' | Locale;
 
-export const SUPPORTED_LOCALES: readonly Locale[] = ['en', 'de'];
+export const SUPPORTED_LOCALES: readonly Locale[] = ['en', 'de', 'ko'];
 
 export function isLocale(s: string): s is Locale {
   return (SUPPORTED_LOCALES as readonly string[]).includes(s);

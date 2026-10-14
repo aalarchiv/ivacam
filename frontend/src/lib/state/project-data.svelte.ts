@@ -36,7 +36,7 @@ export interface AppSettings {
   /// `detectLocale` in lib/i18n); `en` / `de` force a specific language.
   /// Language is a display-only preference — project files stay
   /// language-agnostic (they store enum keys, never translated labels).
-  language: 'auto' | 'en' | 'de';
+  language: 'auto' | 'en' | 'de' | 'ko';
   previewMode: 'wireframe' | 'solid' | 'both';
   solidColor: string;
   solidOpacity: number;

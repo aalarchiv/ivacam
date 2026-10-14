@@ -14,7 +14,7 @@ import type { WiacError } from '../api/types';
 /// Authentic translate backed by the real English catalog, so these tests
 /// also fail if an `error.*` key is renamed/removed (keeps the seam honest).
 const t: Translate = (key, params) =>
-  lookup({ en, de: {} } as Record<Locale, Record<string, string>>, 'en', key, params);
+  lookup({ en, de: {}, ko: {} } as Record<Locale, Record<string, string>>, 'en', key, params);
 
 function blankCommandTarget(): CommandTarget {
   return {

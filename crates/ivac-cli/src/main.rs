@@ -94,7 +94,7 @@ fn print_help() {
     eprintln!("      {}", i18n::t("cli.help.posts"));
     eprintln!("  ivac --help");
     eprintln!("      {}", i18n::t("cli.help.help"));
-    eprintln!("\n  --lang <en|de>   {}", i18n::t("cli.help.lang"));
+    eprintln!("\n  --lang <en|de|ko>   {}", i18n::t("cli.help.lang"));
 }
 
 fn cmd_import(mut args: impl Iterator<Item = String>) -> Result<()> {

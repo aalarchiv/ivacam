@@ -191,6 +191,7 @@
             <option value="auto">{t('settings.appearance.language.auto')}</option>
             <option value="en">English</option>
             <option value="de">Deutsch</option>
+            <option value="ko">한국어</option>
           </select>
         </label>
       </div>
